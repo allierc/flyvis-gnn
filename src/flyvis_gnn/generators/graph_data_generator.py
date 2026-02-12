@@ -1064,6 +1064,145 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     plt.savefig(f'./graphs_data/{dataset_name}/activity', dpi=200, bbox_inches='tight')
     plt.close()
 
+    # --- Compute ranks first (used in kinographs and traces) ---
+    print('computing effective rank ...')
+    from sklearn.utils.extmath import randomized_svd
+    activity_full = x_list[:, :, 3]  # (n_frames, n_neurons)
+    n_comp = min(50, min(activity_full.shape) - 1)
+    _, S_act, _ = randomized_svd(activity_full, n_components=n_comp, random_state=0)
+    cumvar_act = np.cumsum(S_act**2) / np.sum(S_act**2)
+    rank_90_act = int(np.searchsorted(cumvar_act, 0.90) + 1)
+    rank_99_act = int(np.searchsorted(cumvar_act, 0.99) + 1)
+
+    input_for_svd = x_list[:, :n_input_neurons, 4]
+    n_comp_input = min(50, min(input_for_svd.shape) - 1)
+    _, S_inp, _ = randomized_svd(input_for_svd, n_components=n_comp_input, random_state=0)
+    cumvar_inp = np.cumsum(S_inp**2) / np.sum(S_inp**2)
+    rank_90_inp = int(np.searchsorted(cumvar_inp, 0.90) + 1)
+    rank_99_inp = int(np.searchsorted(cumvar_inp, 0.99) + 1)
+
+    print(f'activity rank(90%)={rank_90_act}  rank(99%)={rank_99_act}')
+    print(f'visual input rank(90%)={rank_90_inp}  rank(99%)={rank_99_inp}')
+
+    # --- Kinograph of neural activity (all neurons x time) ---
+    print('plot kinograph activity ...')
+    activity_kino = x_list[:, :, 3].T  # (n_neurons, n_frames)
+    n_frames_kino = min(n_frames, activity_kino.shape[1])
+    activity_kino = activity_kino[:, :n_frames_kino]
+    vmax_kino = np.abs(activity_kino).max()
+    plt.figure(figsize=(12, 8))
+    plt.imshow(activity_kino, aspect='auto', cmap='viridis', vmin=-vmax_kino, vmax=vmax_kino,
+               origin='lower', interpolation='nearest')
+    cbar = plt.colorbar(fraction=0.046, pad=0.04)
+    cbar.ax.tick_params(labelsize=16)
+    plt.ylabel('neurons', fontsize=20)
+    plt.xlabel('time (frames)', fontsize=20)
+    plt.xticks([0, n_frames_kino - 1], [0, n_frames_kino], fontsize=16)
+    plt.yticks([0, n_neurons - 1], [1, n_neurons], fontsize=16)
+    plt.title(f'{dataset_name} — activity kinograph ({n_neurons} neurons)', fontsize=16)
+    ax = plt.gca()
+    ax.text(0.02, 0.98, f'rank(90%)={rank_90_act}  rank(99%)={rank_99_act}',
+            fontsize=9, transform=ax.transAxes, va='top', ha='left', color='white',
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.5))
+    plt.tight_layout()
+    plt.savefig(f'./graphs_data/{dataset_name}/kinograph_activity.png', dpi=200)
+    plt.close()
+
+    # --- Kinograph of input stimuli (first n_input_neurons x time) ---
+    print('plot kinograph input stimuli ...')
+    input_stimuli = x_list[:, :n_input_neurons, 4].T  # (n_input_neurons, n_frames)
+    n_frames_input = min(n_frames, input_stimuli.shape[1])
+    input_stimuli = input_stimuli[:, :n_frames_input]
+    vmax_input = np.abs(input_stimuli).max()
+    plt.figure(figsize=(12, 6))
+    plt.imshow(input_stimuli, aspect='auto', cmap='viridis', vmin=-vmax_input, vmax=vmax_input,
+               origin='lower', interpolation='nearest')
+    cbar = plt.colorbar(fraction=0.046, pad=0.04)
+    cbar.ax.tick_params(labelsize=16)
+    plt.ylabel('input neurons', fontsize=20)
+    plt.xlabel('time (frames)', fontsize=20)
+    plt.xticks([0, n_frames_input - 1], [0, n_frames_input], fontsize=16)
+    plt.yticks([0, n_input_neurons - 1], [1, n_input_neurons], fontsize=16)
+    plt.title(f'{dataset_name} — visual input kinograph ({n_input_neurons} input neurons)', fontsize=16)
+    ax = plt.gca()
+    ax.text(0.02, 0.98, f'rank(90%)={rank_90_inp}  rank(99%)={rank_99_inp}',
+            fontsize=9, transform=ax.transAxes, va='top', ha='left', color='white',
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.5))
+    plt.tight_layout()
+    plt.savefig(f'./graphs_data/{dataset_name}/kinograph_input_stimuli.png', dpi=200)
+    plt.close()
+
+    # --- Activity traces (sampled neurons) ---
+    print('plot activity traces ...')
+    activity_T = activity_full.T  # (n_neurons, n_frames)
+
+    n_traces = min(100, n_neurons)
+    sampled_idx = np.sort(np.random.choice(n_neurons, n_traces, replace=False))
+    activity_sampled = activity_T[sampled_idx]
+    activity_offset = activity_sampled + 10 * np.arange(n_traces)[:, None]
+
+    plt.figure(figsize=(12, 10))
+    plt.plot(activity_offset.T, linewidth=1, alpha=0.7)
+
+    # overlay mean input stimuli at top
+    ext_mean = np.mean(x_list[:, :n_input_neurons, 4], axis=1)  # (n_frames,)
+    if np.abs(ext_mean).max() > 1e-6:
+        ext_scale = 20 / (np.abs(ext_mean).max() + 1e-6)
+        ext_top = activity_offset.max() + 50
+        plt.plot(ext_mean * ext_scale + ext_top, color='gold', linewidth=2, linestyle='--')
+        plt.text(-100, ext_top, 'visual input', fontsize=12, va='center', ha='right', color='gold')
+
+    for i in range(0, n_traces, 5):
+        plt.text(-100, activity_offset[i, 0], str(sampled_idx[i]), fontsize=10, va='center', ha='right')
+
+    ax = plt.gca()
+    ax.text(0.98, 0.98, f'activity rank(90%)={rank_90_act}  rank(99%)={rank_99_act}\n'
+            f'input rank(90%)={rank_90_inp}  rank(99%)={rank_99_inp}',
+            fontsize=12, transform=ax.transAxes, va='top', ha='right',
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+    ax.text(-200, activity_offset[-1, 0] + 30, 'neurons', fontsize=16, va='bottom', ha='right')
+    plt.xlabel('time (frames)', fontsize=20)
+    ax.spines['left'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.set_yticks([])
+    plt.xlim([0, min(n_frames, 10000)])
+    plt.tight_layout()
+    plt.savefig(f'./graphs_data/{dataset_name}/activity.png', dpi=200)
+    plt.close()
+
+    # --- SVD analysis (4-panel plot) ---
+    print('svd analysis ...')
+    from flyvis_gnn.models.utils import analyze_data_svd
+    folder = f'./graphs_data/{dataset_name}'
+    svd_results = analyze_data_svd(x_list, folder, config=config, is_flyvis=True,
+                                   save_in_subfolder=False)
+
+    # --- Save ranks to log file ---
+    log_path = f'./graphs_data/{dataset_name}/generation_log.txt'
+    with open(log_path, 'w') as log_f:
+        log_f.write(f'dataset: {dataset_name}\n')
+        log_f.write(f'n_neurons: {n_neurons}\n')
+        log_f.write(f'n_input_neurons: {n_input_neurons}\n')
+        log_f.write(f'n_frames: {n_frames}\n')
+        log_f.write(f'visual_input_type: {visual_input_type}\n')
+        log_f.write(f'noise_model_level: {noise_model_level}\n')
+        log_f.write(f'model_id: {model_id}\n')
+        log_f.write(f'ensemble_id: {ensemble_id}\n')
+        log_f.write(f'\n')
+        log_f.write(f'activity_rank_90: {rank_90_act}\n')
+        log_f.write(f'activity_rank_99: {rank_99_act}\n')
+        log_f.write(f'input_rank_90: {rank_90_inp}\n')
+        log_f.write(f'input_rank_99: {rank_99_inp}\n')
+        if svd_results.get('activity'):
+            log_f.write(f'svd_activity_rank_90: {svd_results["activity"]["rank_90"]}\n')
+            log_f.write(f'svd_activity_rank_99: {svd_results["activity"]["rank_99"]}\n')
+        if svd_results.get('visual_stimuli'):
+            log_f.write(f'svd_visual_rank_90: {svd_results["visual_stimuli"]["rank_90"]}\n')
+            log_f.write(f'svd_visual_rank_99: {svd_results["visual_stimuli"]["rank_99"]}\n')
+    print(f'generation log saved to {log_path}')
+
     if visualize & (run == run_vizualized):
         print('generating lossless video ...')
 

@@ -1253,6 +1253,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
         last_connectivity_r2 = None
         field_R2 = None
+        field_slope = None
         pbar = trange(Niter, ncols=150)
         for N in pbar:
 
@@ -1478,7 +1479,27 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                     plt.savefig(f'{log_dir}/results/connectivity_comparison_R_to_L_{N:04d}.png', dpi=150, bbox_inches='tight')
                     plt.close()
 
-                    if (has_visual_field)  & (N>0):
+
+
+                if regularizer.should_record():
+                    # get history from regularizer and add loss component
+                    current_loss = loss.item()
+                    regul_total_this_iter = regularizer.get_iteration_total()
+                    loss_components['loss'].append((current_loss - regul_total_this_iter) / n_neurons)
+
+                    # merge loss_components with regularizer history for plotting
+                    plot_dict = {**regularizer.get_history(), 'loss': loss_components['loss']}
+
+                    # pass per-neuron normalized values to debug (to match dictionary values)
+                    plot_signal_loss(plot_dict, log_dir, epoch=epoch, Niter=N, debug=False,
+                                   current_loss=current_loss / n_neurons, current_regul=regul_total_this_iter / n_neurons,
+                                   total_loss=total_loss, total_loss_regul=total_loss_regul)
+
+                    if (not(test_neural_field)) & (not('MLP' in signal_model_name)):
+                        last_connectivity_r2 = plot_training_flyvis(x_list, model, config, epoch, N, log_dir, device, cmap, type_list, gt_weights, edges, n_neurons=n_neurons, n_neuron_types=n_neuron_types)
+
+
+                    if (has_visual_field):
                         with torch.no_grad():
                             plt.style.use('default')
 
@@ -1514,38 +1535,62 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
                             step_video = 2
 
+                            # First pass: collect all gt and pred, fit linear transform gt = a*pred + b
+                            all_gt = []
+                            all_pred = []
+                            for k_fit in range(0, 800, step_video):
+                                x_fit = torch.tensor(x_list[run][k_fit], dtype=torch.float32, device=device)
+                                pred_fit = to_numpy(model.forward_visual(x_fit, k_fit)).squeeze()
+                                gt_fit = to_numpy(x_list[0][k_fit, :n_input_neurons, 4:5]).squeeze()
+                                all_gt.append(gt_fit)
+                                all_pred.append(pred_fit)
+                            all_gt = np.concatenate(all_gt)
+                            all_pred = np.concatenate(all_pred)
+
+                            # Least-squares fit: gt = a * pred + b
+                            A_fit = np.vstack([all_pred, np.ones(len(all_pred))]).T
+                            a_coeff, b_coeff = np.linalg.lstsq(A_fit, all_gt, rcond=None)[0]
+                            logger.info(f"field linear fit: gt = {a_coeff:.4f} * pred + {b_coeff:.4f}")
+
+                            # Compute field_R2 on corrected predictions
+                            pred_corrected_all = a_coeff * all_pred + b_coeff
+                            ss_res = np.sum((all_gt - pred_corrected_all) ** 2)
+                            ss_tot = np.sum((all_gt - np.mean(all_gt)) ** 2)
+                            field_R2 = 1 - ss_res / (ss_tot + 1e-16)
+                            field_slope = a_coeff
+                            logger.info(f"external input R² (corrected): {field_R2:.4f}")
+
+                            # GT value range for consistent color scaling
+                            gt_vmin = float(all_gt.min())
+                            gt_vmax = float(all_gt.max())
+
                             with writer.saving(fig, out_path, dpi=200):
                                 error_list = []
 
-                                for k in trange(0, 800, step_video):
+                                for k in trange(0, 800, step_video, ncols=100):
                                     # inputs and predictions
                                     x = torch.tensor(x_list[run][k], dtype=torch.float32, device=device)
                                     pred = to_numpy(model.forward_visual(x, k))
                                     pred_vec = np.asarray(pred).squeeze()  # (n_input_neurons,)
-
-                                    if k==0:
-                                        pred_vec.min()
-                                        pred_vec.max()
+                                    pred_corrected = a_coeff * pred_vec # + b_coeff  # corrected to GT scale
 
                                     gt_field = x_list[0][k, :n_input_neurons, 4:5]
                                     gt_vec = to_numpy(gt_field).squeeze()  # (n_input_neurons,)
 
-                                    # update rolling traces
+                                    # update rolling traces (store corrected predictions)
                                     hist_t.append(k)
                                     for i in trace_ids:
                                         hist_gt[i].append(gt_vec[i])
-                                        hist_pred[i].append(pred_vec[i])
+                                        hist_pred[i].append(pred_corrected[i])
 
                                     # draw three panels
                                     fig.clf()
 
-                                    # Traces
-
-                                    rmse_frame = float(np.sqrt(((pred_vec - gt_vec) ** 2).mean()))
-                                    float(np.mean(np.abs(pred_vec - gt_vec)))
+                                    # RMSE on corrected predictions
+                                    rmse_frame = float(np.sqrt(((pred_corrected - gt_vec) ** 2).mean()))
                                     running_rmse = float(np.mean(error_list + [rmse_frame])) if len(error_list) else rmse_frame
 
-
+                                    # Traces (both on GT scale)
                                     ax3 = fig.add_subplot(1, 3, 3)
                                     ax3.set_axis_off()
                                     ax3.set_facecolor("black")
@@ -1553,74 +1598,36 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                                     t = np.arange(len(hist_t))
                                     for j, i in enumerate(trace_ids):
                                         y0 = j * offset
-
-                                        # correction = 1/(vmax+1E-8)   #
-                                        correction = np.mean(np.array(hist_gt[i]) / (np.array(hist_pred[i])+1E-16))
-
                                         ax3.plot(t, np.array(hist_gt[i])   + y0, color='lime',  lw=1.6, alpha=0.95)
-                                        ax3.plot(t, np.array(hist_pred[i])*correction + y0, color='k', lw=1.2, alpha=0.95)
+                                        ax3.plot(t, np.array(hist_pred[i]) + y0, color='k', lw=1.2, alpha=0.95)
 
                                     ax3.set_xlim(max(0, len(t) - win), len(t))
                                     ax3.set_ylim(-offset * 0.5, offset * (len(trace_ids) + 0.5))
                                     ax3.text(
                                         0.02, 0.98,
-                                        f"frame: {k}   RMSE: {rmse_frame:.3f}   avg RMSE: {running_rmse:.3f}",
+                                        f"frame: {k}   RMSE: {rmse_frame:.3f}   avg RMSE: {running_rmse:.3f}   a={a_coeff:.3f} b={b_coeff:.3f}",
                                         transform=ax3.transAxes,
                                         va='top', ha='left',
-                                        fontsize=10, color='k')
+                                        fontsize=6, color='k')
 
-                                                                        # GT field
-
+                                    # GT field
                                     ax1 = fig.add_subplot(1, 3, 1)
-                                    ax1.scatter(X1[:, 0], X1[:, 1], s=256, c=gt_vec, cmap="viridis", marker='h', vmin=0, vmax=1)
+                                    ax1.scatter(X1[:, 0], X1[:, 1], s=256, c=gt_vec, cmap="viridis", marker='h', vmin=gt_vmin, vmax=gt_vmax)
                                     ax1.set_axis_off()
                                     ax1.set_title('ground truth', fontsize=12)
 
-                                    # Predicted field
+                                    # Predicted field (corrected, same scale as GT)
                                     ax2 = fig.add_subplot(1, 3, 2)
-                                    ax2.scatter(X1[:, 0], X1[:, 1], s=256, c=pred_vec, cmap="viridis", marker='h', vmin=0, vmax=1/correction)
+                                    ax2.scatter(X1[:, 0], X1[:, 1], s=256, c=pred_corrected, cmap="viridis", marker='h')
                                     ax2.set_axis_off()
-                                    ax2.set_title('prediction', fontsize=12)
+                                    ax2.set_title('prediction (corrected)', fontsize=12)
 
                                     plt.tight_layout()
                                     writer.grab_frame()
 
-                                    # RMSE for this frame
-                                    error_list.append(np.sqrt(((pred_vec * correction - gt_vec) ** 2).mean()))
-
-                            # Compute R² for external input reconstruction
-                            all_gt = []
-                            all_pred = []
-                            for k_eval in range(0, 800, step_video):
-                                x_eval = torch.tensor(x_list[run][k_eval], dtype=torch.float32, device=device)
-                                pred_eval = to_numpy(model.forward_visual(x_eval, k_eval)).squeeze()
-                                gt_eval = to_numpy(x_list[0][k_eval, :n_input_neurons, 4:5]).squeeze()
-                                all_gt.append(gt_eval)
-                                all_pred.append(pred_eval)
-                            all_gt = np.concatenate(all_gt)
-                            all_pred = np.concatenate(all_pred)
-                            ss_res = np.sum((all_gt - all_pred) ** 2)
-                            ss_tot = np.sum((all_gt - np.mean(all_gt)) ** 2)
-                            field_R2 = 1 - ss_res / (ss_tot + 1e-16)
-                            logger.info(f"external input R²: {field_R2:.4f}")
+                                    error_list.append(rmse_frame)
 
 
-                if regularizer.should_record():
-                    # get history from regularizer and add loss component
-                    current_loss = loss.item()
-                    regul_total_this_iter = regularizer.get_iteration_total()
-                    loss_components['loss'].append((current_loss - regul_total_this_iter) / n_neurons)
-
-                    # merge loss_components with regularizer history for plotting
-                    plot_dict = {**regularizer.get_history(), 'loss': loss_components['loss']}
-
-                    # pass per-neuron normalized values to debug (to match dictionary values)
-                    plot_signal_loss(plot_dict, log_dir, epoch=epoch, Niter=N, debug=False,
-                                   current_loss=current_loss / n_neurons, current_regul=regul_total_this_iter / n_neurons,
-                                   total_loss=total_loss, total_loss_regul=total_loss_regul)
-
-                    if (not(test_neural_field)) & (not('MLP' in signal_model_name)):
-                        last_connectivity_r2 = plot_training_flyvis(x_list, model, config, epoch, N, log_dir, device, cmap, type_list, gt_weights, edges, n_neurons=n_neurons, n_neuron_types=n_neuron_types)
                     if last_connectivity_r2 is not None:
                         # color code: green (>0.9), yellow (0.7-0.9), orange (0.3-0.7), red (<0.3)
                         if last_connectivity_r2 > 0.9:
@@ -1778,6 +1785,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         log_file.write(f"coeff_W_L1: {train_config.coeff_W_L1}\n")
         if field_R2 is not None:
             log_file.write(f"field_R2: {field_R2:.4f}\n")
+            log_file.write(f"field_slope: {field_slope:.4f}\n")
 
 
 def data_train_flyvis_RNN(config, erase, best_model, device):

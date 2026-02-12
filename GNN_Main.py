@@ -44,6 +44,10 @@ if __name__ == "__main__":
             'signal_fig_3', 'signal_fig_3_W_init', 'signal_fig_3_W_init_zeros', 'signal_fig_3_clip', 'signal_fig_3_clip_W_init',
             'signal_fig_supp_8_1', 'signal_fig_supp_8_1_W_init', 'signal_fig_supp_8_1_W_init_zeros', 'signal_fig_supp_8_1_clip', 'signal_fig_supp_8_1_clip_W_init',
         ],
+        'flyvis_top5_bottom5': [
+            'fly_N9_62_1_id_006', 'fly_N9_62_1_id_029', 'fly_N9_62_1_id_001', 'fly_N9_62_1_id_000', 'fly_N9_62_1_id_037',
+            'fly_N9_62_1_id_011', 'fly_N9_62_1_id_036', 'fly_N9_62_1_id_003', 'fly_N9_62_1_id_041', 'fly_N9_62_1_id_049',
+        ],
     }
 
     if args.option is not None:
@@ -60,8 +64,8 @@ if __name__ == "__main__":
                 best_model = None
     else:
         best_model = ''
-        task = task = 'train'
-        config_list = ['fly_N9_62_1']
+        task = task = 'generate'
+        config_list = CONFIG_LISTS['flyvis_top5_bottom5']
 
     for config_file_ in config_list:
         print(" ")

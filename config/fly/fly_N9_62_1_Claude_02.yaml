@@ -20,15 +20,15 @@ simulation:
 graph_model:
   signal_model_name: PDE_N9_A
   prediction: first_derivative
-  input_size: 5
+  input_size: 3
   n_layers: 3
-  hidden_dim: 64
+  hidden_dim: 80
   output_size: 1
-  input_size_update: 7
+  input_size_update: 5
   n_layers_update: 3
   hidden_dim_update: 64
   aggr_type: add
-  embedding_dim: 4
+  embedding_dim: 2
   update_type: generic
   lin_edge_positive: true
 plotting:
@@ -53,7 +53,7 @@ training:
   learning_rate_W_start: 0.0005
   learning_rate_start: 0.0012
   learning_rate_embedding_start: 0.0015
-  coeff_edge_diff: 750
+  coeff_edge_diff: 1000
   coeff_update_u_diff: 0
   coeff_update_msg_diff: 0
   coeff_edge_norm: 1

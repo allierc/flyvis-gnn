@@ -1,0 +1,24 @@
+
+============================================================
+=== BATCH 0 (start call) ===
+============================================================
+I have initialized all 4 config variations for the first batch. Here's the summary:
+
+## Initial Batch (Block 1: Siren Learning Rate Exploration)
+
+| Slot | Config File | lr_siren | omega_f | Strategy | Rationale |
+|------|-------------|----------|---------|----------|-----------|
+| 0 | `fly_N9_63_1_Claude_00.yaml` | **1E-8** (baseline) | 4096 | baseline | Default Siren lr from base config |
+| 1 | `fly_N9_63_1_Claude_01.yaml` | **1E-6** | 4096 | explore | 100x higher - test if field learns |
+| 2 | `fly_N9_63_1_Claude_02.yaml` | **1E-4** | 4096 | explore | 10000x higher - aggressive boundary |
+| 3 | `fly_N9_63_1_Claude_03.yaml` | **1E-5** | **256** | explore | Mid lr + lower omega for stability |
+
+**GNN parameters** (fixed across all slots): lr_W=5E-4, lr=1.2E-3, lr_emb=1.5E-3, coeff_edge_diff=750
+
+**Hypothesis**: The Siren learning rate is the key unknown for joint field+connectivity learning. This batch explores 4 orders of magnitude (1E-8 to 1E-4). Slot 3 also tests whether lower omega_f (256 vs 4096) allows higher Siren lr without destabilizing training.
+
+All files updated:
+- 4 config files edited with diverse initial parameters
+- Working memory (`fly_N9_63_1_Claude_memory.md`) updated with block plan
+- Full log (`fly_N9_63_1_Claude_analysis.md`) updated with initial entries
+

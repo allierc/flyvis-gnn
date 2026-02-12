@@ -1,0 +1,10 @@
+=== UCB Scores (Simulation block 2, iters 49-72, N=8, c=1.414) ===
+
+Node 51: UCB=2.959, parent=49, visits=1, R2=0.959, Pearson=0.997, Cluster=0.828, tau_R2=0.992, V_rest_R2=0.403, Mutation=embedding_dim: 2 -> 4
+Node 56: UCB=2.951, parent=54, visits=1, R2=0.951, Pearson=0.999, Cluster=0.854, tau_R2=0.989, V_rest_R2=0.357, Mutation=n_layers_update: 3 -> 4. Testing principle: "deeper update MLP helps parameter recovery"
+Node 55: UCB=2.942, parent=54, visits=1, R2=0.942, Pearson=0.995, Cluster=0.798, tau_R2=0.985, V_rest_R2=0.358, Mutation=lr_emb: 1.5E-3 -> 1.8E-3
+Node 50: UCB=2.783, parent=49, visits=1, R2=0.783, Pearson=0.980, Cluster=0.804, tau_R2=0.965, V_rest_R2=0.123, Mutation=n_layers: 3 -> 4
+Node 52: UCB=2.751, parent=49, visits=1, R2=0.751, Pearson=0.982, Cluster=0.826, tau_R2=0.994, V_rest_R2=0.508, Mutation=hidden_dim_update: 64 -> 96. Testing principle: "larger update MLP helps parameter recovery"
+Node 54: UCB=1.959, parent=53, visits=3, R2=0.959, Pearson=0.976, Cluster=0.892, tau_R2=0.995, V_rest_R2=0.752, Mutation=hidden_dim_update: 64 -> 80
+Node 53: UCB=1.768, parent=49, visits=4, R2=0.968, Pearson=0.996, Cluster=0.882, tau_R2=0.980, V_rest_R2=0.735, Mutation=hidden_dim: 96 -> 80
+Node 49: UCB=1.398, parent=root, visits=8, R2=0.954, Pearson=0.972, Cluster=0.899, tau_R2=0.992, V_rest_R2=0.615, Mutation=hidden_dim: 64 -> 96

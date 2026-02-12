@@ -21,12 +21,12 @@ graph_model:
   signal_model_name: PDE_N9_A
   prediction: first_derivative
   input_size: 3
-  n_layers: 4
-  hidden_dim: 64
+  n_layers: 3
+  hidden_dim: 80
   output_size: 1
   input_size_update: 5
   n_layers_update: 3
-  hidden_dim_update: 64
+  hidden_dim_update: 80
   aggr_type: add
   embedding_dim: 2
   update_type: generic
