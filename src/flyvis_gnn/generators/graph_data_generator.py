@@ -12,11 +12,7 @@ try:
 except ImportError:
     load_wormvae_data = None
     load_zebrafish_data = None
-try:
-    from flyvis_gnn.zarr_io import ZarrSimulationWriter, ZarrSimulationWriterV2
-except ImportError:
-    ZarrSimulationWriter = None
-    ZarrSimulationWriterV2 = None
+from flyvis_gnn.zarr_io import ZarrSimulationWriter, ZarrSimulationWriterV2
 try:
     from flyvis_gnn.generators.davis import AugmentedVideoDataset, CombinedVideoDataset
 except ImportError:

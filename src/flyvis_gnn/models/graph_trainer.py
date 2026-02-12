@@ -112,10 +112,7 @@ try:
     from flyvis_gnn.models.HashEncoding_Network import HashEncodingMLP
 except ImportError:
     HashEncodingMLP = None
-try:
-    from flyvis_gnn.zarr_io import load_simulation_data
-except ImportError:
-    load_simulation_data = None
+from flyvis_gnn.zarr_io import load_simulation_data
 
 from flyvis_gnn.sparsify import EmbeddingCluster, sparsify_cluster, clustering_evaluation
 from flyvis_gnn.fitting_models import linear_model
