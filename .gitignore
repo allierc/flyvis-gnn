@@ -5,27 +5,11 @@
 *.backup
 paper/
 
-# Log folder - include models/*.pt, exclude everything else
-log/**/*
-!log/fly/
-!log/fly/**/
-!log/fly/**/models/
-!log/fly/**/models/*.pt
+# Log folder
+log/
 
-# Ignore edge_index.pt and mask.pt everywhere (recreated from connectivity.pt)
-**/edge_index.pt
-**/mask.pt
-
-# graphs_data: include connectivity.pt, exclude .npy, .backup, .png, and generated files
-graphs_data/**/*.npy
-graphs_data/**/*.backup
-graphs_data/**/*.png
-graphs_data/**/analysis.log
-graphs_data/**/X1.pt
-graphs_data/**/X_msg.pt
-
-# Explicitly track connectivity.pt
-!graphs_data/fly/*/connectivity.pt
+# Data directories
+graphs_data/
 
 # Python
 __pycache__/

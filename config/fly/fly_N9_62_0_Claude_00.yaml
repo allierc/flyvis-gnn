@@ -25,7 +25,7 @@ graph_model:
   hidden_dim: 64
   output_size: 1
   input_size_update: 5
-  n_layers_update: 3
+  n_layers_update: 4
   hidden_dim_update: 96
   aggr_type: add
   embedding_dim: 2
@@ -49,7 +49,7 @@ training:
   batch_ratio: 1
   small_init_batch_size: false
   sparsity: none
-  data_augmentation_loop: 25
+  data_augmentation_loop: 27
   learning_rate_W_start: 0.0005
   learning_rate_start: 0.001
   learning_rate_embedding_start: 0.0035

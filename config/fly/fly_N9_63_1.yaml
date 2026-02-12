@@ -1,5 +1,5 @@
-description: 'no extra null edges, noise_model_level: 0.05 DAVIS  64K frames augmented
-  objective batch 16  NNR_f  LR 1E-8  hidden 4096'
+description: 'DAVIS noise 0.05 64K frames NNR_f LR 1E-8 hidden 4096 + 62_1 GNN params
+  (lr_W=5E-4 lr=1.2E-3 lr_emb=1.5E-3 batch=1 edge_diff=750 phi_L1=0.5 edge_L1=0.5)'
 dataset: fly_N9_62_1
 simulation:
   connectivity_file: to be specified
@@ -55,23 +55,29 @@ training:
   n_runs: 1
   device: auto
   recurrent_training: false
-  batch_size: 16
+  batch_size: 1
   batch_ratio: 1
   sparsity: none
   data_augmentation_loop: 25
-  learning_rate_W_start: 0.001
-  learning_rate_start: 0.0005
-  learning_rate_embedding_start: 0.001
+  learning_rate_W_start: 0.0005
+  learning_rate_start: 0.0012
+  learning_rate_embedding_start: 0.0015
   learning_rate_NNR_f: 1.0e-08
-  coeff_edge_diff: 500
+  coeff_edge_diff: 750
   coeff_update_u_diff: 0
   coeff_update_msg_diff: 0
   coeff_edge_norm: 1.0
-  coeff_edge_weight_L1: 1
-  coeff_phi_weight_L1: 1
+  coeff_edge_weight_L1: 0.5
+  coeff_phi_weight_L1: 0.5
   coeff_phi_weight_L1_rate: 0.5
   coeff_edge_weight_L2: 0
   coeff_phi_weight_L2: 0.001
   coeff_W_L1: 5.0e-05
   coeff_W_L1_rate: 0.5
   w_init_mode: zeros
+claude:
+  n_epochs: 1
+  data_augmentation_loop: 25
+  n_iter_block: 24
+  ucb_c: 1.414
+  node_name: h100

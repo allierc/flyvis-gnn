@@ -21,12 +21,12 @@ graph_model:
   signal_model_name: PDE_N9_A
   prediction: first_derivative
   input_size: 3
-  n_layers: 5
+  n_layers: 4
   hidden_dim: 64
   output_size: 1
   input_size_update: 5
-  n_layers_update: 3
-  hidden_dim_update: 64
+  n_layers_update: 4
+  hidden_dim_update: 96
   aggr_type: add
   embedding_dim: 2
   update_type: generic
@@ -45,7 +45,7 @@ training:
   n_runs: 1
   device: auto
   recurrent_training: false
-  batch_size: 1
+  batch_size: 2
   batch_ratio: 1
   small_init_batch_size: false
   sparsity: none

@@ -912,3 +912,4 @@ IMPORTANT: Baseline training time is ~45 min/epoch on H100. With n_epochs=1, exp
 
 # python GNN_LLM_parallel_flyvis.py -o train_test_plot_Claude_cluster fly_N9_62_0 iterations=144 --resume
 # python GNN_LLM_parallel_flyvis.py -o train_test_plot_Claude_cluster fly_N9_62_1 iterations=144 --resume
+# python GNN_LLM_parallel_flyvis.py -o train_test_plot_Claude_cluster fly_N9_63_1 iterations=144 --resume

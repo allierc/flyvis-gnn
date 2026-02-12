@@ -6348,10 +6348,11 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
                     pred, in_features, msg = model(batch, data_id=data_id, mask=mask_batch, return_all=True)
 
             # Extract features and compute gradient of lin_phi w.r.t. msg
+            emb_dim = model_config.embedding_dim
             v = in_features[:, 0:1].clone().detach()
-            embedding = in_features[:, 1:3].clone().detach()
-            msg = in_features[:, 3:4].clone().detach()
-            excitation = in_features[:, 4:5].clone().detach()
+            embedding = in_features[:, 1:1+emb_dim].clone().detach()
+            msg = in_features[:, 1+emb_dim:2+emb_dim].clone().detach()
+            excitation = in_features[:, 2+emb_dim:3+emb_dim].clone().detach()
 
             # Re-enable gradients (may have been disabled by data_test)
             torch.set_grad_enabled(True)

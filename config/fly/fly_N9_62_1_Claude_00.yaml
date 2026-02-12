@@ -22,7 +22,7 @@ graph_model:
   prediction: first_derivative
   input_size: 3
   n_layers: 3
-  hidden_dim: 64
+  hidden_dim: 96
   output_size: 1
   input_size_update: 5
   n_layers_update: 3
@@ -50,10 +50,10 @@ training:
   small_init_batch_size: false
   sparsity: none
   data_augmentation_loop: 25
-  learning_rate_W_start: 0.0007
+  learning_rate_W_start: 0.0005
   learning_rate_start: 0.0012
   learning_rate_embedding_start: 0.0015
-  coeff_edge_diff: 1250
+  coeff_edge_diff: 750
   coeff_update_u_diff: 0
   coeff_update_msg_diff: 0
   coeff_edge_norm: 1

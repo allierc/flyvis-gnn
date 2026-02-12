@@ -34,10 +34,15 @@ Two MLPs learn the neural dynamics:
 - **lin_phi** (f_theta): Node update function. Maps (v_i, a_i, aggregated_messages, I_i) -> dv_i/dt.
 - **Embedding a_i**: 2D learned embedding per neuron, encodes neuron type.
 
-Architecture parameters (explorable):
+Architecture parameters (explorable) — refer to `Signal_Propagation_FlyVis.PARAMS_DOC` for strict dependencies:
 - `hidden_dim` / `n_layers`: lin_edge MLP dimensions (default: 64 / 3)
 - `hidden_dim_update` / `n_layers_update`: lin_phi MLP dimensions (default: 64 / 3)
 - `embedding_dim`: embedding dimension (default: 2)
+
+**CRITICAL — coupled parameters**: `input_size`, `input_size_update`, and `embedding_dim` are linked. When changing `embedding_dim`, you MUST also update:
+- `input_size = 1 + embedding_dim` (for PDE_N9_A)
+- `input_size_update = 3 + embedding_dim` (v + embedding + msg + excitation)
+Example: embedding_dim=4 → input_size=5, input_size_update=7. Failure to update causes a shape mismatch crash.
 
 ## Regularization Parameters (from cosyne2026.tex)
 
