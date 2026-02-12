@@ -1,0 +1,15 @@
+---
+title: "FlyVis-GNN: Graph neural networks for fly visual system connectivity recovery"
+listing:
+  contents: "Notebook_*.py"
+  type: default
+  categories: true
+  image-align: left
+  fields: [image, title, description, categories, filename]
+  sort: "filename"
+  sort-ui: [title, file-modified]
+  filter-ui: true
+---
+
+Graph neural networks trained to predict observable dynamics can be used to recover the connectivity of the fly visual system.
+This repository applies the GNN framework to FlyVis connectome data, using LLM-guided exploration to systematically search the training configuration space.
