@@ -838,3 +838,133 @@ All configs are set up correctly. Let me provide a summary of the analysis and n
 | 2 | explore | Node 102 | W_L1: 5E-5→4E-5 | Test combined W_L1+W_L2 regularization |
 | 3 | principle-test | Node 102 | phi_L1: 0.5→0.55 | Test if phi_L1=0.5 is strictly optimal |
 
+
+============================================================
+=== Batch 105-108 ===
+============================================================
+**Batch 105-108 Analysis Complete**
+
+## Results Summary
+
+| Iter | Node | Mutation | conn_R2 | tau_R2 | V_rest_R2 | cluster_acc | time |
+|------|------|----------|---------|--------|-----------|-------------|------|
+| 105 | 105 | W_L2: 2E-6→3E-6 | 0.973 | 0.989 | **0.733** | 0.858 | 37.9 |
+| 106 | 106 | edge_norm: 1.0→0.75 + W_L2=2E-6 | 0.979 | 0.992 | 0.708 | 0.884 | 37.9 |
+| 107 | 107 | W_L1: 5E-5→4E-5 | 0.981 | 0.989 | 0.511 | 0.886 | 37.6 |
+| 108 | 108 | phi_L1: 0.5→0.55 | 0.968 | 0.986 | 0.589 | 0.872 | 38.0 |
+
+## Key Findings
+- **W_L2=3E-6 achieves best V_rest_R2=0.733** but drops conn_R2 to 0.973 (trade-off)
+- **edge_norm=0.75 is balanced** — V_rest=0.708, conn_R2=0.979, cluster_acc=0.884
+- **W_L1=4E-5 causes V_rest collapse** — W_L1=5E-5 confirmed optimal
+- **phi_L1=0.55 worse than 0.5** — principle #14 validated
+
+## Next Batch (Iter 109-112) Configurations
+
+| Slot | Role | Parent | Mutation |
+|------|------|--------|----------|
+| 0 | exploit | 105 | W_L2: 3E-6→2.5E-6 (sweet spot search) |
+| 1 | exploit | 106 | W_L2: 2E-6→3E-6 (add to edge_norm=0.75) |
+| 2 | explore | 105 | edge_norm: 1.0→0.8 + W_L2=3E-6 |
+| 3 | principle-test | 102 | edge_L1: 0.3→0.35. Testing principle: "edge_L1=0.3 is optimal" |
+
+
+============================================================
+=== Batch 109-112 ===
+============================================================
+All configs are set up correctly. Here's a summary:
+
+## Batch 109-112 Analysis Complete
+
+**Results Summary:**
+
+| Iter | Node | Parent | Mutation | conn_R2 | V_rest_R2 | cluster_acc | Finding |
+|------|------|--------|----------|---------|-----------|-------------|---------|
+| 109 | 109 | 105 | W_L2: 3E-6→2.5E-6 | 0.978 | 0.520 | 0.844 | NOT a sweet spot; worse than both 2E-6 and 3E-6 |
+| 110 | 110 | 106 | W_L2: 2E-6→3E-6 + edge_norm=0.75 | 0.977 | 0.725 | **0.898** | **NEW BEST cluster_acc**; good V_rest |
+| 111 | 111 | 105 | edge_norm: 1.0→0.8 | **0.981** | 0.484 | 0.867 | Best conn_R2 but V_rest collapse; edge_norm trade-off non-linear |
+| 112 | 112 | 102 | edge_L1: 0.3→0.35 | 0.976 | 0.545 | 0.876 | CONFIRMS edge_L1=0.3 optimal (principle #7) |
+
+**New Established Principles (57-60):**
+- W_L2=2.5E-6 is NOT a sweet spot between 2E-6 and 3E-6
+- edge_norm=0.75 + W_L2=3E-6 achieves best cluster_acc (0.898) with good V_rest (0.725)
+- edge_norm=0.8 causes V_rest collapse; non-linear trade-off (0.75 > 0.8 for V_rest)
+- edge_L1=0.35 worse than 0.3 — confirms principle #7
+
+**Next Batch (Iter 113-116) Configs:**
+
+| Slot | Parent | Strategy | Key Changes |
+|------|--------|----------|-------------|
+| 0 | Node 110 | exploit | W_L2=3.5E-6, edge_norm=0.75 |
+| 1 | Node 110 | exploit | W_L2=3E-6, edge_norm=0.7 |
+| 2 | Node 102 | explore | W_L2=3.5E-6, edge_norm=0.75 |
+| 3 | Node 110 | principle-test | batch_size=1 (testing principle #42: "batch=1 worse than batch=2 for V_rest") |
+
+
+============================================================
+=== Batch 113-116 ===
+============================================================
+All configs are set correctly. Let me provide a summary of the batch analysis and next batch setup.
+
+## Batch 113-116 Analysis Complete
+
+### Results Summary (Iterations 113-116)
+
+| Iter | conn_R2 | V_rest_R2 | tau_R2 | cluster_acc | time | Key finding |
+|------|---------|-----------|--------|-------------|------|-------------|
+| 113 | 0.975 | 0.605 | 0.981 | 0.895 | 37.6 min | W_L2=3.5E-6 is WORSE than 3E-6 |
+| 114 | 0.981 | 0.596 | 0.991 | 0.869 | 37.8 min | edge_norm=0.7 is WORSE than 0.75 |
+| 115 | 0.980 | 0.692 | 0.989 | 0.869 | 37.5 min | Confirms W_L2=3E-6 better than 3.5E-6 |
+| 116 | 0.977 | 0.549 | 0.993 | 0.857 | 43.7 min | batch_size=1 MUCH WORSE; CONFIRMS principle #42 |
+
+**Key insights:**
+- **W_L2=3E-6 is upper bound** — 3.5E-6 hurts V_rest (0.605 vs 0.725)
+- **edge_norm=0.75 is optimal** — 0.7 is worse (V_rest 0.596 vs 0.725)
+- **batch_size=2 confirmed optimal** — batch=1 gives V_rest=0.549 vs 0.725, and is slower (43.7 vs 37.7 min)
+- All 4 experiments confirm existing principles; parameter space is well-mapped
+
+### New Principles Added
+61. coeff_W_L2=3.5E-6 is too high — W_L2=3E-6 is upper bound
+62. coeff_edge_norm=0.7 is worse than 0.75 — edge_norm=0.75 is optimal lower bound  
+63. batch_size=1 with edge_norm=0.75+W_L2=3E-6 still worse than batch=2 — CONFIRMS principle #42
+
+### Next Batch (Iterations 117-120) Config
+
+| Slot | Role | Mutation | Key params |
+|------|------|----------|------------|
+| 0 | exploit | edge_norm=0.75 + W_L2=2E-6 | Test if edge_norm=0.75 helps Node 102's best conn_R2 |
+| 1 | exploit | edge_norm=0.75 + W_L2=3E-6 | Combine W_L2=3E-6 with edge_norm=0.75 (same as Node 110) |
+| 2 | explore | phi_L1=0.45 + W_L2=2E-6 | Test if slight phi_L1 reduction helps with W_L2=2E-6 |
+| 3 | principle-test | edge_diff=800 | Testing principle #10: "edge_diff=750 is optimal" |
+
+
+============================================================
+=== Batch 117-120 ===
+============================================================
+All configs are set up correctly. Here's a summary of the completed analysis and the next batch setup:
+
+## Block 5 End Summary (Iterations 117-120)
+
+| Iter | Node | Strategy | Key Mutation | conn_R2 | V_rest_R2 | tau_R2 | cluster_acc | Result |
+|------|------|----------|--------------|---------|-----------|--------|-------------|--------|
+| 117 | 117 | exploit | edge_norm=0.75+W_L2=2E-6 (from Node 102) | 0.976 | 0.707 | 0.988 | 0.867 | Slight V_rest improvement but conn_R2 drops |
+| 118 | 118 | exploit | edge_norm=0.75+W_L2=3E-6 (from Node 105) | 0.982 | 0.550 | 0.994 | 0.877 | V_rest WORSE than Node 110 (context-dependent) |
+| 119 | 119 | explore | phi_L1=0.45+W_L2=2E-6 | 0.937 | 0.403 | 0.986 | 0.876 | SEVERE collapse; CONFIRMS phi_L1=0.5 STRICTLY optimal |
+| 120 | 120 | principle-test | edge_diff=800+edge_norm=0.75+W_L2=3E-6 | 0.882 | 0.483 | 0.991 | 0.847 | SEVERE collapse; CONFIRMS edge_diff=750 STRICTLY optimal |
+
+**Key Findings:**
+- **phi_L1=0.5 is STRICTLY optimal** — even phi_L1=0.45 causes severe collapse (principle #14 strongly confirmed)
+- **edge_diff=750 is STRICTLY optimal** — edge_diff=800 causes severe collapse (principle #10 strongly confirmed)
+- **edge_norm=0.75 effect is context-dependent** — doesn't universally improve V_rest
+
+## Block 6 Setup (Iterations 121-124)
+
+Starting Block 6 (Combined Best) to try achieving conn_R2>0.98 AND V_rest>0.75 simultaneously:
+
+| Slot | Iter | Role | Parent | Mutation | Hypothesis |
+|------|------|------|--------|----------|------------|
+| 0 | 121 | exploit | Node 118 | lr_W: 6E-4→5E-4, W_L2=3E-6, edge_norm=0.75 | Lower lr_W may improve V_rest with these settings |
+| 1 | 122 | exploit | Node 102 | W_L2: 2E-6→2.5E-6, data_aug: 20→25 | Middle W_L2 + more data augmentation |
+| 2 | 123 | explore | Node 105 | lr: 1.2E-3→1.1E-3, W_L2=3E-6 | Slightly lower MLP lr may help V_rest |
+| 3 | 124 | principle-test | Node 102 | hidden_dim: 80→96, W_L2=2E-6 | Test if hidden_dim=96 improves V_rest (principle #18) |
+

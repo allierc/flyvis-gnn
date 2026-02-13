@@ -51,20 +51,20 @@ training:
   sparsity: none
   data_augmentation_loop: 20
   learning_rate_W_start: 0.0006
-  learning_rate_start: 0.0012
+  learning_rate_start: 0.0011
   learning_rate_embedding_start: 0.0015
   coeff_edge_diff: 750
   coeff_update_u_diff: 0
   coeff_update_msg_diff: 0
-  coeff_edge_norm: 1
+  coeff_edge_norm: 1.0
   coeff_edge_weight_L1: 0.3
   coeff_phi_weight_L1: 0.5
   coeff_phi_weight_L1_rate: 0.5
   coeff_edge_weight_L2: 0
   coeff_phi_weight_L2: 0.001
-  coeff_W_L1: 4.0e-05
+  coeff_W_L1: 5.0e-05
   coeff_W_L1_rate: 0.5
-  coeff_W_L2: 2.0e-06
+  coeff_W_L2: 3.0e-06
   w_init_mode: zeros
 claude:
   n_epochs: 1

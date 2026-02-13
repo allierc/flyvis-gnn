@@ -969,46 +969,83 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     print(f'activity rank(90%)={rank_90_act}  rank(99%)={rank_99_act}')
     print(f'visual input rank(90%)={rank_90_inp}  rank(99%)={rank_99_inp}')
 
-    # Kinograph of neural activity (all neurons x time)
-    print('plot kinograph activity ...')
+    # Combined kinograph: activity (top) + input stimuli (bottom), full + zoom (200x200)
+    print('plot kinograph ...')
     activity_kino = x_list[:, :, 3].T  # (n_neurons, n_frames)
     n_frames_kino = min(n_frames, activity_kino.shape[1])
     activity_kino = activity_kino[:, :n_frames_kino]
     vmax_kino = np.abs(activity_kino).max()
-    plt.figure(figsize=(12, 8))
-    plt.imshow(activity_kino, aspect='auto', cmap='viridis', vmin=-vmax_kino, vmax=vmax_kino,
-               origin='lower', interpolation='nearest')
-    cbar = plt.colorbar(fraction=0.046, pad=0.04)
-    cbar.ax.tick_params(labelsize=16)
-    plt.ylabel('neurons', fontsize=20)
-    plt.xlabel('time (frames)', fontsize=20)
-    plt.xticks([0, n_frames_kino - 1], [0, n_frames_kino], fontsize=16)
-    plt.yticks([0, n_neurons - 1], [1, n_neurons], fontsize=16)
-    plt.title(f'{dataset_name} — activity kinograph ({n_neurons} neurons)', fontsize=16)
-    plt.suptitle(f'rank(90%)={rank_90_act}  rank(99%)={rank_99_act}', fontsize=9, fontweight='normal', y=1.0)
-    plt.tight_layout()
-    plt.savefig(f'./graphs_data/{dataset_name}/kinograph_activity.png', dpi=200)
-    plt.close()
 
-    # Kinograph of input stimuli (first n_input_neurons x time)
-    print('plot kinograph input stimuli ...')
     input_stimuli = x_list[:, :n_input_neurons, 4].T  # (n_input_neurons, n_frames)
     n_frames_input = min(n_frames, input_stimuli.shape[1])
     input_stimuli = input_stimuli[:, :n_frames_input]
-    vmax_input = np.abs(input_stimuli).max()
-    plt.figure(figsize=(12, 6))
-    plt.imshow(input_stimuli, aspect='auto', cmap='viridis', vmin=-vmax_input, vmax=vmax_input,
-               origin='lower', interpolation='nearest')
-    cbar = plt.colorbar(fraction=0.046, pad=0.04)
-    cbar.ax.tick_params(labelsize=16)
-    plt.ylabel('input neurons', fontsize=20)
-    plt.xlabel('time (frames)', fontsize=20)
-    plt.xticks([0, n_frames_input - 1], [0, n_frames_input], fontsize=16)
-    plt.yticks([0, n_input_neurons - 1], [1, n_input_neurons], fontsize=16)
-    plt.title(f'{dataset_name} — visual input kinograph ({n_input_neurons} input neurons)', fontsize=16)
-    plt.suptitle(f'rank(90%)={rank_90_inp}  rank(99%)={rank_99_inp}', fontsize=9, fontweight='normal', y=1.0)
+    vmax_input = np.abs(input_stimuli).max() * 1.2
+
+    zoom_frames = min(200, n_frames_kino)
+    zoom_neurons_act = min(200, n_neurons)
+    zoom_neurons_inp = min(200, n_input_neurons)
+
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10),
+                             gridspec_kw={'width_ratios': [2, 1]})
+
+    # Top-left: full activity kinograph
+    ax = axes[0, 0]
+    im = ax.imshow(activity_kino, aspect='auto', cmap='viridis', vmin=-vmax_kino, vmax=vmax_kino,
+                   origin='lower', interpolation='nearest')
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04).ax.tick_params(labelsize=12)
+    ax.set_ylabel('neurons', fontsize=14)
+    ax.set_xlabel('time (frames)', fontsize=14)
+    ax.set_xticks([0, n_frames_kino - 1])
+    ax.set_xticklabels([0, n_frames_kino], fontsize=12)
+    ax.set_yticks([0, n_neurons - 1])
+    ax.set_yticklabels([1, n_neurons], fontsize=12)
+    ax.set_title(f'activity ({n_neurons} neurons)', fontsize=16)
+    ax.text(0.02, 0.97, f'rank(90%)={rank_90_act}  rank(99%)={rank_99_act}',
+            fontsize=9, transform=ax.transAxes, va='top', ha='left')
+
+    # Top-right: zoomed activity (200 neurons x 200 frames)
+    ax = axes[0, 1]
+    im = ax.imshow(activity_kino[:zoom_neurons_act, :zoom_frames], aspect='auto', cmap='viridis',
+                   vmin=-vmax_kino, vmax=vmax_kino, origin='lower', interpolation='nearest')
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04).ax.tick_params(labelsize=12)
+    ax.set_ylabel('neurons', fontsize=14)
+    ax.set_xlabel('time (frames)', fontsize=14)
+    ax.set_xticks([0, zoom_frames - 1])
+    ax.set_xticklabels([0, zoom_frames], fontsize=12)
+    ax.set_yticks([0, zoom_neurons_act - 1])
+    ax.set_yticklabels([1, zoom_neurons_act], fontsize=12)
+    ax.set_title(f'zoom ({zoom_neurons_act} x {zoom_frames})', fontsize=16)
+
+    # Bottom-left: full input stimuli kinograph
+    ax = axes[1, 0]
+    im = ax.imshow(input_stimuli, aspect='auto', cmap='viridis', vmin=-vmax_input, vmax=vmax_input,
+                   origin='lower', interpolation='nearest')
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04).ax.tick_params(labelsize=12)
+    ax.set_ylabel('input neurons', fontsize=14)
+    ax.set_xlabel('time (frames)', fontsize=14)
+    ax.set_xticks([0, n_frames_input - 1])
+    ax.set_xticklabels([0, n_frames_input], fontsize=12)
+    ax.set_yticks([0, n_input_neurons - 1])
+    ax.set_yticklabels([1, n_input_neurons], fontsize=12)
+    ax.set_title(f'visual input ({n_input_neurons} input neurons)', fontsize=16)
+    ax.text(0.02, 0.97, f'rank(90%)={rank_90_inp}  rank(99%)={rank_99_inp}',
+            fontsize=9, transform=ax.transAxes, va='top', ha='left')
+
+    # Bottom-right: zoomed input stimuli (200 neurons x 200 frames)
+    ax = axes[1, 1]
+    im = ax.imshow(input_stimuli[:zoom_neurons_inp, :zoom_frames], aspect='auto', cmap='viridis',
+                   vmin=-vmax_input, vmax=vmax_input, origin='lower', interpolation='nearest')
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04).ax.tick_params(labelsize=12)
+    ax.set_ylabel('input neurons', fontsize=14)
+    ax.set_xlabel('time (frames)', fontsize=14)
+    ax.set_xticks([0, zoom_frames - 1])
+    ax.set_xticklabels([0, zoom_frames], fontsize=12)
+    ax.set_yticks([0, zoom_neurons_inp - 1])
+    ax.set_yticklabels([1, zoom_neurons_inp], fontsize=12)
+    ax.set_title(f'zoom ({zoom_neurons_inp} x {zoom_frames})', fontsize=16)
+
     plt.tight_layout()
-    plt.savefig(f'./graphs_data/{dataset_name}/kinograph_input_stimuli.png', dpi=200)
+    plt.savefig(f'./graphs_data/{dataset_name}/kinograph.png', dpi=200)
     plt.close()
 
     # Activity traces (sampled neurons)
@@ -1017,27 +1054,19 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     n_traces = min(100, n_neurons)
     sampled_idx = np.sort(np.random.choice(n_neurons, n_traces, replace=False))
     activity_sampled = activity_T[sampled_idx]
-    activity_offset = activity_sampled + 10 * np.arange(n_traces)[:, None]
+    activity_offset = activity_sampled + 2 * np.arange(n_traces)[:, None]
     plt.figure(figsize=(12, 10))
-    plt.plot(activity_offset.T, linewidth=1, alpha=0.7)
-    ext_mean = np.mean(x_list[:, :n_input_neurons, 4], axis=1)
-    if np.abs(ext_mean).max() > 1e-6:
-        ext_scale = 20 / (np.abs(ext_mean).max() + 1e-6)
-        ext_top = activity_offset.max() + 50
-        plt.plot(ext_mean * ext_scale + ext_top, color='gold', linewidth=2, linestyle='--')
-        plt.text(-100, ext_top, 'visual input', fontsize=12, va='center', ha='right', color='gold')
-    for i in range(0, n_traces, 5):
-        plt.text(-100, activity_offset[i, 0], str(sampled_idx[i]), fontsize=10, va='center', ha='right')
+    plt.plot(activity_offset.T, linewidth=0.5, alpha=0.7, color='k')
     ax = plt.gca()
-    plt.suptitle(f'activity rank(90%)={rank_90_act}  rank(99%)={rank_99_act}  |  input rank(90%)={rank_90_inp}  rank(99%)={rank_99_inp}',
-                 fontsize=10, fontweight='normal', y=1.0)
-    ax.text(-200, activity_offset[-1, 0] + 30, 'neurons', fontsize=16, va='bottom', ha='right')
-    plt.xlabel('time (frames)', fontsize=20)
+    plt.xlabel('time (frames)', fontsize=14)
     ax.spines['left'].set_visible(False)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     ax.set_yticks([])
     plt.xlim([0, min(n_frames, 10000)])
+    plt.ylim([activity_offset[0].min() - 2, activity_offset[-1].max() + 2])
+    ax.text(0.98, 0.98, f'{n_input_neurons} neurons', fontsize=12, transform=ax.transAxes,
+            va='top', ha='right')
     plt.tight_layout()
     plt.savefig(f'./graphs_data/{dataset_name}/activity_traces.png', dpi=200)
     plt.close()
@@ -1163,7 +1192,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     step_v = 1.5
 
     plt.style.use('default')
-    plt.figure(figsize=(10,10))
+    plt.figure(figsize=(12, 10))
 
     for i in range(10):
         baseline = np.mean(true_slice[i])
@@ -1171,14 +1200,14 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
 
     for i in range(10):
         plt.text(-100, i * step_v, index_to_name[selected_types[i]],
-                fontsize=24, va='center')
+                fontsize=12, va='center')
 
     plt.ylim([-step_v, 10 * step_v])
     plt.yticks([])
 
     plt.xticks([0, end_frame - start_frame])
-    plt.gca().set_xticklabels([start_frame, end_frame], fontsize=20)
-    plt.gca().set_xlabel('frame', fontsize=24)
+    plt.gca().set_xticklabels([start_frame, end_frame], fontsize=12)
+    plt.gca().set_xlabel('frame', fontsize=14)
 
 
     plt.tight_layout()

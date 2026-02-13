@@ -84,13 +84,13 @@ if __name__ == "__main__":
             data_generate(
                 config,
                 device=device,
-                visualize=False,
+                visualize=True,
                 run_vizualized=0,
                 style="color",
                 alpha=1,
                 erase=True,
                 bSave=True,
-                step=2,
+                step=100,
             )
 
         if 'train_NGP' in task:

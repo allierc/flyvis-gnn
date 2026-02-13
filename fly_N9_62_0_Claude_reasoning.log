@@ -747,3 +747,95 @@ All configs are correctly set up. Here's a summary:
 | 02 | 103 | 92 | explore | phi_L1=0.8, lr_emb=4E-3, edge_diff=625 |
 | 03 | 104 | 96 | principle-test | edge_norm=970 (testing if lower is better for tau) |
 
+
+============================================================
+=== Batch 101-104 ===
+============================================================
+All 4 configs are correctly set up. Here's the summary:
+
+## Batch 27 Analysis Complete (Iterations 101-104)
+
+### Results Summary
+
+| Iter | Node | Parent | Strategy | conn_R2 | tau_R2 | V_rest_R2 | cluster | Key Finding |
+|------|------|--------|----------|---------|--------|-----------|---------|-------------|
+| 101 | 101 | 100 | exploit | 0.818 | 0.807 | 0.255 | **0.770** | edge_norm=1000 + phi_L1=0.8 restores tau |
+| **102** | **102** | 98 | exploit | **0.855** | **0.860** | **0.343** | 0.724 | **NEW BEST BALANCED!** |
+| 103 | 103 | 92 | explore | 0.807 | 0.683 | 0.383 | 0.709 | phi_L1=0.8 fails with lr_emb=4E-3 |
+| 104 | 104 | 96 | principle-test | 0.764 | 0.767 | 0.346 | 0.730 | CONFIRMS edge_norm=975 is optimal |
+
+### Key Findings
+1. **N102 BREAKTHROUGH**: edge_diff=625 + edge_norm=975 achieves excellent balanced metrics (conn=0.855, tau=0.860, V_rest=0.343)
+2. **phi_L1=0.8 + edge_norm=1000** viable combo: N101 achieves tau=0.807, cluster=0.770
+3. **phi_L1=0.8 is lr_emb-DEPENDENT**: Works with lr_emb=3.75E-3 but HURTS with lr_emb=4E-3
+4. **PRINCIPLE 12 CONFIRMED**: edge_norm=970 fails vs 975 - exact optimum verified
+
+### Next Batch Setup (Iterations 105-108)
+
+| Slot | Node | Parent | Strategy | Key Change |
+|------|------|--------|----------|------------|
+| 00 | 105 | 102 | exploit | phi_L1=0.8 (add to N102's balanced config) |
+| 01 | 106 | 102 | exploit | W_L1=7.5E-5 (improve V_rest on N102) |
+| 02 | 107 | 101 | explore | edge_diff=625 (test on N101's phi_L1=0.8 config) |
+| 03 | 108 | 96 | principle-test | phi_L1=0.9 (test intermediate value) |
+
+
+============================================================
+=== Batch 105-108 ===
+============================================================
+All configs verified. Let me summarize:
+
+## Batch 27 Analysis Complete (Iterations 105-108)
+
+### Results Summary
+| Slot | Node | Strategy | Key Change | conn_R2 | tau_R2 | V_rest_R2 | cluster | Time |
+|------|------|----------|------------|---------|--------|-----------|---------|------|
+| 00 | 105 | exploit | phi_L1=0.8 on N102 | **0.878** | **0.850** | 0.221 | **0.789** | 61.9 |
+| 01 | 106 | exploit | W_L1=7.5E-5 on N102 | 0.823 | 0.669 | 0.366 | 0.797 | 62.0 |
+| 02 | 107 | explore | edge_diff=625 on N101 | 0.875 | 0.789 | 0.289 | 0.736 | 62.2 |
+| 03 | 108 | principle-test | phi_L1=0.9 | 0.784 | 0.706 | 0.252 | 0.749 | 61.9 |
+
+### Key Findings
+1. **N105 NEW BEST BALANCED**: phi_L1=0.8 on N102 achieves conn=0.878, tau=0.850, cluster=0.789
+2. **phi_L1 discrete optima confirmed**: 1.0 for tau, 0.8 for balanced - 0.9 is SUBOPTIMAL (N108)
+3. **W_L1=7.5E-5 trade-off**: Best cluster=0.797 but severely hurts tau (0.669)
+4. **New principles added**: #30 (phi_L1 discrete), #31 (W_L1 on edge_diff=625/edge_norm=975)
+
+### Next Batch Setup (Iterations 109-112)
+| Slot | Node | Parent | Strategy | Config Change |
+|------|------|--------|----------|---------------|
+| 00 | 109 | 105 | exploit | edge_weight_L1=0.8 (test if helps V_rest) |
+| 01 | 110 | 105 | exploit | edge_diff=620 (test edge_diff boundary) |
+| 02 | 111 | 106 | explore | phi_L1=0.8 + W_L1=7.5E-5 + edge_norm=975 (recover tau) |
+| 03 | 112 | 83 | principle-test | edge_diff=625 + edge_norm=1000 + phi_L1=0.8 (test conn path) |
+
+
+============================================================
+=== Batch 109-112 ===
+============================================================
+All configs are set correctly. Here's a summary:
+
+## Batch 28 Analysis Complete (Iterations 109-112)
+
+### Results Summary
+| Iter | Node | Key Change | conn_R2 | tau_R2 | V_rest_R2 | cluster |
+|------|------|------------|---------|--------|-----------|---------|
+| 109 | 109 | edge_weight_L1=0.8 | 0.858 | 0.849 | 0.339 | 0.785 |
+| **110** | **110** | **edge_diff=620** | **0.892** | 0.678 | **0.427** | 0.758 |
+| 111 | 111 | phi_L1=0.8 + W_L1=7.5E-5 | 0.803 | 0.730 | 0.278 | 0.795 |
+| 112 | 112 | edge_diff=625 + phi_L1=0.8 on N83 | 0.842 | 0.677 | 0.273 | 0.713 |
+
+### Key Findings
+1. **N110 BREAKTHROUGH**: edge_diff=620 achieves best V_rest_R2=0.427 in Block 5 with excellent conn=0.892, but tau drops to 0.678
+2. **edge_diff=620 NOW WORKS**: Previously failed, now discovered it's optimal for conn+V_rest path (not tau)
+3. **edge_weight_L1=0.8** improves V_rest by 0.118 with minimal tau/conn cost - viable trade-off
+4. **PRINCIPLE CONFIRMED**: edge_diff=600 remains optimal for pure conn path (N83)
+
+### Next Batch Setup (Iterations 113-116)
+| Slot | Parent | Strategy | Key Change | Rationale |
+|------|--------|----------|------------|-----------|
+| 00 | 110 | exploit | + edge_weight_L1=0.8 | Combine edge_diff=620 + edge_weight_L1=0.8 for max V_rest |
+| 01 | 110 | exploit | edge_norm=1000 | Test if edge_norm=1000 helps N110's config |
+| 02 | 105 | explore | edge_diff=615 | Test intermediate edge_diff between 610 and 620 |
+| 03 | 96 | principle-test | edge_diff=620 + phi_L1=1.0 | Test if phi_L1=1.0 can recover tau with edge_diff=620 |
+

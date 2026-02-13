@@ -53,11 +53,11 @@ training:
   learning_rate_W_start: 0.0005
   learning_rate_start: 0.001
   learning_rate_embedding_start: 0.00375
-  coeff_edge_diff: 600
+  coeff_edge_diff: 620
   coeff_update_u_diff: 0
   coeff_update_msg_diff: 0
-  coeff_edge_norm: 1000
-  coeff_edge_weight_L1: 1
+  coeff_edge_norm: 975
+  coeff_edge_weight_L1: 0.8
   coeff_phi_weight_L1: 0.8
   coeff_phi_weight_L1_rate: 0.5
   coeff_edge_weight_L2: 0

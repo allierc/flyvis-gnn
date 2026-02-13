@@ -50,13 +50,13 @@ training:
   small_init_batch_size: false
   sparsity: none
   data_augmentation_loop: 20
-  learning_rate_W_start: 0.0006
+  learning_rate_W_start: 0.0005
   learning_rate_start: 0.0012
   learning_rate_embedding_start: 0.0015
   coeff_edge_diff: 750
   coeff_update_u_diff: 0
   coeff_update_msg_diff: 0
-  coeff_edge_norm: 1
+  coeff_edge_norm: 0.75
   coeff_edge_weight_L1: 0.3
   coeff_phi_weight_L1: 0.5
   coeff_phi_weight_L1_rate: 0.5

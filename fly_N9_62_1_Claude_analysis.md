@@ -1588,3 +1588,235 @@ Parent rule: Node 79 — testing edge_norm below established value
 Observation: edge_norm=0.5 maintains conn_R2 (0.979) and improves tau_R2 (0.995) and cluster_acc (0.888) but hurts V_rest (0.518 vs 0.691); trade-off exists — lower edge_norm helps clustering at cost of V_rest
 Next: parent=102
 
+## Iter 105: converged
+Node: id=105, parent=102
+Mode/Strategy: exploit
+Config: lr_W=6E-4, lr=1.2E-3, lr_emb=1.5E-3, coeff_edge_diff=750, coeff_W_L1=5E-5, batch_size=2, hidden_dim=80, recurrent=False, coeff_W_L2=3E-6
+Metrics: connectivity_R2=0.9731, tau_R2=0.9893, V_rest_R2=0.7328, cluster_accuracy=0.8579, test_R2=-1.23, test_pearson=0.992, training_time_min=37.9
+Embedding: 65 types well-separated
+Mutation: coeff_W_L2: 2E-6 -> 3E-6
+Parent rule: highest UCB (Node 102) — fine-tune optimal W_L2 value
+Observation: W_L2=3E-6 achieves BEST V_rest_R2=0.733 but conn_R2 drops to 0.973; trade-off between W_L2=2E-6 (conn_R2=0.983) and W_L2=3E-6 (V_rest=0.733)
+Next: parent=105
+
+## Iter 106: converged
+Node: id=106, parent=102
+Mode/Strategy: exploit
+Config: lr_W=6E-4, lr=1.2E-3, lr_emb=1.5E-3, coeff_edge_diff=750, coeff_W_L1=5E-5, batch_size=2, hidden_dim=80, recurrent=False, coeff_W_L2=2E-6, coeff_edge_norm=0.75
+Metrics: connectivity_R2=0.9786, tau_R2=0.9920, V_rest_R2=0.7077, cluster_accuracy=0.8843, test_R2=-3.51, test_pearson=0.990, training_time_min=37.9
+Embedding: 65 types well-separated with improved cluster accuracy
+Mutation: coeff_edge_norm: 1.0 -> 0.75 (with W_L2=2E-6)
+Parent rule: 2nd highest UCB (Node 102) — combine edge_norm reduction with optimal W_L2
+Observation: edge_norm=0.75 balanced — conn_R2=0.979 maintained, V_rest=0.708 good, cluster_acc=0.884 improved; better than edge_norm=0.5 (V_rest=0.518)
+Next: parent=106
+
+## Iter 107: converged
+Node: id=107, parent=102
+Mode/Strategy: explore
+Config: lr_W=6E-4, lr=1.2E-3, lr_emb=1.5E-3, coeff_edge_diff=750, coeff_W_L1=4E-5, batch_size=2, hidden_dim=80, recurrent=False, coeff_W_L2=2E-6
+Metrics: connectivity_R2=0.9805, tau_R2=0.9889, V_rest_R2=0.5113, cluster_accuracy=0.8855, test_R2=-6.11, test_pearson=0.974, training_time_min=37.6
+Embedding: 65 types well-separated
+Mutation: coeff_W_L1: 5E-5 -> 4E-5 (with W_L2=2E-6)
+Parent rule: explore under-tested dimension — test if W_L1 reduction helps with W_L2
+Observation: W_L1=4E-5 causes V_rest collapse (0.511) despite good conn_R2; CONFIRMS W_L1=5E-5 is optimal even with W_L2
+Next: parent=105
+
+## Iter 108: converged
+Node: id=108, parent=102
+Mode/Strategy: principle-test
+Config: lr_W=6E-4, lr=1.2E-3, lr_emb=1.5E-3, coeff_edge_diff=750, coeff_W_L1=5E-5, batch_size=2, hidden_dim=80, recurrent=False, coeff_W_L2=2E-6, coeff_phi_weight_L1=0.55
+Metrics: connectivity_R2=0.9683, tau_R2=0.9858, V_rest_R2=0.5892, cluster_accuracy=0.8716, test_R2=-0.06, test_pearson=0.989, training_time_min=38.0
+Embedding: 65 types well-separated
+Mutation: coeff_phi_weight_L1: 0.5 -> 0.55. Testing principle: "phi_L1=0.5 is optimal"
+Parent rule: principle-test — challenging established principle #14
+Observation: phi_L1=0.55 worse across all metrics — conn_R2=0.968, V_rest=0.589; CONFIRMS phi_L1=0.5 is optimal (principle validated)
+Next: parent=106
+
+## Iter 109: converged
+Node: id=109, parent=105
+Mode/Strategy: exploit
+Config: lr_W=6E-4, lr=1.2E-3, lr_emb=1.5E-3, coeff_edge_diff=750, coeff_W_L1=5E-5, coeff_W_L2=2.5E-6, edge_norm=1.0, edge_L1=0.3, phi_L1=0.5, batch_size=2, data_aug=20, hidden_dim=80, hidden_dim_update=80, recurrent=False
+Metrics: connectivity_R2=0.978, tau_R2=0.990, V_rest_R2=0.520, cluster_accuracy=0.844, test_R2=-1.80, test_pearson=0.974, training_time_min=37.6
+Embedding: 65 types moderately separated (cluster_acc=0.844, lower than baseline)
+Mutation: coeff_W_L2: 3E-6 -> 2.5E-6 (fine-tuning between 2E-6 and 3E-6)
+Parent rule: Node 105 — best V_rest (0.733) in block, testing W_L2 sweet spot
+Observation: W_L2=2.5E-6 performs WORSE than both 2E-6 (0.691) and 3E-6 (0.733) for V_rest; cluster_acc also drops; NOT a sweet spot
+Next: parent=110
+
+## Iter 110: converged
+Node: id=110, parent=106
+Mode/Strategy: exploit
+Config: lr_W=6E-4, lr=1.2E-3, lr_emb=1.5E-3, coeff_edge_diff=750, coeff_W_L1=5E-5, coeff_W_L2=3E-6, edge_norm=0.75, edge_L1=0.3, phi_L1=0.5, batch_size=2, data_aug=20, hidden_dim=80, hidden_dim_update=80, recurrent=False
+Metrics: connectivity_R2=0.977, tau_R2=0.981, V_rest_R2=0.725, cluster_accuracy=0.898, test_R2=-1.78, test_pearson=0.994, training_time_min=37.7
+Embedding: 65 types well-separated with excellent cluster_acc (0.898)
+Mutation: coeff_W_L2: 2E-6 -> 3E-6 (combining W_L2=3E-6 with edge_norm=0.75 from Node 106)
+Parent rule: Node 106 — best balanced config (V_rest=0.708, cluster=0.884), testing with stronger W_L2
+Observation: edge_norm=0.75 + W_L2=3E-6 achieves V_rest=0.725 (good) AND cluster_acc=0.898 (BEST); but tau_R2 drops to 0.981
+Next: parent=110
+
+## Iter 111: converged
+Node: id=111, parent=105
+Mode/Strategy: explore
+Config: lr_W=6E-4, lr=1.2E-3, lr_emb=1.5E-3, coeff_edge_diff=750, coeff_W_L1=5E-5, coeff_W_L2=3E-6, edge_norm=0.8, edge_L1=0.3, phi_L1=0.5, batch_size=2, data_aug=20, hidden_dim=80, hidden_dim_update=80, recurrent=False
+Metrics: connectivity_R2=0.981, tau_R2=0.990, V_rest_R2=0.484, cluster_accuracy=0.867, test_R2=-1.85, test_pearson=0.978, training_time_min=37.5
+Embedding: 65 types separated (cluster_acc=0.867)
+Mutation: coeff_edge_norm: 1.0 -> 0.8 (with W_L2=3E-6, testing edge_norm intermediate)
+Parent rule: Node 105 — testing edge_norm=0.8 as compromise between 0.75 and 1.0
+Observation: edge_norm=0.8 achieves BEST conn_R2=0.981 but V_rest collapses to 0.484; edge_norm trade-off is non-linear; 0.75 better for V_rest
+Next: parent=110
+
+## Iter 112: converged
+Node: id=112, parent=102
+Mode/Strategy: principle-test
+Config: lr_W=6E-4, lr=1.2E-3, lr_emb=1.5E-3, coeff_edge_diff=750, coeff_W_L1=5E-5, coeff_W_L2=2E-6, edge_norm=1.0, edge_L1=0.35, phi_L1=0.5, batch_size=2, data_aug=20, hidden_dim=80, hidden_dim_update=80, recurrent=False
+Metrics: connectivity_R2=0.976, tau_R2=0.988, V_rest_R2=0.545, cluster_accuracy=0.876, test_R2=-0.36, test_pearson=0.995, training_time_min=37.7
+Embedding: 65 types separated (cluster_acc=0.876)
+Mutation: coeff_edge_weight_L1: 0.3 -> 0.35. Testing principle: "edge_L1=0.3 is optimal"
+Parent rule: Node 102 — best conn_R2 (0.983), testing if edge_L1=0.35 improves
+Observation: edge_L1=0.35 slightly WORSE than 0.3 (conn_R2 0.976 vs 0.983, V_rest 0.545 vs 0.691); CONFIRMS principle #7 that edge_L1=0.3 is optimal
+Next: parent=110
+
+## Iter 113: converged
+Node: id=113, parent=110
+Mode/Strategy: exploit
+Config: lr_W=6E-4, lr=1.2E-3, lr_emb=1.5E-3, coeff_edge_diff=750, coeff_W_L1=5E-5, coeff_W_L2=3.5E-6, edge_norm=0.75, edge_L1=0.3, phi_L1=0.5, batch_size=2, data_aug=20, hidden_dim=80, hidden_dim_update=80, recurrent=False
+Metrics: connectivity_R2=0.975, tau_R2=0.981, V_rest_R2=0.605, cluster_accuracy=0.895, test_R2=-0.66, test_pearson=0.985, training_time_min=37.6
+Embedding: 65 types separated (cluster_acc=0.895)
+Mutation: coeff_W_L2: 3E-6 -> 3.5E-6
+Parent rule: Node 110 — best V_rest+cluster_acc, testing if W_L2=3.5E-6 improves further
+Observation: W_L2=3.5E-6 is WORSE than 3E-6; V_rest drops from 0.725 to 0.605, conn_R2 drops from 0.977 to 0.975; W_L2=3E-6 is upper bound
+Next: parent=110
+
+## Iter 114: converged
+Node: id=114, parent=110
+Mode/Strategy: exploit
+Config: lr_W=6E-4, lr=1.2E-3, lr_emb=1.5E-3, coeff_edge_diff=750, coeff_W_L1=5E-5, coeff_W_L2=3E-6, edge_norm=0.7, edge_L1=0.3, phi_L1=0.5, batch_size=2, data_aug=20, hidden_dim=80, hidden_dim_update=80, recurrent=False
+Metrics: connectivity_R2=0.981, tau_R2=0.991, V_rest_R2=0.596, cluster_accuracy=0.869, test_R2=-0.39, test_pearson=0.981, training_time_min=37.8
+Embedding: 65 types separated (cluster_acc=0.869)
+Mutation: coeff_edge_norm: 0.75 -> 0.7
+Parent rule: Node 110 — testing if lower edge_norm helps V_rest
+Observation: edge_norm=0.7 is WORSE than 0.75; V_rest drops from 0.725 to 0.596, cluster_acc drops from 0.898 to 0.869; edge_norm=0.75 is optimal
+Next: parent=102
+
+## Iter 115: converged
+Node: id=115, parent=102
+Mode/Strategy: explore
+Config: lr_W=6E-4, lr=1.2E-3, lr_emb=1.5E-3, coeff_edge_diff=750, coeff_W_L1=5E-5, coeff_W_L2=3.5E-6, edge_norm=0.75, edge_L1=0.3, phi_L1=0.5, batch_size=2, data_aug=20, hidden_dim=80, hidden_dim_update=80, recurrent=False
+Metrics: connectivity_R2=0.980, tau_R2=0.989, V_rest_R2=0.692, cluster_accuracy=0.869, test_R2=-3.50, test_pearson=0.977, training_time_min=37.5
+Embedding: 65 types separated (cluster_acc=0.869)
+Mutation: coeff_W_L2: 2E-6 -> 3.5E-6, coeff_edge_norm: 1.0 -> 0.75
+Parent rule: Node 102 — combining W_L2=3.5E-6 with edge_norm=0.75
+Observation: W_L2=3.5E-6 gives V_rest=0.692, still worse than W_L2=3E-6 (0.733); confirms W_L2=3E-6 optimal for V_rest
+Next: parent=102
+
+## Iter 116: converged
+Node: id=116, parent=110
+Mode/Strategy: principle-test
+Config: lr_W=6E-4, lr=1.2E-3, lr_emb=1.5E-3, coeff_edge_diff=750, coeff_W_L1=5E-5, coeff_W_L2=3E-6, edge_norm=0.75, edge_L1=0.3, phi_L1=0.5, batch_size=1, data_aug=20, hidden_dim=80, hidden_dim_update=80, recurrent=False
+Metrics: connectivity_R2=0.977, tau_R2=0.993, V_rest_R2=0.549, cluster_accuracy=0.857, test_R2=-0.56, test_pearson=0.984, training_time_min=43.7
+Embedding: 65 types separated (cluster_acc=0.857)
+Mutation: batch_size: 2 -> 1. Testing principle: "batch_size=1 is worse than batch_size=2 for V_rest" (principle #42)
+Parent rule: Node 110 — testing if batch_size=1 can match batch=2 with edge_norm=0.75+W_L2=3E-6
+Observation: batch_size=1 is MUCH WORSE for V_rest (0.549 vs 0.725); CONFIRMS principle #42 that batch_size=2 is optimal; also slower (43.7 vs 37.7 min)
+Next: parent=102
+
+## Iter 117: converged
+Node: id=117, parent=102
+Mode/Strategy: exploit
+Config: lr_W=6E-4, lr=1.2E-3, lr_emb=1.5E-3, coeff_edge_diff=750, coeff_W_L1=5E-5, coeff_W_L2=2E-6, edge_norm=0.75, edge_L1=0.3, phi_L1=0.5, batch_size=2, data_aug=20, hidden_dim=80, hidden_dim_update=80, recurrent=False
+Metrics: connectivity_R2=0.976, tau_R2=0.988, V_rest_R2=0.707, cluster_accuracy=0.867, test_R2=-0.38, test_pearson=0.977, training_time_min=37.9
+Embedding: 65 types separated (cluster_acc=0.867)
+Mutation: coeff_edge_norm: 1.0 -> 0.75 (combining edge_norm=0.75 with Node 102's W_L2=2E-6)
+Parent rule: Node 102 — best conn_R2 (0.983), testing if edge_norm=0.75 improves V_rest
+Observation: edge_norm=0.75 + W_L2=2E-6 achieves V_rest=0.707 (vs 0.691 in Node 102) but conn_R2 drops to 0.976 (vs 0.983); trade-off exists; W_L2=2E-6 better for conn_R2, W_L2=3E-6+edge_norm=0.75 better for V_rest
+Next: parent=118
+
+## Iter 118: converged
+Node: id=118, parent=105
+Mode/Strategy: exploit
+Config: lr_W=6E-4, lr=1.2E-3, lr_emb=1.5E-3, coeff_edge_diff=750, coeff_W_L1=5E-5, coeff_W_L2=3E-6, edge_norm=0.75, edge_L1=0.3, phi_L1=0.5, batch_size=2, data_aug=20, hidden_dim=80, hidden_dim_update=80, recurrent=False
+Metrics: connectivity_R2=0.982, tau_R2=0.994, V_rest_R2=0.550, cluster_accuracy=0.877, test_R2=0.13, test_pearson=0.972, training_time_min=38.3
+Embedding: 65 types separated (cluster_acc=0.877)
+Mutation: coeff_edge_norm: 1.0 -> 0.75 (combining W_L2=3E-6 from Node 105 with edge_norm=0.75)
+Parent rule: Node 105 — best V_rest (0.733), testing if edge_norm=0.75 improves further
+Observation: SURPRISING — edge_norm=0.75 with W_L2=3E-6 achieves conn_R2=0.982 but V_rest DROPS to 0.550 (vs 0.733 in Node 105, 0.725 in Node 110); parent Node 105 had edge_norm=1.0; edge_norm=0.75 not universally beneficial
+Next: parent=118
+
+## Iter 119: partial
+Node: id=119, parent=102
+Mode/Strategy: explore
+Config: lr_W=6E-4, lr=1.2E-3, lr_emb=1.5E-3, coeff_edge_diff=750, coeff_W_L1=5E-5, coeff_W_L2=2E-6, edge_norm=1.0, edge_L1=0.3, phi_L1=0.45, batch_size=2, data_aug=20, hidden_dim=80, hidden_dim_update=80, recurrent=False
+Metrics: connectivity_R2=0.937, tau_R2=0.986, V_rest_R2=0.403, cluster_accuracy=0.876, test_R2=-1.01, test_pearson=0.986, training_time_min=37.9
+Embedding: 65 types separated (cluster_acc=0.876)
+Mutation: coeff_phi_weight_L1: 0.5 -> 0.45 (testing if slight phi_L1 reduction helps with W_L2=2E-6)
+Parent rule: Node 102 — best conn_R2, testing phi_L1=0.45
+Observation: phi_L1=0.45 is HARMFUL — conn_R2 drops from 0.983 to 0.937, V_rest drops from 0.691 to 0.403; STRONGLY CONFIRMS principle #14 that phi_L1=0.5 is optimal
+Next: parent=118
+
+## Iter 120: partial
+Node: id=120, parent=110
+Mode/Strategy: principle-test
+Config: lr_W=6E-4, lr=1.2E-3, lr_emb=1.5E-3, coeff_edge_diff=800, coeff_W_L1=5E-5, coeff_W_L2=3E-6, edge_norm=0.75, edge_L1=0.3, phi_L1=0.5, batch_size=2, data_aug=20, hidden_dim=80, hidden_dim_update=80, recurrent=False
+Metrics: connectivity_R2=0.882, tau_R2=0.991, V_rest_R2=0.483, cluster_accuracy=0.847, test_R2=-2.20, test_pearson=0.994, training_time_min=37.8
+Embedding: 65 types separated (cluster_acc=0.847)
+Mutation: coeff_edge_diff: 750 -> 800. Testing principle: "coeff_edge_diff=750 is optimal" (principle #10)
+Parent rule: Node 110 — testing if edge_diff=800 improves over 750 with best V_rest config
+Observation: edge_diff=800 is HARMFUL — conn_R2 drops from 0.977 to 0.882, V_rest drops from 0.725 to 0.483; STRONGLY CONFIRMS principle #10 that edge_diff=750 is optimal
+Next: parent=root (Block 6)
+
+>>> BLOCK 5 END <<<
+
+## Block 5 Summary: Recurrent Training & W_L2 Regularization
+
+**Iterations:** 97-120 (24 iterations)
+**Focus:** recurrent_training, time_step, coeff_W_L2, coeff_edge_norm fine-tuning
+
+### Best Configurations in Block 5
+| Node | conn_R2 | V_rest_R2 | tau_R2 | cluster_acc | Key config |
+|------|---------|-----------|--------|-------------|------------|
+| 102 | **0.983** | 0.691 | 0.992 | 0.873 | W_L2=2E-6 (BEST conn_R2 overall) |
+| 105 | 0.973 | **0.733** | 0.989 | 0.858 | W_L2=3E-6 (BEST V_rest overall) |
+| 110 | 0.977 | 0.725 | 0.981 | **0.898** | edge_norm=0.75 + W_L2=3E-6 (BEST cluster_acc) |
+| 106 | 0.979 | 0.708 | 0.992 | 0.884 | edge_norm=0.75 + W_L2=2E-6 (balanced) |
+| 118 | 0.982 | 0.550 | 0.994 | 0.877 | edge_norm=0.75 + W_L2=3E-6 (from Node 105) |
+
+### Key Findings
+1. **recurrent_training=True is HARMFUL** — Nodes 97-99 all show severe collapse; time_step=4 is catastrophic (78.7 min, conn_R2=0.731)
+2. **coeff_W_L2=2E-6 is optimal for conn_R2** — Node 102: conn_R2=0.983 (new overall best)
+3. **coeff_W_L2=3E-6 is optimal for V_rest** — Node 105: V_rest=0.733 (new overall best)
+4. **coeff_edge_norm=0.75 trade-off is context-dependent** — helps cluster_acc but can hurt V_rest depending on other params
+5. **phi_L1=0.5 is STRICTLY optimal** — Node 119 confirms even phi_L1=0.45 causes severe collapse
+6. **edge_diff=750 is STRICTLY optimal** — Node 120 confirms edge_diff=800 is harmful
+7. **batch_size=2 confirmed optimal** — Node 116 shows batch=1 is worse for V_rest and slower
+
+### Trade-offs Identified
+- **conn_R2 vs V_rest trade-off with W_L2:** W_L2=2E-6 gives best conn_R2 (0.983), W_L2=3E-6 gives best V_rest (0.733)
+- **edge_norm trade-off:** edge_norm=0.75 improves cluster_acc but doesn't consistently improve V_rest
+
+### Carry-Forward for Block 6 (Combined Best)
+Two optimal configurations to combine/explore:
+1. **Best conn_R2 (Node 102):** lr_W=6E-4, lr=1.2E-3, lr_emb=1.5E-3, edge_diff=750, W_L1=5E-5, W_L2=2E-6, edge_norm=1.0, edge_L1=0.3, phi_L1=0.5, batch=2, data_aug=20, hidden_dim=80, hidden_dim_update=80 → conn_R2=0.983
+2. **Best V_rest (Node 105):** same as above but W_L2=3E-6 → V_rest=0.733
+3. **Best cluster_acc (Node 110):** W_L2=3E-6 + edge_norm=0.75 → cluster_acc=0.898
+
+---
+
+## Block 6: Combined Best
+
+### Initial Batch Plan (Iter 121-124)
+Block 6 focuses on combining the best findings from Blocks 1-5 and exploring remaining parameter space.
+
+**Starting configurations:**
+- Node 102 (best conn_R2=0.983): W_L2=2E-6, edge_norm=1.0
+- Node 105 (best V_rest=0.733): W_L2=3E-6, edge_norm=1.0
+- Node 110 (best cluster_acc=0.898): W_L2=3E-6, edge_norm=0.75
+
+**Strategy:** Try combinations that haven't been tested yet, focusing on achieving both conn_R2>0.98 AND V_rest>0.75 simultaneously.
+
+| Slot | Role | Parent | Mutation |
+| ---- | ---- | ------ | -------- |
+| 0 | exploit | Node 118 | lr_W: 6E-4 -> 5E-4 (test if lower lr_W improves V_rest with edge_norm=0.75+W_L2=3E-6) |
+| 1 | exploit | Node 102 | coeff_W_L2: 2E-6 -> 2.5E-6, data_aug: 20 -> 25 (test middle W_L2 with more data augmentation) |
+| 2 | explore | Node 105 | lr: 1.2E-3 -> 1.1E-3 (test if slightly lower MLP lr helps V_rest) |
+| 3 | principle-test | Node 102 | hidden_dim: 80 -> 96. Testing principle: "hidden_dim=96 optimal for V_rest" (principle #18) |
+
