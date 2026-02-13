@@ -1,0 +1,208 @@
+======================================================================
+ANALYSIS TOOL: Batch 1 (Iters 1-4) - Understanding Difficult Models
+======================================================================
+
+=== CONNECTIVITY R² ANALYSIS ===
+Computing learned vs true weight correlation for each slot...
+
+Model 049 (Slot 0):
+  connectivity_R2 = -1.3494
+  connectivity_pearson = -0.2510
+  RMSE = 0.445731
+  W_true:  mean=0.012590, std=0.290802
+  W_learned: mean=-0.021137, std=0.270955
+
+Model 011 (Slot 1):
+  connectivity_R2 = -0.5801
+  connectivity_pearson = -0.1749
+  RMSE = 0.389270
+  W_true:  mean=0.003874, std=0.309673
+  W_learned: mean=-0.021986, std=0.186465
+
+Model 041 (Slot 2):
+  connectivity_R2 = 0.3268
+  connectivity_pearson = 0.5747
+  RMSE = 0.271537
+  W_true:  mean=0.012930, std=0.330953
+  W_learned: mean=0.012424, std=0.209484
+
+Model 003 (Slot 3):
+  connectivity_R2 = 0.5580
+  connectivity_pearson = 0.7792
+  RMSE = 0.180171
+  W_true:  mean=0.006927, std=0.271014
+  W_learned: mean=0.015613, std=0.151775
+
+
+=== W_TRUE STRUCTURE COMPARISON ===
+Comparing ground truth weight distributions across all 4 difficult models...
+
+Model      N_edges    Nonzero    Density    Mean         Std          |W|<0.01     |W|>=0.1    
+------------------------------------------------------------------------------------------
+049        434112     422108     0.9723     0.012590     0.290802     145905       69682       
+011        434112     416216     0.9588     0.003874     0.309673     170331       69193       
+041        434112     427272     0.9842     0.012930     0.330953     152559       77897       
+003        434112     415330     0.9567     0.006927     0.271014     155774       79819       
+
+
+=== PER-NEURON-TYPE WEIGHT ANALYSIS ===
+Analyzing weight recovery by source neuron type...
+
+
+Model 049 - Per-Type Recovery:
+  Overall connectivity_R2: -1.3494
+  Number of neuron types: 13
+  Hardest 5 types (lowest R²):
+    Type   0: R²=-3.1991, n_edges=425802, true_mean=0.025541
+    Type  -6: R²=0.0180, n_edges=   910, true_mean=-0.671593
+    Type  -5: R²=0.0219, n_edges=   546, true_mean=-0.648879
+    Type  -4: R²=0.0236, n_edges=   596, true_mean=-0.648498
+    Type   4: R²=0.0268, n_edges=   598, true_mean=-0.646370
+  Easiest 5 types (highest R²):
+    Type  -1: R²=0.0296, n_edges=   746, true_mean=-0.647661
+    Type  -3: R²=0.0297, n_edges=   646, true_mean=-0.648176
+    Type   5: R²=0.0306, n_edges=   548, true_mean=-0.646555
+    Type   1: R²=0.0314, n_edges=   748, true_mean=-0.645962
+    Type   6: R²=0.0336, n_edges=   930, true_mean=-0.657411
+
+Model 011 - Per-Type Recovery:
+  Overall connectivity_R2: -0.5801
+  Number of neuron types: 13
+  Hardest 5 types (lowest R²):
+    Type  -6: R²=-0.6116, n_edges=   910, true_mean=-0.133312
+    Type  -3: R²=-0.6007, n_edges=   646, true_mean=-0.129580
+    Type  -5: R²=-0.5969, n_edges=   546, true_mean=-0.129692
+    Type  -4: R²=-0.5960, n_edges=   596, true_mean=-0.129631
+    Type   0: R²=-0.5927, n_edges=425802, true_mean=0.006474
+  Easiest 5 types (highest R²):
+    Type   6: R²=-0.5680, n_edges=   930, true_mean=-0.126973
+    Type   5: R²=-0.4356, n_edges=   548, true_mean=-0.128630
+    Type   3: R²=-0.4216, n_edges=   648, true_mean=-0.128682
+    Type  -1: R²=-0.4114, n_edges=   746, true_mean=-0.129498
+    Type   1: R²=-0.3314, n_edges=   748, true_mean=-0.128720
+
+Model 041 - Per-Type Recovery:
+  Overall connectivity_R2: 0.3268
+  Number of neuron types: 13
+  Hardest 5 types (lowest R²):
+    Type   6: R²=0.1646, n_edges=   930, true_mean=-0.277335
+    Type  -6: R²=0.1853, n_edges=   910, true_mean=-0.289894
+    Type  -3: R²=0.1878, n_edges=   646, true_mean=-0.281784
+    Type   4: R²=0.1882, n_edges=   598, true_mean=-0.279969
+    Type  -2: R²=0.1887, n_edges=   696, true_mean=-0.281688
+  Easiest 5 types (highest R²):
+    Type  -5: R²=0.1937, n_edges=   546, true_mean=-0.282027
+    Type  -1: R²=0.1949, n_edges=   746, true_mean=-0.281606
+    Type  -4: R²=0.1951, n_edges=   596, true_mean=-0.281895
+    Type   1: R²=0.1976, n_edges=   748, true_mean=-0.280066
+    Type   0: R²=0.3905, n_edges=425802, true_mean=0.018676
+
+Model 003 - Per-Type Recovery:
+  Overall connectivity_R2: 0.5580
+  Number of neuron types: 13
+  Hardest 5 types (lowest R²):
+    Type   4: R²=0.3310, n_edges=   598, true_mean=-0.298595
+    Type   2: R²=0.3336, n_edges=   698, true_mean=-0.298520
+    Type   3: R²=0.3339, n_edges=   648, true_mean=-0.298555
+    Type   5: R²=0.3339, n_edges=   548, true_mean=-0.298643
+    Type   6: R²=0.3340, n_edges=   930, true_mean=-0.301459
+  Easiest 5 types (highest R²):
+    Type  -5: R²=0.3375, n_edges=   546, true_mean=-0.300518
+    Type  -3: R²=0.3378, n_edges=   646, true_mean=-0.300139
+    Type  -6: R²=0.3383, n_edges=   910, true_mean=-0.312771
+    Type  -1: R²=0.3392, n_edges=   746, true_mean=-0.299862
+    Type   0: R²=0.6887, n_edges=425802, true_mean=0.012937
+
+
+=== WEIGHT MAGNITUDE VS RECOVERY ERROR ===
+Are weak edges harder to recover than strong edges?
+
+Model 049:
+  |W|       <0.001: n=  65859, mean_error=0.032964, rel_error=941277.4375
+  |W|   0.001-0.01: n=  80046, mean_error=0.031050, rel_error=8.8027
+  |W|     0.01-0.1: n= 218525, mean_error=0.139082, rel_error=3.5415
+  |W|      0.1-1.0: n=  65359, mean_error=0.578225, rel_error=2.6644
+  |W|         >1.0: n=   4323, mean_error=2.984200, rel_error=1.5185
+
+Model 011:
+  |W|       <0.001: n= 102079, mean_error=0.048934, rel_error=1339768.3750
+  |W|   0.001-0.01: n=  68252, mean_error=0.036428, rel_error=8.5748
+  |W|     0.01-0.1: n= 194588, mean_error=0.070294, rel_error=1.9161
+  |W|      0.1-1.0: n=  66792, mean_error=0.365181, rel_error=1.5061
+  |W|         >1.0: n=   2401, mean_error=3.416066, rel_error=1.0274
+
+Model 041:
+  |W|       <0.001: n=  93304, mean_error=0.019178, rel_error=96054.8750
+  |W|   0.001-0.01: n=  59255, mean_error=0.018033, rel_error=7.0800
+  |W|     0.01-0.1: n= 203656, mean_error=0.039560, rel_error=1.1228
+  |W|      0.1-1.0: n=  73161, mean_error=0.160638, rel_error=0.6419
+  |W|         >1.0: n=   4736, mean_error=1.532861, rel_error=0.5946
+
+Model 003:
+  |W|       <0.001: n=  97387, mean_error=0.008671, rel_error=110801.1797
+  |W|   0.001-0.01: n=  58387, mean_error=0.007074, rel_error=1.5274
+  |W|     0.01-0.1: n= 198519, mean_error=0.011208, rel_error=0.3940
+  |W|      0.1-1.0: n=  75696, mean_error=0.055347, rel_error=0.2097
+  |W|         >1.0: n=   4123, mean_error=1.309433, rel_error=0.6325
+
+
+=== LEARNED EMBEDDING ANALYSIS ===
+Analyzing the learned neuron embeddings...
+
+Model 049:
+  Embedding shape: (13741, 2)
+  Mean per dim: [0.80675334 1.0032394 ]
+  Std per dim: [0.76041764 0.8855868 ]
+  Range per dim: [3.8154664 4.9606857]
+  Inter-neuron variance: 0.681249
+  Has NaN: False, Has Inf: False
+
+Model 011:
+  Embedding shape: (13741, 2)
+  Mean per dim: [0.96576035 0.7105408 ]
+  Std per dim: [0.9617171  0.67337227]
+  Range per dim: [6.5214677 5.0343275]
+  Inter-neuron variance: 0.689165
+  Has NaN: False, Has Inf: False
+
+Model 041:
+  Embedding shape: (13741, 2)
+  Mean per dim: [1.3072981 1.0319996]
+  Std per dim: [1.1370182  0.98259896]
+  Range per dim: [13.574037  8.355658]
+  Inter-neuron variance: 1.129156
+  Has NaN: False, Has Inf: False
+
+Model 003:
+  Embedding shape: (13741, 2)
+  Mean per dim: [0.9231123 1.101205 ]
+  Std per dim: [0.85699266 0.7938897 ]
+  Range per dim: [5.276966  3.8660445]
+  Inter-neuron variance: 0.682349
+  Has NaN: False, Has Inf: False
+
+
+======================================================================
+SUMMARY: KEY FINDINGS FOR UNDERSTANDING HYPOTHESES
+======================================================================
+
+1. CONNECTIVITY R² RESULTS:
+   Model 049: R²=-1.3494 (baseline=0.6340, change=-1.9834)
+   Model 011: R²=-0.5801 (baseline=0.3080, change=-0.8881)
+   Model 041: R²=0.3268 (baseline=0.6290, change=-0.3022)
+   Model 003: R²=0.5580 (baseline=0.6270, change=-0.0690)
+
+2. W_TRUE STRUCTURE PATTERNS:
+   Model 049: 33.6% weak (|W|<0.01), 16.1% strong (|W|>=0.1)
+   Model 011: 39.2% weak (|W|<0.01), 15.9% strong (|W|>=0.1)
+   Model 041: 35.1% weak (|W|<0.01), 17.9% strong (|W|>=0.1)
+   Model 003: 35.9% weak (|W|<0.01), 18.4% strong (|W|>=0.1)
+
+3. IMPLICATIONS FOR HYPOTHESES:
+   - Check if models with more weak edges have lower connectivity_R²
+   - Check if embedding collapse (low variance) correlates with failure
+   - Compare per-type hardest types across models — are they the same?
+
+======================================================================
+END OF ANALYSIS
+======================================================================
