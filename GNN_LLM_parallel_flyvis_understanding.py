@@ -1109,7 +1109,7 @@ revealed something about WHY a model is hard, design the next experiment to test
 
         # UCB tree visualization (save every 4 batches)
         should_save_tree = (batch_first == 1) or (batch_last % 16 == 0)
-        if should_save_tree:
+        if should_save_tree and os.path.exists(ucb_path):
             tree_save_dir = f"{exploration_dir}/exploration_tree"
             os.makedirs(tree_save_dir, exist_ok=True)
             ucb_tree_path = f"{tree_save_dir}/ucb_tree_iter_{batch_last:03d}.png"
