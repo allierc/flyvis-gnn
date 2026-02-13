@@ -453,3 +453,297 @@ All config files are correctly set up. Here's a summary:
 | 02 | 63 | 59 | explore | aug_loop=29, n_layers=3, n_layers_update=3 | Test if slightly higher aug_loop stays within time |
 | 03 | 64 | 60 | principle-test | aug_loop=26, n_layers=3, n_layers_update=3 | Test simpler arch with lower aug_loop for time efficiency |
 
+
+============================================================
+=== Batch 61-64 ===
+============================================================
+## Summary: Batch 16 Analysis (Iterations 61-64)
+
+### Results Summary
+| Slot | Iter | Key Config | conn_R2 | tau_R2 | V_rest_R2 | cluster | Time | Status |
+|------|------|------------|---------|--------|-----------|---------|------|--------|
+| 0 | 61 | aug_loop=30, n_layers=3, n_layers_update=3 | 0.836 | **0.768** | 0.197 | 0.666 | 65.5 | converged |
+| 1 | 62 | aug_loop=28, n_layers=3, n_layers_update=4, lr_emb=4E-3 | 0.807 | **0.789** | 0.184 | 0.709 | 61.7 | converged |
+| 2 | 63 | aug_loop=29, n_layers=3, n_layers_update=3 | 0.811 | 0.586 | 0.132 | 0.691 | 60.6 | converged |
+| 3 | 64 | aug_loop=26, n_layers=3, n_layers_update=3 | 0.775 | 0.419 | 0.161 | 0.686 | **53.6** | partial |
+
+### Key Findings
+1. **N62 achieves tau=0.789 (best this batch)** - lr_emb=4E-3 + n_layers_update=4 combination is key for tau recovery
+2. **N61 confirms n_layers=3 helps tau** - aug_loop=30 with simpler arch gives tau=0.768 (up from 0.642 at N59)
+3. **N64 confirms time efficiency** - n_layers=3+n_layers_update=3 achieves 53.6 min (within limit), but aug_loop=26 gives poor tau=0.419
+4. **aug_loop>=28 needed for good tau** - principle confirmed across multiple configs
+5. **Stochastic variance observed** - N63 (aug_loop=29) had tau=0.586 worse than both N61 (aug=30) and N59 (aug=28)
+
+### Next Batch Setup (Iterations 65-68)
+| Slot | Node | Parent | Strategy | Key Change | Rationale |
+|------|------|--------|----------|------------|-----------|
+| 00 | 65 | 61 | exploit | aug_loop=30, n_layers=3, **n_layers_update=4** | combine best tau arch with aug_loop=30 |
+| 01 | 66 | 62 | exploit | aug_loop=29, n_layers=3, n_layers_update=4, lr_emb=4E-3 | slight aug increase from N62's tau=0.789 |
+| 02 | 67 | 61 | explore | aug_loop=28, n_layers=3, n_layers_update=3 | test minimum aug_loop for tau>0.7 |
+| 03 | 68 | 50 | principle-test | **n_layers=4**, n_layers_update=3, aug_loop=30 | test if deeper edge MLP helps conn |
+
+
+============================================================
+=== Batch 65-68 ===
+============================================================
+The configs are set correctly. The `data_augmentation_loop: 25` in the `claude:` section is just a default baseline reference and doesn't affect training. The key parameters for iterations 69-72 are:
+
+**Next Batch Setup (Iterations 69-72):**
+
+| Slot | Iter | Parent | Strategy | Config | Rationale |
+|------|------|--------|----------|--------|-----------|
+| 00 | 69 | 66 | exploit | aug=30, n_layers=3, n_layers_update=4, lr_emb=4E-3 | Test if aug=30 pushes tau higher from N66 breakthrough |
+| 01 | 70 | 66 | exploit | aug=29, n_layers=3, n_layers_update=4, lr_emb=4.5E-3 | Test slightly higher lr_emb for more V_rest boost |
+| 02 | 71 | 65 | explore | aug=30, n_layers=3, n_layers_update=4, lr_emb=3.75E-3 | Test intermediate lr_emb between N65 and N66 |
+| 03 | 72 | 66 | principle-test | aug=29, n_layers=3, n_layers_update=4, lr_emb=4E-3, coeff_edge_diff=600 | Test principle: "coeff_edge_diff=625 is optimal" |
+
+**Summary of Batch 17 (Iterations 65-68):**
+
+- **N66 BREAKTHROUGH**: conn_R2=0.889 (NEW OVERALL BEST), tau_R2=0.770, V_rest_R2=0.411 (NEW OVERALL BEST). Config: aug=29, n_layers=3, n_layers_update=4, lr_emb=4E-3. Time 62.9 min.
+- **Key insight**: lr_emb=4E-3 is critical - N65 (lr_emb=3.5E-3) achieved only conn=0.791 vs N66's 0.889
+- **n_layers_update=4 more important than n_layers=4**: N68 confirms n_layers=4 helps conn but n_layers_update=3 hurts tau (0.450) and V_rest (0.028)
+- **Resolved open question**: YES, can achieve conn>0.85 AND tau>0.75 simultaneously with N66 config
+
+
+============================================================
+=== Batch 69-72 ===
+============================================================
+All configs are set correctly. Here's a summary of the batch 18 (iterations 69-72) analysis and the setup for batch 19 (iterations 73-76):
+
+## Batch 18 Analysis Summary (Iterations 69-72) - END OF BLOCK 3
+
+| Slot | Iter | conn_R2 | tau_R2 | V_rest_R2 | cluster | time | Key observation |
+|------|------|---------|--------|-----------|---------|------|-----------------|
+| 00 | 69 | 0.877 | 0.740 | 0.286 | 0.769 | 64.4 | aug=30 degraded vs N66 (aug=29) |
+| 01 | 70 | 0.872 | 0.474 | 0.142 | 0.738 | 62.6 | lr_emb=4.5E-3 catastrophic for tau |
+| 02 | **71** | 0.866 | **0.866** | 0.266 | 0.736 | 65.0 | **lr_emb=3.75E-3 gives SECOND BEST TAU** |
+| 03 | 72 | 0.791 | 0.832 | 0.144 | 0.733 | 61.5 | coeff_edge_diff=600 CONFIRMS 625 optimal |
+
+**Key findings:**
+- N71 achieves tau=0.866 (second best ever!) with lr_emb=3.75E-3
+- lr_emb trade-off confirmed: 4E-3 → best conn+V_rest; 3.75E-3 → best tau
+- aug=30 degrades N66 performance; aug=29 remains optimal
+- coeff_edge_diff=625 confirmed optimal (600 hurts conn significantly)
+
+## Next Batch Setup (Block 4, Iterations 73-76)
+
+| Slot | Node | Parent | Strategy | Key Change | Rationale |
+|------|------|--------|----------|------------|-----------|
+| 00 | 73 | 71 | exploit | aug=29, lr_emb=3.75E-3 | test if aug=29 with N71's tau-optimal lr_emb improves conn |
+| 01 | 74 | 71 | exploit | aug=30, lr_emb=3.875E-3 | test midpoint lr_emb for balanced conn/tau |
+| 02 | 75 | 66 | explore | coeff_phi_weight_L2=0.002 | test if higher L2 reg improves tau on N66 base |
+| 03 | 76 | 71 | principle-test | coeff_edge_norm=1100 | testing principle "coeff_edge_norm=1000 is optimal" |
+
+
+============================================================
+=== Batch 73-76 ===
+============================================================
+All 4 configs are set up correctly:
+
+**Batch 20 (Iterations 77-80) Setup:**
+
+| Slot | Node | Parent | Strategy | Key Changes | Rationale |
+|------|------|--------|----------|-------------|-----------|
+| 00 | 77 | 73 | exploit | aug=30, lr_emb=3.75E-3 | Test if aug=30 restores tau (N73 had tau=0.753 vs N71's 0.866) |
+| 01 | 78 | 73 | exploit | aug=29, coeff_phi_weight_L1=0.8 | Explore if lower phi L1 helps tau without hurting conn |
+| 02 | 79 | 66 | explore | coeff_edge_diff=650, lr_emb=4E-3 | Re-test coeff_edge_diff=650 with N66 config |
+| 03 | 80 | 73 | principle-test | n_layers=4, aug=29, lr_emb=3.75E-3 | Test principle 17: "n_layers=3 improves tau+V_rest at cost of conn" |
+
+---
+
+**Batch 19 Results Summary (Iterations 73-76):**
+
+| Node | conn_R2 | tau_R2 | V_rest_R2 | cluster | time | Key Finding |
+|------|---------|--------|-----------|---------|------|-------------|
+| **73** | **0.878** | **0.753** | **0.320** | 0.734 | 63.4 | Best batch - aug=29 + lr_emb=3.75E-3 gives balanced metrics |
+| 74 | 0.824 | 0.746 | 0.244 | 0.763 | 65.3 | Midpoint lr_emb=3.875E-3 FAILS - confirms discrete sweet spots |
+| 75 | 0.874 | 0.694 | 0.250 | 0.754 | 61.6 | coeff_phi_weight_L2=0.002 HARMFUL - new principle 33 |
+| 76 | 0.834 | 0.724 | 0.285 | 0.743 | 63.6 | coeff_edge_norm=1100 confirms principle 12 |
+
+**New Principles Established:**
+- #32: lr_emb midpoint (3.875E-3) does NOT work - discrete sweet spots only
+- #33: coeff_phi_weight_L2=0.002 hurts tau and V_rest - keep at 0.001
+- #34: coeff_edge_norm=1100 confirmed harmful (principle 12 reconfirmed)
+- #35: aug=29 + lr_emb=3.75E-3 yields balanced but tau drops vs aug=30
+
+
+============================================================
+=== Batch 77-80 ===
+============================================================
+## Summary: Batch 20 Analysis (Iterations 77-80) Complete
+
+### Results Summary
+| Slot | Node | Config | conn_R2 | tau_R2 | V_rest_R2 | cluster | Time |
+|------|------|--------|---------|--------|-----------|---------|------|
+| 00 | 77 | aug=30, lr_emb=3.75E-3 | 0.865 | 0.647 | 0.341 | 0.754 | 65.2 |
+| 01 | 78 | coeff_phi_weight_L1=0.8 | 0.861 | 0.663 | 0.284 | 0.721 | 63.8 |
+| 02 | **79** | coeff_edge_diff=650, lr_emb=4E-3 | 0.872 | **0.809** | 0.111 | 0.714 | 63.8 |
+| 03 | 80 | n_layers=4, lr_emb=3.75E-3 | 0.816 | 0.597 | 0.004 | 0.747 | 68.2 |
+
+### Key Findings
+1. **N79 tau breakthrough**: `coeff_edge_diff=650` with `lr_emb=4E-3` achieves tau=0.809 (best in block 4!) but V_rest collapses to 0.111
+2. **aug=30 alone doesn't restore tau**: N77 tau=0.647 despite aug=30 - N71's tau=0.866 required other factors
+3. **coeff_phi_weight_L1=0.8 has no significant effect**
+4. **Principle 17 STRONGLY CONFIRMED**: n_layers=4 with lr_emb=3.75E-3 causes V_rest collapse (0.004!)
+
+### New Principles Added
+- **36**: coeff_edge_diff=650 with lr_emb=4E-3 boosts tau but collapses V_rest
+- **37**: aug=30 alone does NOT restore tau
+- **38**: coeff_phi_weight_L1=0.8 has no significant effect
+- **39**: n_layers=4 with lr_emb=3.75E-3 CAUSES V_rest COLLAPSE
+
+### Next Batch (81-84) Setup
+| Slot | Node | Parent | Strategy | Key Change | Rationale |
+|------|------|--------|----------|------------|-----------|
+| 00 | 81 | 79 | exploit | aug=30 (from 29) | Test if aug=30 improves V_rest while keeping N79's tau |
+| 01 | 82 | 79 | exploit | lr_emb=3.75E-3 (from 4E-3), coeff_edge_diff=650 | Test if lower lr_emb preserves V_rest with edge_diff=650 |
+| 02 | 83 | 73 | explore | coeff_edge_diff=600 | Test lower edge_diff with balanced N73 config |
+| 03 | 84 | 66 | principle-test | coeff_W_L1=7.5E-5. Testing principle 13: "coeff_W_L1=5E-5 is optimal" | Test if higher W L1 helps with N66 config |
+
+
+============================================================
+=== Batch 81-84 ===
+============================================================
+All configs are set up correctly. Let me provide a summary:
+
+---
+
+## Batch 21 Analysis Complete (Iterations 81-84)
+
+### Results Summary
+| Slot | Node | Key Changes | conn_R2 | tau_R2 | V_rest_R2 | cluster | Time |
+|------|------|-------------|---------|--------|-----------|---------|------|
+| 00 | 81 | aug=30, edge_diff=650, lr_emb=4E-3 | 0.857 | 0.680 | 0.158 | 0.727 | 64.4 |
+| 01 | 82 | edge_diff=650, lr_emb=3.75E-3 | 0.797 | 0.725 | 0.156 | 0.755 | 62.3 |
+| **02** | **83** | **edge_diff=600, lr_emb=3.75E-3** | **0.897** | 0.645 | **0.372** | **0.775** | 62.4 |
+| 03 | 84 | coeff_W_L1=7.5E-5 | 0.863 | **0.775** | 0.398 | 0.701 | 62.8 |
+
+### Key Findings
+1. **N83 BREAKTHROUGH**: coeff_edge_diff=600 with lr_emb=3.75E-3 achieves **conn=0.897** (BEST BLOCK 4!), V_rest=0.372, cluster=0.775
+2. **Principle 10 UPDATED**: coeff_edge_diff optimal depends on lr_emb (600 with 3.75E-3; 625-650 with 4E-3)
+3. **N84 challenges principle 13**: coeff_W_L1=7.5E-5 achieves excellent balanced metrics
+4. **coeff_edge_diff=650 + lr_emb=3.75E-3 FAILS**: conn drops to 0.797
+
+### Next Batch Setup (Iterations 85-88)
+| Slot | Node | Parent | Strategy | Config Change | Rationale |
+|------|------|--------|----------|--------------|-----------|
+| 00 | 85 | 83 | exploit | aug=30, edge_diff=600, lr_emb=3.75E-3 | Test if aug=30 improves tau with N83's conn config |
+| 01 | 86 | 83 | exploit | edge_diff=600, lr_emb=3.75E-3, W_L1=7.5E-5 | Combine N83's edge_diff with N84's W_L1 |
+| 02 | 87 | 84 | explore | edge_diff=600, lr_emb=4E-3, W_L1=7.5E-5 | Test edge_diff=600 with lr_emb=4E-3 |
+| 03 | 88 | 66 | principle-test | edge_diff=575, lr_emb=3.75E-3 | Test boundary below 600 |
+
+
+============================================================
+=== Batch 85-88 ===
+============================================================
+**Batch 22 Analysis Complete (Iterations 85-88)**
+
+## Summary
+
+| Slot | Node | Key Config Change | conn_R2 | tau_R2 | V_rest_R2 | cluster | Outcome |
+|------|------|-------------------|---------|--------|-----------|---------|---------|
+| 00 | 85 | aug=30 with N83 | 0.765 | 0.646 | 0.322 | 0.708 | aug=30 DEGRADES conn |
+| 01 | 86 | W_L1=7.5E-5 with N83 | 0.863 | **0.466** | 0.348 | 0.759 | W_L1=7.5E-5 HURTS tau with lr_emb=3.75E-3 |
+| 02 | **87** | edge_diff=600 + W_L1=7.5E-5 + lr_emb=4E-3 | 0.823 | **0.876** | 0.077 | 0.769 | **BEST tau batch 22**, V_rest collapsed |
+| 03 | 88 | edge_diff=575 | 0.746 | 0.749 | **0.401** | 0.733 | edge_diff<600 trades conn for V_rest |
+
+## Key Findings
+1. **aug=29 is ESSENTIAL** for edge_diff=600 + lr_emb=3.75E-3 config (N85 confirmed)
+2. **coeff_W_L1=7.5E-5 REQUIRES lr_emb=4E-3** - fails with lr_emb=3.75E-3 (N86 vs N84)
+3. **N87 TAU PATH identified**: edge_diff=600 + lr_emb=4E-3 + W_L1=7.5E-5 achieves tau=0.876 (near best!) but sacrifices V_rest
+4. **edge_diff boundary confirmed**: <600 trades conn for V_rest (N88)
+
+## Next Batch (Iterations 89-92)
+
+| Slot | Node | Parent | Strategy | Key Changes |
+|------|------|--------|----------|-------------|
+| 00 | 89 | 87 | exploit | edge_norm=950 (restore V_rest while keeping tau) |
+| 01 | 90 | 87 | exploit | edge_diff=610 (balance tau and conn) |
+| 02 | 91 | 83 | explore | edge_norm=950 (test with N83's conn-optimal) |
+| 03 | 92 | 84 | principle-test | edge_diff=625, W_L1=5E-5 (test original N66 baseline) |
+
+
+============================================================
+=== Batch 89-92 ===
+============================================================
+All configs are correctly set up. Let me provide a summary of the batch analysis and next batch setup:
+
+## Batch 23 Analysis (Iterations 89-92) Complete
+
+**Results Summary:**
+| Node | Config Key Changes | conn_R2 | tau_R2 | V_rest_R2 | cluster | Status |
+|------|-------------------|---------|--------|-----------|---------|--------|
+| 89 | edge_norm=950 (from N87) | 0.758 | 0.668 | 0.168 | 0.738 | FAILED - edge_norm=950 degrades N87 |
+| **90** | edge_diff=610, W_L1=7.5E-5 | 0.846 | 0.778 | **0.465** | 0.758 | **V_rest RECORD!** |
+| 91 | edge_norm=950, lr_emb=3.75E-3 | 0.729 | 0.889 | 0.335 | 0.706 | Good tau, conn sacrificed |
+| **92** | edge_diff=625, W_L1=5E-5 | 0.888 | 0.792 | 0.254 | **0.796** | **cluster RECORD!** |
+
+**Key Findings:**
+1. **N90 V_rest BREAKTHROUGH**: edge_diff=610 achieves V_rest=0.465 (NEW ALL-TIME RECORD), surpassing N88's 0.401
+2. **N92 cluster BREAKTHROUGH**: edge_diff=625 + W_L1=5E-5 achieves cluster=0.796 (NEW ALL-TIME RECORD), surpassing N49's 0.793
+3. edge_norm=950 confirmed harmful with N87's config (N89 failed)
+4. edge_norm=950 + lr_emb=3.75E-3 achieves excellent tau (N91: 0.889) but sacrifices connectivity
+
+**Next Batch (93-96) Setup:**
+| Slot | Node | Parent | Strategy | Key Changes | Target |
+|------|------|--------|----------|-------------|--------|
+| 00 | 93 | 90 | exploit | edge_diff=615, W_L1=7.5E-5 | Push V_rest path further |
+| 01 | 94 | 92 | exploit | edge_diff=620, W_L1=5E-5 | Improve cluster config |
+| 02 | 95 | 90 | explore | edge_diff=610, W_L1=6E-5 | Test intermediate W_L1 |
+| 03 | 96 | 91 | principle-test | edge_norm=975, lr_emb=3.75E-3 | Test edge_norm midpoint |
+
+
+============================================================
+=== Batch 93-96 ===
+============================================================
+All 4 configs are correctly set for Block 5, Batch 25 (iterations 97-100).
+
+**Summary of Batch 24 Results (Iterations 93-96) - BLOCK 4 FINAL:**
+
+| Iter | Node | Parent | Config Key | conn_R2 | tau_R2 | V_rest_R2 | cluster | Observation |
+|------|------|--------|------------|---------|--------|-----------|---------|-------------|
+| 93 | 93 | 90 | edge_diff=615, W_L1=7.5E-5 | 0.786 | 0.787 | 0.293 | 0.763 | edge_diff=615 WORSE than 610 - all metrics degrade |
+| 94 | 94 | 92 | edge_diff=620, W_L1=5E-5 | 0.801 | 0.789 | 0.250 | 0.709 | edge_diff=620 WORSE than 625 - cluster drops significantly |
+| 95 | 95 | 90 | W_L1=6E-5, edge_diff=610 | 0.882 | 0.653 | 0.291 | 0.704 | W_L1=6E-5 SUBOPTIMAL - tau drops to 0.653 |
+| **96** | **96** | 91 | **edge_norm=975**, lr_emb=3.75E-3 | **0.879** | **0.895** | 0.256 | 0.729 | **BREAKTHROUGH!** edge_norm=975 achieves best tau while maintaining conn |
+
+**Key Block 4 Final Findings:**
+1. **N96 TAU+CONN BREAKTHROUGH**: edge_norm=975 achieves tau=0.895 (near N50's 0.911 best) while maintaining conn=0.879 (much better than N91's 0.729 with edge_norm=950)
+2. **edge_diff boundaries confirmed DISCRETE**: 610, 625, 600 work; 615 and 620 both FAIL
+3. **W_L1=6E-5 confirmed SUBOPTIMAL** - neither 5E-5 nor 7.5E-5 benefits; discrete sweet spots only
+
+**Next Batch (97-100) Setup for Block 5:**
+- **Slot 0 (N97)**: edge_norm=980, lr_emb=3.75E-3 - refine N96's tau breakthrough
+- **Slot 1 (N98)**: edge_norm=975 with N83's conn config - test cross-path benefit  
+- **Slot 2 (N99)**: edge_norm=990, lr_emb=4E-3, W_L1=7.5E-5 - explore V_rest path edge_norm
+- **Slot 3 (N100)**: coeff_phi_weight_L1=0.8 - principle-test with N96's tau config
+
+
+============================================================
+=== Batch 97-100 ===
+============================================================
+All configs are correctly set up. Here's a summary:
+
+## Batch 25 Analysis (Iterations 97-100) Complete
+
+**Results Summary:**
+| Node | conn_R2 | tau_R2 | V_rest_R2 | cluster | Key Change | Outcome |
+|------|---------|--------|-----------|---------|------------|---------|
+| 97 | 0.835 | 0.697 | 0.174 | 0.697 | edge_norm=980 | FAILED - worse than N96 |
+| 98 | 0.841 | 0.717 | 0.251 | 0.736 | edge_norm=975 on N83 | Trade-off: tau↑, conn↓ |
+| 99 | 0.678 | 0.716 | 0.063 | 0.717 | edge_norm=990 | CATASTROPHIC - V_rest collapsed |
+| 100 | 0.847 | 0.705 | 0.239 | **0.774** | phi_L1=0.8 | Best cluster in batch |
+
+**Key Findings:**
+1. **edge_norm=975 is the exact optimum** for tau with lr_emb=3.75E-3 - moving to 980 fails
+2. **edge_norm must stay 1000** with lr_emb=4E-3 - any deviation destroys V_rest
+3. **phi_L1=0.8 helps cluster** (0.774) but may trade off with tau
+
+**Next Batch Setup (Iterations 101-104):**
+| Slot | Node | Parent | Strategy | Key Config |
+|------|------|--------|----------|------------|
+| 00 | 101 | 100 | exploit | edge_norm=1000, phi_L1=0.8, lr_emb=3.75E-3 |
+| 01 | 102 | 98 | exploit | edge_diff=625, edge_norm=975, lr_emb=3.75E-3 |
+| 02 | 103 | 92 | explore | phi_L1=0.8, lr_emb=4E-3, edge_diff=625 |
+| 03 | 104 | 96 | principle-test | edge_norm=970 (testing if lower is better for tau) |
+

@@ -1,18 +1,6 @@
-=== UCB Scores (Simulation block 2, iters 49-72, N=16, c=1.414) ===
+=== UCB Scores (Simulation block 4, iters 97-120, N=4, c=1.414) ===
 
-Node 60: UCB=3.679, parent=59, visits=1, R2=0.851, Pearson=0.992, Cluster=0.774, tau_R2=0.618, V_rest_R2=0.115, Mutation=data_augmentation_loop: 25 -> 26. Testing principle: "aug_loop=27 achieves BEST conn_R2=0.869"
-Node 58: UCB=3.666, parent=59, visits=1, R2=0.838, Pearson=0.989, Cluster=0.679, tau_R2=0.624, V_rest_R2=0.013, Mutation=hidden_dim_update: 96 -> 64 (test if simpler update MLP reduces time while keeping aug_loop conn benefit)
-Node 61: UCB=3.663, parent=59, visits=1, R2=0.836, Pearson=0.992, Cluster=0.666, tau_R2=0.768, V_rest_R2=0.197
-Node 52: UCB=3.656, parent=50, visits=1, R2=0.828, Pearson=0.989, Cluster=0.728, tau_R2=0.488, V_rest_R2=0.042, Mutation=batch_size: 1 -> 2, lr_emb=4E-3. Testing principle: "lr_emb=4E-3 helps V_rest"
-Node 63: UCB=3.639, parent=root, visits=1, R2=0.811, Pearson=0.991, Cluster=0.691, tau_R2=0.586, V_rest_R2=0.132
-Node 62: UCB=3.635, parent=root, visits=1, R2=0.806, Pearson=0.994, Cluster=0.709, tau_R2=0.789, V_rest_R2=0.184
-Node 57: UCB=3.627, parent=53, visits=1, R2=0.799, Pearson=0.996, Cluster=0.768, tau_R2=0.749, V_rest_R2=0.314, Mutation=n_layers: 4 -> 3 (test if simpler edge MLP reduces time while keeping aug_loop conn benefit)
-Node 64: UCB=3.603, parent=root, visits=1, R2=0.775, Pearson=0.993, Cluster=0.686, tau_R2=0.419, V_rest_R2=0.161
-Node 54: UCB=3.589, parent=53, visits=1, R2=0.761, Pearson=0.992, Cluster=0.786, tau_R2=0.582, V_rest_R2=0.114, Mutation=batch_size: 1 -> 2 (test if batch_size=2 speeds up aug_loop=30 within limit)
-Node 49: UCB=3.582, parent=root, visits=1, R2=0.754, Pearson=0.996, Cluster=0.793, tau_R2=0.579, V_rest_R2=0.078, Mutation=batch_size: 1 -> 2 (from best cluster+conn N46)
-Node 55: UCB=3.555, parent=53, visits=1, R2=0.727, Pearson=0.992, Cluster=0.752, tau_R2=0.570, V_rest_R2=0.128, Mutation=n_layers_update: 3 -> 4 (test N46-like arch with batch_size=2 for conn recovery)
-Node 51: UCB=3.472, parent=50, visits=1, R2=0.644, Pearson=0.982, Cluster=0.630, tau_R2=0.436, V_rest_R2=0.013, Mutation=recurrent_training: False -> True, time_step=2 (from best tau N38)
-Node 59: UCB=1.961, parent=56, visits=4, R2=0.830, Pearson=0.990, Cluster=0.687, tau_R2=0.642, V_rest_R2=0.088, Mutation=n_layers: 4 -> 3, n_layers_update: 4 -> 3 (test if simpler architecture reduces time for tau compromise config)
-Node 56: UCB=1.795, parent=53, visits=5, R2=0.852, Pearson=0.989, Cluster=0.701, tau_R2=0.675, V_rest_R2=0.117, Mutation=data_augmentation_loop: 25 -> 28. Testing principle: "data_augmentation_loop=30 BREAKTHROUGH for tau"
-Node 53: UCB=1.435, parent=50, visits=9, R2=0.869, Pearson=0.992, Cluster=0.779, tau_R2=0.545, V_rest_R2=0.105, Mutation=data_augmentation_loop: 30 -> 27 (reduce aug loop to fit time limit)
-Node 50: UCB=1.242, parent=root, visits=12, R2=0.807, Pearson=0.991, Cluster=0.735, tau_R2=0.911, V_rest_R2=0.101, Mutation=data_augmentation_loop: 25 -> 30 (from N46)
+Node 98: UCB=2.255, parent=100, visits=1, R2=0.841, Pearson=0.996, Cluster=0.736, tau_R2=0.717, V_rest_R2=0.251, Mutation=coeff_edge_norm: 1000 -> 975 (transfer N96's tau-optimal edge_norm to N83's conn-optimal config)
+Node 97: UCB=2.249, parent=root, visits=1, R2=0.835, Pearson=0.989, Cluster=0.697, tau_R2=0.697, V_rest_R2=0.174, Mutation=coeff_edge_norm: 975 -> 980 (test if edge_norm=980 improves on N96's tau breakthrough)
+Node 99: UCB=2.092, parent=100, visits=1, R2=0.678, Pearson=0.996, Cluster=0.717, tau_R2=0.716, V_rest_R2=0.063, Mutation=coeff_edge_norm: 1000 -> 990 (test slightly lower edge_norm with N90's V_rest config)
+Node 100: UCB=1.554, parent=root, visits=3, R2=0.847, Pearson=0.994, Cluster=0.774, tau_R2=0.705, V_rest_R2=0.239, Mutation=coeff_phi_weight_L1: 1.0 -> 0.8. Testing principle: "coeff_phi_weight_L1=1 is optimal"

@@ -1,10 +1,10 @@
-=== UCB Scores (Simulation block 2, iters 49-72, N=8, c=1.414) ===
+=== UCB Scores (Simulation block 4, iters 97-120, N=8, c=1.414) ===
 
-Node 51: UCB=2.959, parent=49, visits=1, R2=0.959, Pearson=0.997, Cluster=0.828, tau_R2=0.992, V_rest_R2=0.403, Mutation=embedding_dim: 2 -> 4
-Node 56: UCB=2.951, parent=54, visits=1, R2=0.951, Pearson=0.999, Cluster=0.854, tau_R2=0.989, V_rest_R2=0.357, Mutation=n_layers_update: 3 -> 4. Testing principle: "deeper update MLP helps parameter recovery"
-Node 55: UCB=2.942, parent=54, visits=1, R2=0.942, Pearson=0.995, Cluster=0.798, tau_R2=0.985, V_rest_R2=0.358, Mutation=lr_emb: 1.5E-3 -> 1.8E-3
-Node 50: UCB=2.783, parent=49, visits=1, R2=0.783, Pearson=0.980, Cluster=0.804, tau_R2=0.965, V_rest_R2=0.123, Mutation=n_layers: 3 -> 4
-Node 52: UCB=2.751, parent=49, visits=1, R2=0.751, Pearson=0.982, Cluster=0.826, tau_R2=0.994, V_rest_R2=0.508, Mutation=hidden_dim_update: 64 -> 96. Testing principle: "larger update MLP helps parameter recovery"
-Node 54: UCB=1.959, parent=53, visits=3, R2=0.959, Pearson=0.976, Cluster=0.892, tau_R2=0.995, V_rest_R2=0.752, Mutation=hidden_dim_update: 64 -> 80
-Node 53: UCB=1.768, parent=49, visits=4, R2=0.968, Pearson=0.996, Cluster=0.882, tau_R2=0.980, V_rest_R2=0.735, Mutation=hidden_dim: 96 -> 80
-Node 49: UCB=1.398, parent=root, visits=8, R2=0.954, Pearson=0.972, Cluster=0.899, tau_R2=0.992, V_rest_R2=0.615, Mutation=hidden_dim: 64 -> 96
+Node 103: UCB=2.980, parent=102, visits=1, R2=0.980, Pearson=0.977, Cluster=0.871, tau_R2=0.991, V_rest_R2=0.619, Mutation=Return to Node 79 baseline (no W_L2) for comparison
+Node 104: UCB=2.979, parent=102, visits=1, R2=0.979, Pearson=0.990, Cluster=0.888, tau_R2=0.995, V_rest_R2=0.518, Mutation=coeff_edge_norm: 1.0 -> 0.5. Testing principle: "coeff_edge_norm=1.0 is optimal"
+Node 101: UCB=2.966, parent=100, visits=1, R2=0.966, Pearson=0.992, Cluster=0.854, tau_R2=0.986, V_rest_R2=0.505, Mutation=coeff_W_L2: 1E-5 -> 5E-6
+Node 97: UCB=2.904, parent=root, visits=1, R2=0.904, Pearson=0.971, Cluster=0.758, tau_R2=0.907, V_rest_R2=0.216, Mutation=recurrent_training: False -> True, time_step=2
+Node 98: UCB=2.888, parent=100, visits=1, R2=0.888, Pearson=0.966, Cluster=0.753, tau_R2=0.821, V_rest_R2=0.018, Mutation=recurrent_training: False -> True, time_step=2, data_aug: 20 -> 18
+Node 99: UCB=2.731, parent=100, visits=1, R2=0.731, Pearson=0.958, Cluster=0.695, tau_R2=0.935, V_rest_R2=0.028, Mutation=recurrent_training: False -> True, time_step=4
+Node 102: UCB=1.983, parent=100, visits=3, R2=0.983, Pearson=0.998, Cluster=0.873, tau_R2=0.992, V_rest_R2=0.691, Mutation=coeff_W_L2: 1E-5 -> 2E-6
+Node 100: UCB=1.455, parent=root, visits=7, R2=0.955, Pearson=0.997, Cluster=0.853, tau_R2=0.985, V_rest_R2=0.615, Mutation=coeff_W_L2: 0 -> 1E-5. Testing principle: "Can W_L2 regularization improve V_rest recovery?"

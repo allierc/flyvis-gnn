@@ -281,7 +281,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     for f in files:
         os.remove(f)
 
-    plt.style.use("dark_background")
+    plt.style.use('default')
     extent = 8
 
     # Import only what's needed for mixed functionality
@@ -752,7 +752,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
 
                     y_writer.append(to_numpy(y.clone().detach()))
 
-                    if (visualize & (run == run_vizualized) & (it>0) & (it % step == 0) & (it <= 400 * step)):
+                    if (visualize & (run == run_vizualized) & (it>0) & (it % step == 0) & (it <= 50 * step)):
                         if "latex" in style:
                             plt.rcParams["text.usetex"] = True
                             rc("font", **{"family": "serif", "serif": ["Palatino"]})
@@ -782,7 +782,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
 
                             n_rows = 16  # 8 for voltage, 8 for calcium
                             n_cols = 9
-                            fig, axes = plt.subplots(n_rows, n_cols, figsize=(18.04, 32.46), facecolor='black')
+                            fig, axes = plt.subplots(n_rows, n_cols, figsize=(18.04, 32.46), facecolor='white')
                             plt.subplots_adjust(hspace=1.2)
                             axes_flat = axes.flatten()
 
@@ -807,7 +807,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                                                  s=64, c=to_numpy(x[:n_input_neurons, 4]), cmap="viridis",
                                                  vmin=0, vmax=1.05, marker='h', alpha=1.0, linewidths=0,
                                                  edgecolors='black')
-                                    ax_v.set_title('Stimuli', fontsize=18, color='white')
+                                    ax_v.set_title('Stimuli', fontsize=18)
                                 else:
                                     mask = neuron_types == type_idx
                                     if np.sum(mask) > 0:
@@ -817,10 +817,9 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                                         ax_v.scatter(positions_x, positions_y, s=72, c=voltages,
                                                      cmap='viridis', vmin=-2, vmax=2, marker='h', alpha=1,
                                                      linewidths=0, edgecolors='black')
-                                    ax_v.set_title(index_to_name.get(type_idx, f"Type_{type_idx}"), fontsize=18,
-                                                    color='white')  # increased fontsize
+                                    ax_v.set_title(index_to_name.get(type_idx, f"Type_{type_idx}"), fontsize=18)
 
-                                ax_v.set_facecolor('black')
+                                ax_v.set_facecolor('white')
                                 ax_v.set_xticks([])
                                 ax_v.set_yticks([])
                                 ax_v.set_aspect('equal')
@@ -834,7 +833,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                                                   s=64, c=to_numpy(x[:n_input_neurons, 4]), cmap="viridis",
                                                   vmin=0, vmax=1.05, marker='h', alpha=1.0, linewidths=0,
                                                   edgecolors='black')
-                                    ax_ca.set_title('Stimuli', fontsize=18, color='white')
+                                    ax_ca.set_title('Stimuli', fontsize=18)
                                 else:
                                     mask = neuron_types == type_idx
                                     if np.sum(mask) > 0:
@@ -846,11 +845,10 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                                                       alpha=1, linewidths=0, edgecolors='black')  # green LUT
                                     else:
                                         ax_ca.text(0.5, 0.5, 'No neurons', transform=ax_ca.transAxes, ha='center',
-                                                   va='center', color='red', fontsize=10)
-                                    ax_ca.set_title(index_to_name.get(type_idx, f"Type_{type_idx}"), fontsize=18,
-                                                    color='white')  # increased fontsize
+                                                   va='center', fontsize=10)
+                                    ax_ca.set_title(index_to_name.get(type_idx, f"Type_{type_idx}"), fontsize=18)
 
-                                ax_ca.set_facecolor('black')
+                                ax_ca.set_facecolor('white')
                                 ax_ca.set_xticks([])
                                 ax_ca.set_yticks([])
                                 ax_ca.set_aspect('equal')
@@ -869,7 +867,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
 
                         else:
 
-                            fig, axes = plt.subplots(8, 9, figsize=(18.04, 16.23), facecolor='black')
+                            fig, axes = plt.subplots(8, 9, figsize=(18.04, 16.23), facecolor='white')
                             plt.subplots_adjust(top=1.2, bottom=0.05, hspace=1.2)
                             axes_flat = axes.flatten()
 
@@ -885,7 +883,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                                                                   c=to_numpy(x[:n_input_neurons, 4]), cmap="viridis",
                                                                   vmin=0, vmax=1.05, marker='h', alpha=1.0, linewidths=0.0,
                                                                   edgecolors='black')
-                                    ax.set_title('stimuli', fontsize=18, color='white', pad=8, y=0.95)
+                                    ax.set_title('stimuli', fontsize=18, pad=8, y=0.95)
                                 else:
                                     type_mask = neuron_types == type_idx
                                     type_count = np.sum(type_mask)
@@ -909,13 +907,13 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                                             pass
                                         else:
                                             pass
-                                        ax.set_title(f'{type_name}', fontsize=18, color='white', pad=8, y=0.95)
+                                        ax.set_title(f'{type_name}', fontsize=18, pad=8, y=0.95)
                                     else:
                                         ax.text(0.5, 0.5, f'No {type_name}\nNeurons', transform=ax.transAxes, ha='center',
-                                                va='center', color='red', fontsize=8)
+                                                va='center', fontsize=8)
                                         ax.set_title(f'{type_name}\n(0)', fontsize=10, color='gray', pad=8, y=0.95)
 
-                                ax.set_facecolor('black')
+                                ax.set_facecolor('white')
                                 ax.set_xticks([])
                                 ax.set_yticks([])
                                 ax.set_aspect('equal')
@@ -987,10 +985,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     plt.xticks([0, n_frames_kino - 1], [0, n_frames_kino], fontsize=16)
     plt.yticks([0, n_neurons - 1], [1, n_neurons], fontsize=16)
     plt.title(f'{dataset_name} — activity kinograph ({n_neurons} neurons)', fontsize=16)
-    ax = plt.gca()
-    ax.text(0.02, 0.98, f'rank(90%)={rank_90_act}  rank(99%)={rank_99_act}',
-            fontsize=9, transform=ax.transAxes, va='top', ha='left', color='white',
-            bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.5))
+    plt.suptitle(f'rank(90%)={rank_90_act}  rank(99%)={rank_99_act}', fontsize=9, fontweight='normal', y=1.0)
     plt.tight_layout()
     plt.savefig(f'./graphs_data/{dataset_name}/kinograph_activity.png', dpi=200)
     plt.close()
@@ -1011,10 +1006,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     plt.xticks([0, n_frames_input - 1], [0, n_frames_input], fontsize=16)
     plt.yticks([0, n_input_neurons - 1], [1, n_input_neurons], fontsize=16)
     plt.title(f'{dataset_name} — visual input kinograph ({n_input_neurons} input neurons)', fontsize=16)
-    ax = plt.gca()
-    ax.text(0.02, 0.98, f'rank(90%)={rank_90_inp}  rank(99%)={rank_99_inp}',
-            fontsize=9, transform=ax.transAxes, va='top', ha='left', color='white',
-            bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.5))
+    plt.suptitle(f'rank(90%)={rank_90_inp}  rank(99%)={rank_99_inp}', fontsize=9, fontweight='normal', y=1.0)
     plt.tight_layout()
     plt.savefig(f'./graphs_data/{dataset_name}/kinograph_input_stimuli.png', dpi=200)
     plt.close()
@@ -1037,10 +1029,8 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     for i in range(0, n_traces, 5):
         plt.text(-100, activity_offset[i, 0], str(sampled_idx[i]), fontsize=10, va='center', ha='right')
     ax = plt.gca()
-    ax.text(0.98, 0.98, f'activity rank(90%)={rank_90_act}  rank(99%)={rank_99_act}\n'
-            f'input rank(90%)={rank_90_inp}  rank(99%)={rank_99_inp}',
-            fontsize=12, transform=ax.transAxes, va='top', ha='right',
-            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    plt.suptitle(f'activity rank(90%)={rank_90_act}  rank(99%)={rank_99_act}  |  input rank(90%)={rank_90_inp}  rank(99%)={rank_99_inp}',
+                 fontsize=10, fontweight='normal', y=1.0)
     ax.text(-200, activity_offset[-1, 0] + 30, 'neurons', fontsize=16, va='bottom', ha='right')
     plt.xlabel('time (frames)', fontsize=20)
     ax.spines['left'].set_visible(False)
@@ -1254,12 +1244,8 @@ def data_generate_synaptic(
     measurement_noise_level = training_config.measurement_noise_level
 
     CustomColorMap(config=config)
-    if 'black' in style:
-        plt.style.use('dark_background')
-        mc = 'w'
-    else:
-        plt.style.use('default')
-        mc = 'k'
+    plt.style.use('default')
+    mc = 'k'
 
 
     external_input_type = getattr(simulation_config, 'external_input_type', '')
@@ -1508,9 +1494,8 @@ def data_generate_synaptic(
                         img_reconstructed = np.rot90(img_reconstructed, k=1)
                         plt.figure(figsize=(8, 8))
                         plt.imshow(img_reconstructed, cmap='gray')
-                        plt.text(0.02, 0.98, f'min={val_min:.2f} max={val_max:.2f} std={val_std:.2f}',
-                                 transform=plt.gca().transAxes, fontsize=10, verticalalignment='top',
-                                 color='white', bbox=dict(boxstyle='round', facecolor='black', alpha=0.5))
+                        plt.suptitle(f'min={val_min:.2f} max={val_max:.2f} std={val_std:.2f}',
+                                     fontsize=10, fontweight='normal')
                         plt.axis('off')
                         plt.savefig(f"{folder}/external_input_frame0.png", dpi=150)
                         plt.close()
@@ -1576,8 +1561,6 @@ def data_generate_synaptic(
                 if "latex" in style:
                     plt.rcParams["text.usetex"] = True
                     rc("font", **{"family": "serif", "serif": ["Palatino"]})
-                if "black" in style:
-                    plt.style.use("dark_background")
                 matplotlib.rcParams["savefig.pad_inches"] = 0
                 num = f"{id_fig:06}"
                 id_fig += 1
@@ -1661,8 +1644,7 @@ def data_generate_synaptic(
             # SVD analysis of activity
             print('svd analysis ...')
             from flyvis_gnn.models.utils import analyze_data_svd
-            style_param = 'dark_background' if 'black' in style else None
-            analyze_data_svd(x_list, folder, config=config, style=style_param, save_in_subfolder=False, log_file=log_file)
+            analyze_data_svd(x_list, folder, config=config, style=None, save_in_subfolder=False, log_file=log_file)
 
     # close logfile only if we created it locally
     if local_log_file:

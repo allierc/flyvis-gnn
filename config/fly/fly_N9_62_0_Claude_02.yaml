@@ -25,7 +25,7 @@ graph_model:
   hidden_dim: 64
   output_size: 1
   input_size_update: 5
-  n_layers_update: 3
+  n_layers_update: 4
   hidden_dim_update: 96
   aggr_type: add
   embedding_dim: 2
@@ -49,16 +49,16 @@ training:
   batch_ratio: 1
   small_init_batch_size: false
   sparsity: none
-  data_augmentation_loop: 28
+  data_augmentation_loop: 29
   learning_rate_W_start: 0.0005
   learning_rate_start: 0.001
-  learning_rate_embedding_start: 0.0035
+  learning_rate_embedding_start: 0.004
   coeff_edge_diff: 625
   coeff_update_u_diff: 0
   coeff_update_msg_diff: 0
-  coeff_edge_norm: 1000.0
+  coeff_edge_norm: 1000
   coeff_edge_weight_L1: 1
-  coeff_phi_weight_L1: 1
+  coeff_phi_weight_L1: 0.8
   coeff_phi_weight_L1_rate: 0.5
   coeff_edge_weight_L2: 0
   coeff_phi_weight_L2: 0.001

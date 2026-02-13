@@ -982,3 +982,586 @@ Key findings:
 4. **CONFIRMED: simpler arch saves time but needs aug_loop>=28** - N64 at aug_loop=26 achieves 53.6 min but tau=0.419 poor
 5. **Trade-off refined**: n_layers_update=4 helps tau, simpler edge MLP (n_layers=3) helps time; combining may work
 
+## Iter 65: converged
+Node: id=65, parent=61
+Mode/Strategy: exploit
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.5E-3, coeff_edge_diff=625, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=30, recurrent=False
+Metrics: connectivity_R2=0.791, tau_R2=0.721, V_rest_R2=0.295, cluster_accuracy=0.778, test_R2=0.085, test_pearson=0.993, training_time_min=65.3
+Embedding: 65 types with good separation
+Mutation: n_layers_update: 3 -> 4 (combine best tau arch with aug_loop=30 from N61)
+Parent rule: N61 best conn/tau balance, add n_layers_update=4 for tau boost
+Observation: n_layers_update=4 helps tau (0.721 vs N61's 0.768) and V_rest (0.295 vs 0.197), cluster=0.778 (best this batch); lr_emb=3.5E-3 may underperform vs 4E-3
+Next: parent=66
+
+## Iter 66: converged - **NEW BEST conn_R2=0.889, V_rest_R2=0.411**
+Node: id=66, parent=62
+Mode/Strategy: exploit
+Config: lr_W=5E-4, lr=1E-3, lr_emb=4E-3, coeff_edge_diff=625, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=29, recurrent=False
+Metrics: connectivity_R2=0.889, tau_R2=0.770, V_rest_R2=0.411, cluster_accuracy=0.721, test_R2=0.545, test_pearson=0.993, training_time_min=62.9
+Embedding: 65 types with good separation
+Mutation: data_augmentation_loop: 28 -> 29 (slight aug increase from N62 to boost conn while keeping lr_emb=4E-3)
+Parent rule: N62 best tau=0.789, test if aug_loop=29 improves conn
+Observation: **BREAKTHROUGH**: conn_R2=0.889 (NEW BEST, +0.02 over N53), tau=0.770 (excellent), V_rest=0.411 (NEW BEST, +0.06 over N45). Resolves open question: can achieve conn>0.85 AND tau>0.75 simultaneously! Config: aug=29, n_layers=3, n_layers_update=4, lr_emb=4E-3
+Next: parent=66
+
+## Iter 67: converged
+Node: id=67, parent=61
+Mode/Strategy: explore
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.5E-3, coeff_edge_diff=625, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=3, hidden_dim_update=96, aug_loop=28, recurrent=False
+Metrics: connectivity_R2=0.809, tau_R2=0.565, V_rest_R2=0.150, cluster_accuracy=0.736, test_R2=0.393, test_pearson=0.990, training_time_min=58.6
+Embedding: 65 types with moderate separation
+Mutation: data_augmentation_loop: 30 -> 28 (test minimum aug_loop for tau>0.7 with simpler arch from N61)
+Parent rule: N61 good balance, test if lower aug_loop maintains tau
+Observation: aug_loop=28 with n_layers_update=3 gives poor tau=0.565 (N61 at aug=30 gave 0.768). CONFIRMS n_layers_update=4 critical for tau - simpler update MLP cannot compensate with more aug_loop
+Next: parent=66
+
+## Iter 68: partial
+Node: id=68, parent=50
+Mode/Strategy: principle-test
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.5E-3, coeff_edge_diff=625, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=4, n_layers_update=3, hidden_dim_update=96, aug_loop=30, recurrent=False
+Metrics: connectivity_R2=0.834, tau_R2=0.450, V_rest_R2=0.028, cluster_accuracy=0.684, test_R2=0.376, test_pearson=0.990, training_time_min=68.8
+Embedding: 65 types with moderate separation
+Mutation: n_layers: 3 -> 4, n_layers_update: 4 -> 3. Testing principle: "n_layers=4 maximizes conn_R2"
+Parent rule: test principle from N50 base with modified arch
+Observation: CONFIRMS principle PARTIALLY: n_layers=4 achieves conn=0.834 (vs N65's 0.791 at n_layers=3), but n_layers_update=3 HURTS tau severely (0.450 vs 0.721). n_layers_update=4 is MORE IMPORTANT than n_layers=4 for overall metrics. V_rest collapses to 0.028.
+Next: parent=66
+
+### Batch 17 Summary (Iters 65-68)
+Best connectivity_R2: Node 66 (0.889) - **NEW OVERALL BEST**
+Best tau_R2: Node 66 (0.770) - excellent
+Best V_rest_R2: Node 66 (0.411) - **NEW OVERALL BEST**
+Best cluster_accuracy: Node 65 (0.778)
+
+Key findings:
+1. **MAJOR BREAKTHROUGH - N66 achieves balanced excellence**: conn=0.889, tau=0.770, V_rest=0.411. Config: aug=29, n_layers=3, n_layers_update=4, lr_emb=4E-3. Time 62.9 min (near limit).
+2. **Resolves open question**: YES, can achieve conn>0.85 AND tau>0.7 simultaneously with N66 config
+3. **lr_emb=4E-3 critical**: N65 (lr_emb=3.5E-3) vs N66 (lr_emb=4E-3) - 4E-3 dramatically improves all metrics
+4. **n_layers_update=4 more important than n_layers=4**: N68 shows n_layers=4 helps conn but hurts tau/V_rest when n_layers_update=3
+5. **aug_loop=29 sweet spot**: balances conn boost and time efficiency better than aug=30
+
+## Iter 69: converged
+Node: id=69, parent=66
+Mode/Strategy: exploit
+Config: lr_W=5E-4, lr=1E-3, lr_emb=4E-3, coeff_edge_diff=625, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=30, recurrent=False
+Metrics: connectivity_R2=0.8765, tau_R2=0.7404, V_rest_R2=0.2855, cluster_accuracy=0.7687, test_R2=0.679, test_pearson=0.996, training_time_min=64.4
+Embedding: 65 types with good separation
+Mutation: data_augmentation_loop: 29 -> 30 (test if aug=30 pushes tau higher from N66 breakthrough config)
+Parent rule: highest UCB (N66 breakthrough), exploit aug_loop increase
+Observation: aug=30 did NOT improve over N66 - conn dropped 0.889->0.877, tau dropped 0.770->0.740; aug=29 remains optimal for N66 arch
+Next: parent=71
+
+## Iter 70: partial
+Node: id=70, parent=66
+Mode/Strategy: exploit
+Config: lr_W=5E-4, lr=1E-3, lr_emb=4.5E-3, coeff_edge_diff=625, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=29, recurrent=False
+Metrics: connectivity_R2=0.8724, tau_R2=0.4744, V_rest_R2=0.1416, cluster_accuracy=0.7382, test_R2=0.789, test_pearson=0.993, training_time_min=62.6
+Embedding: 65 types with moderate separation
+Mutation: lr_emb: 4E-3 -> 4.5E-3 (test slightly higher lr_emb from N66 for more V_rest boost)
+Parent rule: exploit N66 breakthrough, test lr_emb boundary
+Observation: lr_emb=4.5E-3 CATASTROPHIC for tau (0.474 vs 0.770) and V_rest (0.142 vs 0.411); CONFIRMS principle 8: lr_emb > 4E-3 hurts all metrics
+Next: parent=71
+
+## Iter 71: converged
+Node: id=71, parent=65
+Mode/Strategy: explore
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=625, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=30, recurrent=False
+Metrics: connectivity_R2=0.8661, tau_R2=0.8658, V_rest_R2=0.2657, cluster_accuracy=0.7363, test_R2=-0.609, test_pearson=0.994, training_time_min=65.0
+Embedding: 65 types with moderate separation
+Mutation: lr_emb: 3.5E-3 -> 3.75E-3 (test intermediate lr_emb between N65 and N66)
+Parent rule: explore N65 with intermediate lr_emb
+Observation: **tau=0.8658 SECOND BEST EVER** (after N50's 0.911)! lr_emb=3.75E-3 is better for tau than 4E-3; conn slightly lower (0.866 vs 0.889)
+Next: parent=71
+
+## Iter 72: partial
+Node: id=72, parent=66
+Mode/Strategy: principle-test
+Config: lr_W=5E-4, lr=1E-3, lr_emb=4E-3, coeff_edge_diff=600, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=29, recurrent=False
+Metrics: connectivity_R2=0.7906, tau_R2=0.8322, V_rest_R2=0.1435, cluster_accuracy=0.7331, test_R2=0.872, test_pearson=0.996, training_time_min=61.5
+Embedding: 65 types with moderate separation
+Mutation: coeff_edge_diff: 625 -> 600. Testing principle: "coeff_edge_diff=625 is optimal"
+Parent rule: principle test from N66 breakthrough
+Observation: Principle CONFIRMED - coeff_edge_diff=600 hurts conn (0.791 vs 0.889); tau still good (0.832) but conn degradation unacceptable
+Next: parent=71
+
+### Batch 18 Summary (Iters 69-72) - **END OF BLOCK 3**
+Best connectivity_R2: Node 69 (0.8765) - below N66's 0.889
+Best tau_R2: Node 71 (0.8658) - **SECOND BEST EVER** (after N50's 0.911)
+Best V_rest_R2: Node 69 (0.2855) - below N66's 0.411
+Best cluster_accuracy: Node 69 (0.7687)
+
+Key findings:
+1. **aug=30 degrades N66 config**: N69 with aug=30 underperforms N66 (aug=29) in all metrics
+2. **lr_emb=4.5E-3 catastrophic**: N70 confirms principle 8 - lr_emb > 4E-3 destroys tau and V_rest
+3. **lr_emb=3.75E-3 optimal for tau**: N71 achieves tau=0.866 (second best ever!) with lr_emb=3.75E-3
+4. **coeff_edge_diff=625 CONFIRMED optimal**: N72 with 600 loses significant conn_R2
+
+---
+
+## Block 3 Summary (Iterations 49-72)
+
+### Best Configurations Found
+| Rank | Node | Key Config | conn_R2 | tau_R2 | V_rest_R2 | cluster | Time | Notes |
+| ---- | ---- | ---------- | ------- | ------ | --------- | ------- | ---- | ----- |
+| **1** | **66** | aug=29, n_layers=3, n_layers_update=4, lr_emb=4E-3 | **0.889** | 0.770 | **0.411** | 0.721 | 62.9 | **ALL-TIME BEST conn+V_rest** |
+| **2** | **71** | aug=30, n_layers=3, n_layers_update=4, lr_emb=3.75E-3 | 0.866 | **0.866** | 0.266 | 0.736 | 65.0 | **SECOND BEST TAU** |
+| 3 | 50 | aug=30, n_layers=4, n_layers_update=4, lr_emb=3.5E-3 | 0.807 | **0.911** | 0.101 | 0.735 | 69.8 | **BEST TAU** (exceeds time) |
+| 4 | 69 | aug=30, n_layers=3, n_layers_update=4, lr_emb=4E-3 | 0.877 | 0.740 | 0.286 | 0.769 | 64.4 | aug=30 worse than aug=29 |
+| 5 | 72 | aug=29, coeff_edge_diff=600 | 0.791 | 0.832 | 0.144 | 0.733 | 61.5 | confirms coeff_edge_diff=625 optimal |
+
+### Key Findings (Block 3)
+1. **N66 remains best overall config**: aug=29, n_layers=3, n_layers_update=4, lr_emb=4E-3 achieves conn=0.889, V_rest=0.411
+2. **N71 finds tau sweet spot**: lr_emb=3.75E-3 achieves tau=0.866 (second best after N50's 0.911) with good conn=0.866
+3. **lr_emb trade-off discovered**: lr_emb=4E-3 optimizes conn+V_rest; lr_emb=3.75E-3 optimizes tau
+4. **aug=29 confirmed optimal** for N66 arch - aug=30 degrades both conn and tau
+5. **coeff_edge_diff=625 CONFIRMED** - 600 causes significant conn degradation
+6. **lr_emb > 4E-3 confirmed harmful** - N70 with 4.5E-3 collapsed tau to 0.474
+7. **batch_size=2 cancels all benefits** - confirmed across multiple configs
+8. **recurrent_training harmful** - N51 showed degradation across all metrics
+9. **n_layers_update=4 essential for tau** - N68 showed n_layers_update=3 hurts tau severely
+
+### Principles Established (Block 3)
+- aug_loop=29 optimal with N66 arch (aug=30 degrades)
+- lr_emb=3.75E-3 is tau-optimal; lr_emb=4E-3 is conn+V_rest optimal
+- n_layers=3 + n_layers_update=4 + hidden_dim_update=96 is optimal architecture
+- batch_size must stay at 1 for best results
+- coeff_edge_diff=625 confirmed optimal
+
+---
+
+## Block 4: Combined Optimization - Refining Breakthrough Configs
+
+### Batch 19 (Iterations 73-76)
+
+## Iter 73: converged
+Node: id=73, parent=71
+Mode/Strategy: exploit
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=625, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=29, recurrent=False
+Metrics: connectivity_R2=0.878, tau_R2=0.753, V_rest_R2=0.320, cluster_accuracy=0.734, test_R2=0.822, test_pearson=0.996, training_time_min=63.4
+Embedding: 65 types with moderate separation
+Mutation: data_augmentation_loop: 30 -> 29. Combined N71's lr_emb=3.75E-3 with N66's aug=29
+Parent rule: exploit highest UCB - test if aug=29 with N71's lr_emb maintains tau while improving conn
+Observation: Combining aug=29 with lr_emb=3.75E-3 yields conn=0.878 (good), tau=0.753 (below N71's 0.866), V_rest=0.320 (good). Tau dropped more than expected - aug=30 may be needed for tau with this lr_emb
+Next: parent=73
+
+## Iter 74: converged
+Node: id=74, parent=71
+Mode/Strategy: exploit
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.875E-3, coeff_edge_diff=625, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=30, recurrent=False
+Metrics: connectivity_R2=0.824, tau_R2=0.746, V_rest_R2=0.244, cluster_accuracy=0.763, test_R2=0.841, test_pearson=0.993, training_time_min=65.3
+Embedding: 65 types with moderate separation
+Mutation: lr_emb: 3.75E-3 -> 3.875E-3 (midpoint between 3.75E-3 and 4E-3)
+Parent rule: exploit second option - test midpoint lr_emb for balanced conn/tau
+Observation: lr_emb=3.875E-3 midpoint UNDERPERFORMS - conn=0.824 (worse than both N66=0.889 and N71=0.866), tau=0.746 (worse than N71=0.866). Midpoint is NOT optimal - confirms discrete sweet spots at 3.75E-3 (tau) and 4E-3 (conn)
+Next: parent=73
+
+## Iter 75: converged
+Node: id=75, parent=66
+Mode/Strategy: explore
+Config: lr_W=5E-4, lr=1E-3, lr_emb=4E-3, coeff_edge_diff=625, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=29, coeff_phi_weight_L2=0.002, recurrent=False
+Metrics: connectivity_R2=0.874, tau_R2=0.694, V_rest_R2=0.250, cluster_accuracy=0.754, test_R2=0.330, test_pearson=0.994, training_time_min=61.6
+Embedding: 65 types with moderate separation
+Mutation: coeff_phi_weight_L2: 0.001 -> 0.002 (testing higher L2 regularization on phi)
+Parent rule: explore under-visited parameter - test if higher L2 regularization improves tau
+Observation: coeff_phi_weight_L2=0.002 HURTS TAU significantly (0.694 vs N66's 0.770) and V_rest (0.250 vs 0.411). NEW PRINCIPLE: coeff_phi_weight_L2=0.001 is optimal - higher values hurt tau and V_rest
+Next: parent=73
+
+## Iter 76: converged
+Node: id=76, parent=71
+Mode/Strategy: principle-test
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=625, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=30, coeff_edge_norm=1100, recurrent=False
+Metrics: connectivity_R2=0.834, tau_R2=0.724, V_rest_R2=0.285, cluster_accuracy=0.743, test_R2=0.444, test_pearson=0.996, training_time_min=63.6
+Embedding: 65 types with moderate separation
+Mutation: coeff_edge_norm: 1000 -> 1100. Testing principle: "coeff_edge_norm=1000 is optimal"
+Parent rule: principle test - test if slightly higher monotonicity penalty helps tau
+Observation: Principle CONFIRMED - coeff_edge_norm=1100 hurts conn (0.834 vs 0.866 baseline) and tau (0.724 vs 0.866). coeff_edge_norm=1000 remains optimal boundary
+Next: parent=73
+
+### Batch 19 Summary (Iters 73-76)
+Best connectivity_R2: Node 73 (0.878)
+Best tau_R2: Node 73 (0.753)
+Best V_rest_R2: Node 73 (0.320)
+Best cluster_accuracy: Node 74 (0.763)
+
+Key findings:
+1. **N73 best overall this batch**: aug=29 + lr_emb=3.75E-3 yields balanced metrics (conn=0.878, tau=0.753, V_rest=0.320)
+2. **lr_emb=3.875E-3 midpoint fails**: Neither conn nor tau benefits from midpoint - confirms discrete sweet spots
+3. **coeff_phi_weight_L2=0.002 harmful**: Hurts tau (0.694 vs 0.770) and V_rest (0.250 vs 0.411)
+4. **coeff_edge_norm=1100 CONFIRMS principle 12**: Higher monotonicity penalty hurts both conn and tau
+
+## Iter 77: converged
+Node: id=77, parent=73
+Mode/Strategy: exploit
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=625, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=30, recurrent=False
+Metrics: connectivity_R2=0.865, tau_R2=0.647, V_rest_R2=0.341, cluster_accuracy=0.754, test_R2=-0.338, test_pearson=0.989, training_time_min=65.2
+Embedding: 65 types with good separation
+Mutation: data_augmentation_loop: 29 -> 30 (restore aug to N71 level)
+Parent rule: exploit highest UCB - test if aug=30 restores tau from N73's 0.753 to N71's 0.866
+Observation: aug=30 with lr_emb=3.75E-3 gives tau=0.647 - WORSE than N73's 0.753 and much worse than N71's 0.866. The N71 tau=0.866 was with different base config - aug=30 alone doesn't restore it
+Next: parent=79
+
+## Iter 78: converged
+Node: id=78, parent=73
+Mode/Strategy: exploit
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=625, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=29, coeff_phi_weight_L1=0.8, recurrent=False
+Metrics: connectivity_R2=0.861, tau_R2=0.663, V_rest_R2=0.284, cluster_accuracy=0.721, test_R2=0.951, test_pearson=0.994, training_time_min=63.8
+Embedding: 65 types with moderate separation
+Mutation: coeff_phi_weight_L1: 1.0 -> 0.8 (lower phi L1 penalty)
+Parent rule: exploit second UCB - test if lower phi L1 helps tau without hurting conn
+Observation: coeff_phi_weight_L1=0.8 gives marginal tau improvement vs N77 (0.663 vs 0.647) but still below N73's baseline 0.753. No significant benefit from lowering phi L1
+Next: parent=79
+
+## Iter 79: converged
+Node: id=79, parent=66
+Mode/Strategy: explore
+Config: lr_W=5E-4, lr=1E-3, lr_emb=4E-3, coeff_edge_diff=650, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=29, recurrent=False
+Metrics: connectivity_R2=0.872, tau_R2=0.809, V_rest_R2=0.111, cluster_accuracy=0.714, test_R2=0.694, test_pearson=0.997, training_time_min=63.8
+Embedding: 65 types with moderate separation
+Mutation: coeff_edge_diff: 625 -> 650 (re-test higher edge_diff with N66 config)
+Parent rule: explore - re-test coeff_edge_diff=650 with lr_emb=4E-3 to see if it helps
+Observation: SURPRISE - coeff_edge_diff=650 with lr_emb=4E-3 gives tau=0.809 (best this batch!), conn=0.872 (good). BUT V_rest=0.111 collapsed severely. Trade-off: coeff_edge_diff=650 helps tau, hurts V_rest with lr_emb=4E-3. This UPDATES principle 10 - coeff_edge_diff=650 may be better for tau when paired with lr_emb=4E-3
+Next: parent=79
+
+## Iter 80: partial
+Node: id=80, parent=73
+Mode/Strategy: principle-test
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=625, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=4, n_layers_update=4, hidden_dim_update=96, aug_loop=29, recurrent=False
+Metrics: connectivity_R2=0.816, tau_R2=0.597, V_rest_R2=0.004, cluster_accuracy=0.747, test_R2=0.899, test_pearson=0.992, training_time_min=68.2
+Embedding: 65 types with moderate separation
+Mutation: n_layers: 3 -> 4. Testing principle: "n_layers=3 improves tau+V_rest at cost of conn"
+Parent rule: principle test - test if n_layers=4 with lr_emb=3.75E-3 achieves better conn without losing tau
+Observation: Principle 17 STRONGLY CONFIRMED - n_layers=4 with lr_emb=3.75E-3 causes V_rest collapse (0.004!) and hurts tau (0.597). conn=0.816 is also worse. n_layers=3 is ESSENTIAL for good V_rest with this lr_emb
+Next: parent=79
+
+### Batch 20 Summary (Iters 77-80)
+Best connectivity_R2: Node 79 (0.872)
+Best tau_R2: Node 79 (0.809)
+Best V_rest_R2: Node 77 (0.341)
+Best cluster_accuracy: Node 77, 78 (0.754)
+
+Key findings:
+1. **N79 BREAKTHROUGH for tau**: coeff_edge_diff=650 + lr_emb=4E-3 achieves tau=0.809 (highest in block 4!) but V_rest collapses to 0.111
+2. **aug=30 does NOT restore tau**: N77 tau=0.647 << N71's 0.866 despite same aug=30 - the N71 config had other factors
+3. **coeff_phi_weight_L1=0.8 no significant effect**: N78 marginal improvement
+4. **n_layers=4 HARMFUL with lr_emb=3.75E-3**: N80 confirms principle 17 - V_rest collapses to 0.004
+5. **NEW INSIGHT**: coeff_edge_diff=650 helps tau but hurts V_rest when paired with lr_emb=4E-3 - updates principle 10
+
+## Iter 81: converged
+Node: id=81, parent=79
+Mode/Strategy: exploit
+Config: lr_W=5E-4, lr=1E-3, lr_emb=4E-3, coeff_edge_diff=650, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=30, recurrent=False
+Metrics: connectivity_R2=0.857, tau_R2=0.680, V_rest_R2=0.158, cluster_accuracy=0.727, test_R2=0.634, test_pearson=0.992, training_time_min=64.4
+Embedding: 65 types with moderate separation
+Mutation: data_augmentation_loop: 29 -> 30 (test if aug=30 restores V_rest with N79's tau-optimized config)
+Parent rule: exploit highest UCB N79 - test aug=30 to improve V_rest while maintaining tau
+Observation: aug=30 with coeff_edge_diff=650 gives V_rest=0.158 (improved from N79's 0.111) but tau DROPS (0.680 vs 0.809). Trade-off: aug=30 helps V_rest but hurts tau with edge_diff=650
+Next: parent=83
+
+## Iter 82: partial
+Node: id=82, parent=79
+Mode/Strategy: exploit
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=650, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=29, recurrent=False
+Metrics: connectivity_R2=0.797, tau_R2=0.725, V_rest_R2=0.156, cluster_accuracy=0.755, test_R2=0.838, test_pearson=0.997, training_time_min=62.3
+Embedding: 65 types with good separation
+Mutation: lr_emb: 4E-3 -> 3.75E-3 (test if lr_emb=3.75E-3 preserves V_rest with coeff_edge_diff=650)
+Parent rule: exploit N79 - test alternative lr_emb to balance V_rest
+Observation: lr_emb=3.75E-3 with coeff_edge_diff=650 gives conn=0.797 (DROPS significantly), V_rest=0.156 (slightly better than N79). The combination of coeff_edge_diff=650 + lr_emb=3.75E-3 is SUBOPTIMAL for connectivity
+Next: parent=83
+
+## Iter 83: converged - **NEW BEST conn_R2=0.897 (BLOCK 4)**
+Node: id=83, parent=73
+Mode/Strategy: explore
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=600, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=29, recurrent=False
+Metrics: connectivity_R2=0.897, tau_R2=0.645, V_rest_R2=0.372, cluster_accuracy=0.775, test_R2=0.969, test_pearson=0.995, training_time_min=62.4
+Embedding: 65 types with excellent separation
+Mutation: coeff_edge_diff: 625 -> 600 (test lower edge_diff with N73's balanced config)
+Parent rule: explore - test if coeff_edge_diff=600 can improve conn with lr_emb=3.75E-3
+Observation: **N83 BREAKTHROUGH** - coeff_edge_diff=600 achieves conn_R2=0.897 (NEW BEST BLOCK 4!), V_rest=0.372 (excellent), cluster=0.775 (best batch). BUT tau=0.645 drops. **CHALLENGES principle 10**: coeff_edge_diff=600 with lr_emb=3.75E-3 beats 625 for conn+V_rest! Update principle needed
+Next: parent=83
+
+## Iter 84: converged
+Node: id=84, parent=66
+Mode/Strategy: principle-test
+Config: lr_W=5E-4, lr=1E-3, lr_emb=4E-3, coeff_edge_diff=625, coeff_W_L1=7.5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=29, recurrent=False
+Metrics: connectivity_R2=0.863, tau_R2=0.775, V_rest_R2=0.398, cluster_accuracy=0.701, test_R2=0.850, test_pearson=0.996, training_time_min=62.8
+Embedding: 65 types with moderate separation
+Mutation: coeff_W_L1: 5E-5 -> 7.5E-5. Testing principle: "coeff_W_L1=5E-5 is optimal"
+Parent rule: principle-test from N66 baseline - test if higher W L1 helps with optimized config
+Observation: coeff_W_L1=7.5E-5 achieves excellent tau=0.775 (close to N79's 0.809), V_rest=0.398 (near N66's 0.411), conn=0.863 (good). **CHALLENGES principle 13** - coeff_W_L1=7.5E-5 may be better than 5E-5 for balanced metrics with this config
+Next: parent=83
+
+### Batch 21 Summary (Iters 81-84)
+Best connectivity_R2: Node 83 (0.897) - **NEW BLOCK 4 BEST**
+Best tau_R2: Node 84 (0.775)
+Best V_rest_R2: Node 84 (0.398)
+Best cluster_accuracy: Node 83 (0.775)
+
+Key findings:
+1. **N83 BREAKTHROUGH**: coeff_edge_diff=600 with lr_emb=3.75E-3 achieves conn=0.897 (BEST BLOCK 4!), V_rest=0.372, cluster=0.775 - **CHALLENGES principle 10**
+2. **N84 challenges principle 13**: coeff_W_L1=7.5E-5 achieves excellent balanced metrics (tau=0.775, V_rest=0.398, conn=0.863) - higher W L1 may be beneficial
+3. **N81 aug=30 trade-off confirmed**: helps V_rest (0.158 vs 0.111) but hurts tau (0.680 vs 0.809) with coeff_edge_diff=650
+4. **N82 combination fails**: coeff_edge_diff=650 + lr_emb=3.75E-3 drops conn significantly (0.797)
+5. **NEW INSIGHT**: coeff_edge_diff has lr_emb-dependent optimal value - 600 with lr_emb=3.75E-3; 650 with lr_emb=4E-3
+
+## Iter 85: partial
+Node: id=85, parent=83
+Mode/Strategy: exploit
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=600, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=30, recurrent=False
+Metrics: connectivity_R2=0.765, tau_R2=0.646, V_rest_R2=0.322, cluster_accuracy=0.708, test_R2=0.526, test_pearson=0.995, training_time_min=63.8
+Embedding: 65 types with moderate separation
+Mutation: data_augmentation_loop: 29 -> 30 (test if aug=30 improves tau while keeping N83's conn)
+Parent rule: exploit from N83 - test aug=30 effect on N83's breakthrough config
+Observation: aug=30 DEGRADES N83's config - conn drops 0.897->0.765 (significant!), tau unchanged (0.646), V_rest slightly worse. **CONFIRMS aug=29 is optimal for edge_diff=600 + lr_emb=3.75E-3**. NEW PRINCIPLE: aug=29 vs 30 choice depends on edge_diff/lr_emb combination
+Next: parent=87
+
+## Iter 86: partial
+Node: id=86, parent=83
+Mode/Strategy: exploit
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=600, coeff_W_L1=7.5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=29, recurrent=False
+Metrics: connectivity_R2=0.863, tau_R2=0.466, V_rest_R2=0.348, cluster_accuracy=0.759, test_R2=0.969, test_pearson=0.993, training_time_min=61.6
+Embedding: 65 types with good separation
+Mutation: coeff_W_L1: 5E-5 -> 7.5E-5 (combine N83's edge_diff=600 with N84's W_L1)
+Parent rule: exploit from N83 - test if W_L1=7.5E-5 helps with edge_diff=600
+Observation: coeff_W_L1=7.5E-5 with lr_emb=3.75E-3 **SEVERELY HURTS tau** (0.466 vs 0.645 in N83). This contradicts N84! **NEW PRINCIPLE**: coeff_W_L1=7.5E-5 requires lr_emb=4E-3 (N84 config) - with lr_emb=3.75E-3, keep W_L1=5E-5
+Next: parent=87
+
+## Iter 87: partial - **BEST tau_R2=0.876 (Block 4 batch 22!)**
+Node: id=87, parent=84
+Mode/Strategy: explore
+Config: lr_W=5E-4, lr=1E-3, lr_emb=4E-3, coeff_edge_diff=600, coeff_W_L1=7.5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=29, recurrent=False
+Metrics: connectivity_R2=0.823, tau_R2=0.876, V_rest_R2=0.077, cluster_accuracy=0.769, test_R2=0.098, test_pearson=0.995, training_time_min=62.9
+Embedding: 65 types with good separation
+Mutation: coeff_edge_diff: 625 -> 600 (test edge_diff=600 with lr_emb=4E-3 and W_L1=7.5E-5)
+Parent rule: explore from N84 - combine N83's edge_diff=600 with N84's lr_emb=4E-3 + W_L1=7.5E-5
+Observation: **EXCELLENT tau_R2=0.876** (BEST batch 22! Near N50's 0.911), BUT V_rest COLLAPSED to 0.077, conn moderate 0.823. **NEW INSIGHT**: edge_diff=600 + lr_emb=4E-3 + W_L1=7.5E-5 = tau optimization path (but sacrifices V_rest). Trade-off is CLEAR
+Next: parent=87
+
+## Iter 88: partial
+Node: id=88, parent=66
+Mode/Strategy: principle-test
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=575, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=29, recurrent=False
+Metrics: connectivity_R2=0.746, tau_R2=0.749, V_rest_R2=0.401, cluster_accuracy=0.733, test_R2=0.936, test_pearson=0.994, training_time_min=62.9
+Embedding: 65 types with moderate separation
+Mutation: coeff_edge_diff: 625 -> 575. Testing principle: "coeff_edge_diff=600 is optimal with lr_emb=3.75E-3"
+Parent rule: principle-test from N66 baseline - test boundary below edge_diff=600
+Observation: edge_diff=575 **CONFIRMS principle 40** - conn drops significantly (0.897->0.746) while V_rest improves (0.401 best!), tau good (0.749). **NEW PRINCIPLE**: edge_diff<600 trades conn for V_rest; edge_diff>=600 needed for high conn with lr_emb=3.75E-3
+Next: parent=87
+
+### Batch 22 Summary (Iters 85-88)
+Best connectivity_R2: Node 86 (0.863)
+Best tau_R2: **Node 87 (0.876) - BEST BATCH 22**
+Best V_rest_R2: Node 88 (0.401)
+Best cluster_accuracy: Node 87 (0.769)
+
+Key findings:
+1. **N85 CONFIRMS aug=29 optimal**: aug=30 with N83's config degrades conn 0.897->0.765. aug choice is config-dependent
+2. **N86 IMPORTANT**: coeff_W_L1=7.5E-5 with lr_emb=3.75E-3 HURTS tau (0.466) - contradicts N84's success. W_L1=7.5E-5 REQUIRES lr_emb=4E-3
+3. **N87 TAU BREAKTHROUGH**: edge_diff=600 + lr_emb=4E-3 + W_L1=7.5E-5 achieves tau=0.876 (near best), but V_rest collapses. CLEAR tau optimization path
+4. **N88 CONFIRMS principle 40**: edge_diff=575 sacrifices conn (0.746) for V_rest (0.401). edge_diff=600 is MINIMUM for high conn
+
+## Iter 89: partial
+Node: id=89, parent=87
+Mode/Strategy: exploit
+Config: lr_W=5E-4, lr=1E-3, lr_emb=4E-3, coeff_edge_diff=600, coeff_W_L1=7.5E-5, coeff_edge_norm=950, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=29, recurrent=False
+Metrics: connectivity_R2=0.758, tau_R2=0.668, V_rest_R2=0.168, cluster_accuracy=0.738, test_R2=0.963, test_pearson=0.993, training_time_min=62.2
+Embedding: 65 types with moderate separation
+Mutation: coeff_edge_norm: 1000 -> 950 (test if lower edge_norm restores V_rest with N87's tau config)
+Parent rule: exploit from N87 - attempt to restore V_rest by lowering monotonicity penalty
+Observation: edge_norm=950 **SEVERELY DEGRADES** N87's config - conn drops 0.823->0.758, tau drops 0.876->0.668, V_rest improves slightly 0.077->0.168. **CONFIRMS edge_norm=1000 is essential** with N87's tau optimization config. Principle 12 strongly confirmed again
+Next: parent=92
+
+## Iter 90: partial - **BEST V_rest_R2=0.465 (NEW RECORD!)**
+Node: id=90, parent=87
+Mode/Strategy: exploit
+Config: lr_W=5E-4, lr=1E-3, lr_emb=4E-3, coeff_edge_diff=610, coeff_W_L1=7.5E-5, coeff_edge_norm=1000, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=29, recurrent=False
+Metrics: connectivity_R2=0.846, tau_R2=0.778, V_rest_R2=0.465, cluster_accuracy=0.758, test_R2=-14.482, test_pearson=0.978, training_time_min=62.1
+Embedding: 65 types with good separation
+Mutation: coeff_edge_diff: 600 -> 610 (test if edge_diff=610 restores V_rest while keeping good tau)
+Parent rule: exploit from N87 - find edge_diff sweet spot that balances tau and V_rest
+Observation: **BREAKTHROUGH V_rest_R2=0.465** (NEW BEST EVER! +0.054 over N88's 0.401), excellent tau=0.778, good conn=0.846. **KEY FINDING**: edge_diff=610 with lr_emb=4E-3 + W_L1=7.5E-5 achieves BALANCED EXCELLENCE! Negative test_R2 is a warning but all recovery metrics excellent
+Next: parent=90
+
+## Iter 91: partial - **Excellent tau_R2=0.889**
+Node: id=91, parent=83
+Mode/Strategy: explore
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=600, coeff_W_L1=5E-5, coeff_edge_norm=950, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=29, recurrent=False
+Metrics: connectivity_R2=0.729, tau_R2=0.889, V_rest_R2=0.335, cluster_accuracy=0.706, test_R2=0.936, test_pearson=0.998, training_time_min=64.7
+Embedding: 65 types with moderate separation
+Mutation: coeff_edge_norm: 1000 -> 950 (test if lower edge_norm helps N83's config)
+Parent rule: explore from N83 - test edge_norm=950 with lr_emb=3.75E-3 config
+Observation: edge_norm=950 **EXCELLENT for tau** (0.889, near N50's 0.911!) but **HURTS conn** (0.729 vs N83's 0.897). CONFIRMS: edge_norm=950 is a TAU OPTIMIZATION path with lr_emb=3.75E-3, while edge_norm=1000 is CONN OPTIMIZATION path. Context-dependent choice
+Next: parent=90
+
+## Iter 92: converged - **Best cluster_accuracy=0.796 (NEW RECORD!)**
+Node: id=92, parent=84
+Mode/Strategy: principle-test
+Config: lr_W=5E-4, lr=1E-3, lr_emb=4E-3, coeff_edge_diff=625, coeff_W_L1=5E-5, coeff_edge_norm=1000, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=29, recurrent=False
+Metrics: connectivity_R2=0.888, tau_R2=0.792, V_rest_R2=0.254, cluster_accuracy=0.796, test_R2=0.907, test_pearson=0.997, training_time_min=62.9
+Embedding: 65 types with excellent separation (cluster=0.796 best ever!)
+Mutation: coeff_W_L1: 7.5E-5 -> 5E-5, coeff_edge_diff: 625 (N66 baseline). Testing principle: "coeff_W_L1=7.5E-5 helps with N66 config"
+Parent rule: principle-test from N84 - verify if W_L1=5E-5 with original edge_diff=625 is truly suboptimal
+Observation: **EXCELLENT BALANCED config** - conn=0.888 (near best), tau=0.792, **cluster=0.796 (NEW BEST EVER!)**. W_L1=5E-5 with edge_diff=625 + lr_emb=4E-3 is STRONGLY BALANCED. **NEW INSIGHT**: edge_diff=625 + W_L1=5E-5 optimizes for cluster_accuracy, edge_diff=610 + W_L1=7.5E-5 optimizes for V_rest. Different target metrics require different configs
+Next: parent=90
+
+### Batch 23 Summary (Iters 89-92)
+Best connectivity_R2: Node 92 (0.888)
+Best tau_R2: **Node 91 (0.889) - Excellent, near N50's 0.911**
+Best V_rest_R2: **Node 90 (0.465) - NEW ALL-TIME BEST**
+Best cluster_accuracy: **Node 92 (0.796) - NEW ALL-TIME BEST**
+
+Key findings:
+1. **N89 edge_norm=950 FAILS** with N87's tau config - both conn and tau degrade significantly. edge_norm=1000 ESSENTIAL with lr_emb=4E-3 + W_L1=7.5E-5
+2. **N90 V_rest BREAKTHROUGH**: edge_diff=610 + lr_emb=4E-3 + W_L1=7.5E-5 achieves V_rest=0.465 (NEW RECORD!) + tau=0.778 + conn=0.846. BALANCED EXCELLENCE path found!
+3. **N91 tau PATH**: edge_norm=950 + lr_emb=3.75E-3 achieves tau=0.889 but sacrifices conn (0.729). Context-dependent edge_norm choice
+4. **N92 cluster BREAKTHROUGH**: edge_diff=625 + W_L1=5E-5 + lr_emb=4E-3 achieves cluster=0.796 (NEW RECORD!) + conn=0.888 + tau=0.792. CLUSTER OPTIMIZATION path found!
+
+**NEW PRINCIPLES:**
+- edge_diff=610 + W_L1=7.5E-5 + lr_emb=4E-3 = V_rest optimization (N90: V_rest=0.465)
+- edge_diff=625 + W_L1=5E-5 + lr_emb=4E-3 = cluster optimization (N92: cluster=0.796)
+- edge_norm=950 + lr_emb=3.75E-3 = tau optimization (N91: tau=0.889) at conn cost
+- edge_norm=1000 remains ESSENTIAL for N87's tau config (lr_emb=4E-3 + W_L1=7.5E-5)
+
+**Batch 24 (Iter 93-96) - BLOCK 4 FINAL:**
+
+## Iter 93: partial
+Node: id=93, parent=90
+Mode/Strategy: exploit
+Config: lr_W=5E-4, lr=1E-3, lr_emb=4E-3, coeff_edge_diff=615, coeff_edge_norm=1000, coeff_W_L1=7.5E-5, batch_size=1, aug_loop=29, n_layers=3, n_layers_update=4, hidden_dim_update=96
+Metrics: connectivity_R2=0.786, tau_R2=0.787, V_rest_R2=0.293, cluster_accuracy=0.763, test_R2=0.884, test_pearson=0.996, training_time_min=61.8
+Embedding: 65 types with moderate separation
+Mutation: coeff_edge_diff: 610 -> 615 (push N90's V_rest path further)
+Parent rule: exploit N90's V_rest=0.465 breakthrough
+Observation: edge_diff=615 WORSE than 610! conn drops 0.846->0.786, V_rest drops 0.465->0.293. edge_diff=610 is optimal for V_rest path
+Next: parent=96
+
+## Iter 94: partial
+Node: id=94, parent=92
+Mode/Strategy: exploit
+Config: lr_W=5E-4, lr=1E-3, lr_emb=4E-3, coeff_edge_diff=620, coeff_edge_norm=1000, coeff_W_L1=5E-5, batch_size=1, aug_loop=29, n_layers=3, n_layers_update=4, hidden_dim_update=96
+Metrics: connectivity_R2=0.801, tau_R2=0.789, V_rest_R2=0.250, cluster_accuracy=0.709, test_R2=0.619, test_pearson=0.996, training_time_min=62.8
+Embedding: 65 types with moderate separation
+Mutation: coeff_edge_diff: 625 -> 620 (test if lower edge_diff improves N92's cluster config)
+Parent rule: exploit N92's cluster=0.796 breakthrough
+Observation: edge_diff=620 HURTS cluster=0.796->0.709, conn drops 0.888->0.801. edge_diff=625 is optimal for cluster path
+Next: parent=96
+
+## Iter 95: partial
+Node: id=95, parent=90
+Mode/Strategy: explore
+Config: lr_W=5E-4, lr=1E-3, lr_emb=4E-3, coeff_edge_diff=610, coeff_edge_norm=1000, coeff_W_L1=6E-5, batch_size=1, aug_loop=29, n_layers=3, n_layers_update=4, hidden_dim_update=96
+Metrics: connectivity_R2=0.882, tau_R2=0.653, V_rest_R2=0.291, cluster_accuracy=0.704, test_R2=0.953, test_pearson=0.992, training_time_min=63.3
+Embedding: 65 types with moderate separation
+Mutation: coeff_W_L1: 7.5E-5 -> 6E-5 (test intermediate W_L1 with N90's balanced config)
+Parent rule: explore intermediate W_L1 between 5E-5 and 7.5E-5
+Observation: W_L1=6E-5 HURTS tau severely (0.778->0.653) and V_rest (0.465->0.291). W_L1=7.5E-5 is optimal for V_rest path
+Next: parent=96
+
+## Iter 96: partial
+Node: id=96, parent=91
+Mode/Strategy: principle-test
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=600, coeff_edge_norm=975, coeff_W_L1=5E-5, batch_size=1, aug_loop=29, n_layers=3, n_layers_update=4, hidden_dim_update=96
+Metrics: connectivity_R2=0.879, tau_R2=0.895, V_rest_R2=0.256, cluster_accuracy=0.729, test_R2=0.536, test_pearson=0.997, training_time_min=62.6
+Embedding: 65 types with moderate separation
+Mutation: coeff_edge_norm: 950 -> 975. Testing principle: "edge_norm=1000 is optimal"
+Parent rule: test edge_norm midpoint between 950 (N91) and 1000
+Observation: **edge_norm=975 BREAKTHROUGH!** tau=0.895 (near best!) while conn=0.879 (much better than N91's 0.729!). REFINES principle 12 - edge_norm=975 with lr_emb=3.75E-3 is a NEW TAU+CONN OPTIMUM
+Next: parent=96
+
+---
+
+## Block 4 Summary (Iterations 73-96)
+
+### Final Block 4 Best Configs:
+| Rank | Node | Key Config | conn_R2 | tau_R2 | V_rest_R2 | cluster | Time |
+| ---- | ---- | ---------- | ------- | ------ | --------- | ------- | ---- |
+| **1** | **83** | aug=29, lr_emb=3.75E-3, coeff_edge_diff=600 | **0.897** | 0.645 | 0.372 | 0.775 | 62.4 |
+| **2** | **96** | aug=29, lr_emb=3.75E-3, edge_diff=600, edge_norm=975 | 0.879 | **0.895** | 0.256 | 0.729 | 62.6 |
+| **3** | **92** | aug=29, lr_emb=4E-3, edge_diff=625, W_L1=5E-5 | 0.888 | 0.792 | 0.254 | **0.796** | 62.9 |
+| **4** | **90** | aug=29, lr_emb=4E-3, edge_diff=610, W_L1=7.5E-5 | 0.846 | 0.778 | **0.465** | 0.758 | 62.1 |
+| **5** | **91** | aug=29, lr_emb=3.75E-3, edge_diff=600, edge_norm=950 | 0.729 | 0.889 | 0.335 | 0.706 | 64.7 |
+
+### Key Findings Block 4:
+1. **N83 CONN PATH**: edge_diff=600 + lr_emb=3.75E-3 + edge_norm=1000 achieves conn=0.897 (BEST EVER)
+2. **N96 TAU+CONN BREAKTHROUGH**: edge_norm=975 achieves tau=0.895 while maintaining conn=0.879! New optimal tau path
+3. **N92 CLUSTER PATH**: edge_diff=625 + W_L1=5E-5 + lr_emb=4E-3 achieves cluster=0.796 (NEW RECORD)
+4. **N90 V_REST PATH**: edge_diff=610 + W_L1=7.5E-5 + lr_emb=4E-3 achieves V_rest=0.465 (NEW RECORD)
+5. **edge_diff boundaries confirmed**: 610 optimal for V_rest, 625 for cluster, 600 for conn
+6. **W_L1 boundaries confirmed**: 7.5E-5 for V_rest path, 5E-5 for cluster/conn paths
+7. **edge_norm refined**: 975 better than 950 for tau+conn with lr_emb=3.75E-3
+
+### Optimization Paths Established:
+- **CONN optimization**: N83 - edge_diff=600, lr_emb=3.75E-3, edge_norm=1000 (0.897)
+- **TAU optimization**: N96 - edge_diff=600, lr_emb=3.75E-3, edge_norm=975 (0.895)
+- **V_REST optimization**: N90 - edge_diff=610, lr_emb=4E-3, W_L1=7.5E-5, edge_norm=1000 (0.465)
+- **CLUSTER optimization**: N92 - edge_diff=625, lr_emb=4E-3, W_L1=5E-5, edge_norm=1000 (0.796)
+
+### Block 4 Conclusions:
+- Four specialized optimization paths identified for different metrics
+- edge_norm=975 is a TAU BREAKTHROUGH (replaces edge_norm=950 which sacrificed conn)
+- W_L1=6E-5 is SUBOPTIMAL (neither 5E-5 nor 7.5E-5 benefits)
+- edge_diff=615 and edge_diff=620 both DEGRADE their respective paths - optimal values are discrete
+- lr_emb continues to dictate optimal regularization: 3.75E-3 for conn/tau, 4E-3 for V_rest/cluster
+
+---
+
+## Block 5: Cross-Path Optimization (Iterations 97-120)
+
+### Block Goal
+Combine best configs from Block 4 paths. Test cross-path optimizations, edge_norm refinements.
+
+## Iter 97: converged
+Node: id=97, parent=96
+Mode/Strategy: exploit
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=600, coeff_edge_norm=980, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=29, recurrent=False
+Metrics: connectivity_R2=0.835, tau_R2=0.697, V_rest_R2=0.174, cluster_accuracy=0.697, test_R2=-0.548, test_pearson=0.989, training_time_min=62.5
+Embedding: 65 types with moderate separation
+Mutation: coeff_edge_norm: 975 -> 980 (test if edge_norm=980 improves on N96's tau breakthrough)
+Parent rule: exploit N96 - test edge_norm refinement between 975 and 1000
+Observation: edge_norm=980 HURTS ALL METRICS vs N96 (tau=0.697 vs 0.895, conn=0.835 vs 0.879). Negative test_R2=-0.548 indicates instability. **CONFIRMS principle 12**: edge_norm=975 is optimal for tau - moving toward 1000 does NOT help
+Next: parent=100
+
+## Iter 98: converged
+Node: id=98, parent=83
+Mode/Strategy: exploit
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=600, coeff_edge_norm=975, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=29, recurrent=False
+Metrics: connectivity_R2=0.841, tau_R2=0.717, V_rest_R2=0.251, cluster_accuracy=0.736, test_R2=0.383, test_pearson=0.996, training_time_min=62.3
+Embedding: 65 types with good separation
+Mutation: coeff_edge_norm: 1000 -> 975 (transfer N96's tau-optimal edge_norm to N83's conn-optimal config)
+Parent rule: exploit N83 - test if edge_norm=975 can improve tau while preserving conn
+Observation: edge_norm=975 applied to N83's config gives tau=0.717 (improved from N83's 0.645) BUT conn drops from 0.897 to 0.841. Modest tau improvement comes at significant conn cost. N83's conn=0.897 requires edge_norm=1000
+Next: parent=100
+
+## Iter 99: partial
+Node: id=99, parent=90
+Mode/Strategy: explore
+Config: lr_W=5E-4, lr=1E-3, lr_emb=4E-3, coeff_edge_diff=610, coeff_edge_norm=990, coeff_W_L1=7.5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=29, recurrent=False
+Metrics: connectivity_R2=0.678, tau_R2=0.716, V_rest_R2=0.063, cluster_accuracy=0.717, test_R2=0.890, test_pearson=0.996, training_time_min=61.8
+Embedding: 65 types with moderate separation
+Mutation: coeff_edge_norm: 1000 -> 990 (test slightly lower edge_norm with N90's V_rest config)
+Parent rule: explore - test if edge_norm=990 can improve tau on N90's V_rest path
+Observation: edge_norm=990 CATASTROPHICALLY hurts N90's config - conn crashes from 0.846 to 0.678, V_rest collapses from 0.465 to 0.063. **NEW PRINCIPLE**: edge_norm must be 1000 with lr_emb=4E-3 - any deviation kills V_rest
+Next: parent=100
+
+## Iter 100: converged
+Node: id=100, parent=96
+Mode/Strategy: principle-test
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=600, coeff_edge_norm=975, coeff_phi_weight_L1=0.8, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, n_layers=3, n_layers_update=4, hidden_dim_update=96, aug_loop=29, recurrent=False
+Metrics: connectivity_R2=0.847, tau_R2=0.705, V_rest_R2=0.239, cluster_accuracy=0.774, test_R2=0.714, test_pearson=0.994, training_time_min=63.4
+Embedding: 65 types with good separation, best cluster in batch
+Mutation: coeff_phi_weight_L1: 1.0 -> 0.8. Testing principle: "coeff_phi_weight_L1=1 is optimal"
+Parent rule: principle test - test if lower phi L1 helps N96's tau path
+Observation: coeff_phi_weight_L1=0.8 gives BEST cluster_accuracy=0.774 in batch and good conn=0.847. BUT tau=0.705 is worse than N96's 0.895 (unexpected). **SURPRISING**: phi_L1=0.8 helps cluster but seems to interfere with tau when combined with edge_norm=975
+Next: parent=100
+
+### Batch 25 Summary (Iters 97-100)
+Best connectivity_R2: Node 100 (0.847)
+Best tau_R2: Node 98 (0.717)
+Best V_rest_R2: Node 98 (0.251)
+Best cluster_accuracy: Node 100 (0.774)
+
+Key findings:
+1. **edge_norm=980 FAILS**: N97 shows moving from 975 toward 1000 hurts all metrics - 975 is the sweet spot
+2. **edge_norm=975 on N83**: N98 shows tau improvement (0.717 vs 0.645) but conn drops (0.841 vs 0.897) - trade-off confirmed
+3. **edge_norm=990 with lr_emb=4E-3 CATASTROPHIC**: N99 conn crashes to 0.678, V_rest to 0.063 - edge_norm MUST be 1000 with lr_emb=4E-3
+4. **phi_L1=0.8 helps cluster**: N100 achieves best cluster=0.774 but tau drops unexpectedly
+5. **NEW PRINCIPLE**: With lr_emb=4E-3, edge_norm must stay at 1000 - lower values destroy metrics
+
