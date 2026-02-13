@@ -3,205 +3,138 @@ ANALYSIS TOOL: Batch 1 (Iters 1-4) - Understanding Difficult Models
 ======================================================================
 
 === CONNECTIVITY R² ANALYSIS ===
-Computing learned vs true weight correlation for each slot...
 
-Model 049 (Slot 0):
-  connectivity_R2 = -1.3494
-  connectivity_pearson = -0.2510
-  RMSE = 0.445731
-  W_true:  mean=0.012590, std=0.290802
-  W_learned: mean=-0.021137, std=0.270955
-
-Model 011 (Slot 1):
-  connectivity_R2 = -0.5801
-  connectivity_pearson = -0.1749
-  RMSE = 0.389270
-  W_true:  mean=0.003874, std=0.309673
-  W_learned: mean=-0.021986, std=0.186465
-
-Model 041 (Slot 2):
-  connectivity_R2 = 0.3268
-  connectivity_pearson = 0.5747
-  RMSE = 0.271537
-  W_true:  mean=0.012930, std=0.330953
-  W_learned: mean=0.012424, std=0.209484
-
-Model 003 (Slot 3):
-  connectivity_R2 = 0.5580
-  connectivity_pearson = 0.7792
-  RMSE = 0.180171
-  W_true:  mean=0.006927, std=0.271014
-  W_learned: mean=0.015613, std=0.151775
+Model 049: R²=-1.2653 (baseline=0.6340, change=-1.8993) [REGRESSED]
+Model 011: R²=-0.9858 (baseline=0.3080, change=-1.2938) [REGRESSED]
+Model 041: R²=-0.6982 (baseline=0.6290, change=-1.3272) [REGRESSED]
+Model 003: R²=0.6115 (baseline=0.6270, change=-0.0155) [SIMILAR]
 
 
 === W_TRUE STRUCTURE COMPARISON ===
-Comparing ground truth weight distributions across all 4 difficult models...
+Looking for structural differences that explain model difficulty...
 
-Model      N_edges    Nonzero    Density    Mean         Std          |W|<0.01     |W|>=0.1    
-------------------------------------------------------------------------------------------
-049        434112     422108     0.9723     0.012590     0.290802     145905       69682       
-011        434112     416216     0.9588     0.003874     0.309673     170331       69193       
-041        434112     427272     0.9842     0.012930     0.330953     152559       77897       
-003        434112     415330     0.9567     0.006927     0.271014     155774       79819       
-
-
-=== PER-NEURON-TYPE WEIGHT ANALYSIS ===
-Analyzing weight recovery by source neuron type...
+Model    Nonzero%   Mean         Std          |W|<0.01%    |W|>0.1%     SVD_rank99  
+--------------------------------------------------------------------------------
+049      97.23      0.012590     0.290802     33.6         16.1         19          
+011      95.88      0.003874     0.309673     39.2         15.9         45          
+041      98.42      0.012930     0.330953     35.1         17.9         6           
+003      95.67      0.006927     0.271014     35.9         18.4         60          
 
 
-Model 049 - Per-Type Recovery:
-  Overall connectivity_R2: -1.3494
-  Number of neuron types: 13
-  Hardest 5 types (lowest R²):
-    Type   0: R²=-3.1991, n_edges=425802, true_mean=0.025541
-    Type  -6: R²=0.0180, n_edges=   910, true_mean=-0.671593
-    Type  -5: R²=0.0219, n_edges=   546, true_mean=-0.648879
-    Type  -4: R²=0.0236, n_edges=   596, true_mean=-0.648498
-    Type   4: R²=0.0268, n_edges=   598, true_mean=-0.646370
-  Easiest 5 types (highest R²):
-    Type  -1: R²=0.0296, n_edges=   746, true_mean=-0.647661
-    Type  -3: R²=0.0297, n_edges=   646, true_mean=-0.648176
-    Type   5: R²=0.0306, n_edges=   548, true_mean=-0.646555
-    Type   1: R²=0.0314, n_edges=   748, true_mean=-0.645962
-    Type   6: R²=0.0336, n_edges=   930, true_mean=-0.657411
+=== MODEL 049 REGRESSION INVESTIGATION ===
+Why did data_aug=25 cause regression from 0.634 to 0.141?
 
-Model 011 - Per-Type Recovery:
-  Overall connectivity_R2: -0.5801
-  Number of neuron types: 13
-  Hardest 5 types (lowest R²):
-    Type  -6: R²=-0.6116, n_edges=   910, true_mean=-0.133312
-    Type  -3: R²=-0.6007, n_edges=   646, true_mean=-0.129580
-    Type  -5: R²=-0.5969, n_edges=   546, true_mean=-0.129692
-    Type  -4: R²=-0.5960, n_edges=   596, true_mean=-0.129631
-    Type   0: R²=-0.5927, n_edges=425802, true_mean=0.006474
-  Easiest 5 types (highest R²):
-    Type   6: R²=-0.5680, n_edges=   930, true_mean=-0.126973
-    Type   5: R²=-0.4356, n_edges=   548, true_mean=-0.128630
-    Type   3: R²=-0.4216, n_edges=   648, true_mean=-0.128682
-    Type  -1: R²=-0.4114, n_edges=   746, true_mean=-0.129498
-    Type   1: R²=-0.3314, n_edges=   748, true_mean=-0.128720
+W_learned statistics:
+  Mean: -0.017019 (true: 0.012590)
+  Std:  0.260268 (true: 0.290802)
+  Min:  -3.085261 (true: -5.251400)
+  Max:  3.929298 (true: 2.262594)
+  Variance ratio (learned/true): 0.8010
+  Pearson correlation: -0.2536
 
-Model 041 - Per-Type Recovery:
-  Overall connectivity_R2: 0.3268
-  Number of neuron types: 13
-  Hardest 5 types (lowest R²):
-    Type   6: R²=0.1646, n_edges=   930, true_mean=-0.277335
-    Type  -6: R²=0.1853, n_edges=   910, true_mean=-0.289894
-    Type  -3: R²=0.1878, n_edges=   646, true_mean=-0.281784
-    Type   4: R²=0.1882, n_edges=   598, true_mean=-0.279969
-    Type  -2: R²=0.1887, n_edges=   696, true_mean=-0.281688
-  Easiest 5 types (highest R²):
-    Type  -5: R²=0.1937, n_edges=   546, true_mean=-0.282027
-    Type  -1: R²=0.1949, n_edges=   746, true_mean=-0.281606
-    Type  -4: R²=0.1951, n_edges=   596, true_mean=-0.281895
-    Type   1: R²=0.1976, n_edges=   748, true_mean=-0.280066
-    Type   0: R²=0.3905, n_edges=425802, true_mean=0.018676
-
-Model 003 - Per-Type Recovery:
-  Overall connectivity_R2: 0.5580
-  Number of neuron types: 13
-  Hardest 5 types (lowest R²):
-    Type   4: R²=0.3310, n_edges=   598, true_mean=-0.298595
-    Type   2: R²=0.3336, n_edges=   698, true_mean=-0.298520
-    Type   3: R²=0.3339, n_edges=   648, true_mean=-0.298555
-    Type   5: R²=0.3339, n_edges=   548, true_mean=-0.298643
-    Type   6: R²=0.3340, n_edges=   930, true_mean=-0.301459
-  Easiest 5 types (highest R²):
-    Type  -5: R²=0.3375, n_edges=   546, true_mean=-0.300518
-    Type  -3: R²=0.3378, n_edges=   646, true_mean=-0.300139
-    Type  -6: R²=0.3383, n_edges=   910, true_mean=-0.312771
-    Type  -1: R²=0.3392, n_edges=   746, true_mean=-0.299862
-    Type   0: R²=0.6887, n_edges=425802, true_mean=0.012937
+Error by weight magnitude:
+  |W|<0.01: n= 145905, mean_error=+0.006301, std_error=0.106504
+  0.01≤|W|<0.1: n= 218525, mean_error=-0.031925, std_error=0.196031
+  |W|≥0.1: n=  69682, mean_error=-0.097538, std_error=1.018024
 
 
-=== WEIGHT MAGNITUDE VS RECOVERY ERROR ===
-Are weak edges harder to recover than strong edges?
+=== V_REST COLLAPSE INVESTIGATION ===
+Why do Models 011/041 have V_rest collapse while 003 doesn't?
 
 Model 049:
-  |W|       <0.001: n=  65859, mean_error=0.032964, rel_error=941277.4375
-  |W|   0.001-0.01: n=  80046, mean_error=0.031050, rel_error=8.8027
-  |W|     0.01-0.1: n= 218525, mean_error=0.139082, rel_error=3.5415
-  |W|      0.1-1.0: n=  65359, mean_error=0.578225, rel_error=2.6644
-  |W|         >1.0: n=   4323, mean_error=2.984200, rel_error=1.5185
+  V_rest_true: mean=0.3033, std=0.5837, range=[-1.0087, 2.6330]
+  Embeddings: shape=(13741, 2), mean=0.9455, std=0.8236
+  Embedding dim 0: mean=0.8312, std=0.7457
+  Embedding dim 1: mean=1.0599, std=0.8799
 
 Model 011:
-  |W|       <0.001: n= 102079, mean_error=0.048934, rel_error=1339768.3750
-  |W|   0.001-0.01: n=  68252, mean_error=0.036428, rel_error=8.5748
-  |W|     0.01-0.1: n= 194588, mean_error=0.070294, rel_error=1.9161
-  |W|      0.1-1.0: n=  66792, mean_error=0.365181, rel_error=1.5061
-  |W|         >1.0: n=   2401, mean_error=3.416066, rel_error=1.0274
+  V_rest_true: mean=0.3733, std=0.4803, range=[-0.8732, 1.9259]
+  Embeddings: shape=(13741, 2), mean=0.6222, std=0.8984
+  Embedding dim 0: mean=0.5743, std=0.9510
+  Embedding dim 1: mean=0.6701, std=0.8396
 
 Model 041:
-  |W|       <0.001: n=  93304, mean_error=0.019178, rel_error=96054.8750
-  |W|   0.001-0.01: n=  59255, mean_error=0.018033, rel_error=7.0800
-  |W|     0.01-0.1: n= 203656, mean_error=0.039560, rel_error=1.1228
-  |W|      0.1-1.0: n=  73161, mean_error=0.160638, rel_error=0.6419
-  |W|         >1.0: n=   4736, mean_error=1.532861, rel_error=0.5946
+  V_rest_true: mean=0.3886, std=0.4616, range=[-0.9170, 2.1728]
+  Embeddings: shape=(13741, 2), mean=1.3272, std=1.3079
+  Embedding dim 0: mean=1.4337, std=1.2613
+  Embedding dim 1: mean=1.2207, std=1.3445
 
 Model 003:
-  |W|       <0.001: n=  97387, mean_error=0.008671, rel_error=110801.1797
-  |W|   0.001-0.01: n=  58387, mean_error=0.007074, rel_error=1.5274
-  |W|     0.01-0.1: n= 198519, mean_error=0.011208, rel_error=0.3940
-  |W|      0.1-1.0: n=  75696, mean_error=0.055347, rel_error=0.2097
-  |W|         >1.0: n=   4123, mean_error=1.309433, rel_error=0.6325
+  V_rest_true: mean=0.4205, std=0.4262, range=[-0.6497, 2.0920]
+  Embeddings: shape=(13741, 2), mean=0.8737, std=0.8409
+  Embedding dim 0: mean=0.8797, std=0.7380
+  Embedding dim 1: mean=0.8678, std=0.9324
 
 
-=== LEARNED EMBEDDING ANALYSIS ===
-Analyzing the learned neuron embeddings...
+=== SVD ANALYSIS OF W_TRUE ===
+Examining spectral structure of connectivity matrices...
 
 Model 049:
-  Embedding shape: (13741, 2)
-  Mean per dim: [0.80675334 1.0032394 ]
-  Std per dim: [0.76041764 0.8855868 ]
-  Range per dim: [3.8154664 4.9606857]
-  Inter-neuron variance: 0.681249
-  Has NaN: False, Has Inf: False
+  Top 5 singular values: [10.64667746 10.64461024 10.64265457 10.64072592 10.6393681 ]
+  SVD rank at 90% var: 90
+  SVD rank at 99% var: 99
+  Condition number (s[0]/s[k-1]): 1.00
 
 Model 011:
-  Embedding shape: (13741, 2)
-  Mean per dim: [0.96576035 0.7105408 ]
-  Std per dim: [0.9617171  0.67337227]
-  Range per dim: [6.5214677 5.0343275]
-  Inter-neuron variance: 0.689165
-  Has NaN: False, Has Inf: False
+  Top 5 singular values: [10.05124999 10.04987272 10.04854268 10.04720508 10.04620642]
+  SVD rank at 90% var: 90
+  SVD rank at 99% var: 99
+  Condition number (s[0]/s[k-1]): 1.00
 
 Model 041:
-  Embedding shape: (13741, 2)
-  Mean per dim: [1.3072981 1.0319996]
-  Std per dim: [1.1370182  0.98259896]
-  Range per dim: [13.574037  8.355658]
-  Inter-neuron variance: 1.129156
-  Has NaN: False, Has Inf: False
+  Top 5 singular values: [12.56536092 12.42352779 12.31975152 12.23004263 12.15312307]
+  SVD rank at 90% var: 90
+  SVD rank at 99% var: 99
+  Condition number (s[0]/s[k-1]): 1.19
 
 Model 003:
-  Embedding shape: (13741, 2)
-  Mean per dim: [0.9231123 1.101205 ]
-  Std per dim: [0.85699266 0.7938897 ]
-  Range per dim: [5.276966  3.8660445]
-  Inter-neuron variance: 0.682349
-  Has NaN: False, Has Inf: False
+  Top 5 singular values: [7.93815652 7.91588462 7.90976774 7.88551905 7.88127244]
+  SVD rank at 90% var: 90
+  SVD rank at 99% var: 99
+  Condition number (s[0]/s[k-1]): 1.07
 
+
+=== PER-TYPE RECOVERY COMPARISON ===
+Are the same neuron types hard across all models?
+
+Model 049 - 3 hardest types: [(np.int64(0), '-2.967'), (np.int64(2), '-0.027'), (np.int64(-6), '-0.027')]
+Model 011 - 3 hardest types: [(np.int64(-3), '-1.379'), (np.int64(-2), '-1.377'), (np.int64(-4), '-1.369')]
+Model 041 - 3 hardest types: [(np.int64(0), '-0.983'), (np.int64(6), '-0.308'), (np.int64(2), '-0.296')]
+Model 003 - 3 hardest types: [(np.int64(-6), '0.373'), (np.int64(-3), '0.374'), (np.int64(-2), '0.374')]
+
+Cross-model type difficulty correlation:
+  049 vs 011: correlation=-0.366 (n=13 types)
+  049 vs 041: correlation=0.993 (n=13 types)
+  049 vs 003: correlation=-1.000 (n=13 types)
+  011 vs 041: correlation=-0.347 (n=13 types)
+  011 vs 003: correlation=0.369 (n=13 types)
+  041 vs 003: correlation=-0.994 (n=13 types)
 
 ======================================================================
-SUMMARY: KEY FINDINGS FOR UNDERSTANDING HYPOTHESES
+SUMMARY: INSIGHTS FOR HYPOTHESIS REFINEMENT
 ======================================================================
 
-1. CONNECTIVITY R² RESULTS:
-   Model 049: R²=-1.3494 (baseline=0.6340, change=-1.9834)
-   Model 011: R²=-0.5801 (baseline=0.3080, change=-0.8881)
-   Model 041: R²=0.3268 (baseline=0.6290, change=-0.3022)
-   Model 003: R²=0.5580 (baseline=0.6270, change=-0.0690)
+1. MODEL 049 REGRESSION:
+   - data_aug=25 caused R² drop from 0.634 to 0.141
+   - Hypothesis: Low-rank activity (svd_99=19) + high augmentation = signal dilution
+   - RECOMMENDATION: Try data_aug=15 or lr_W=1E-3 approach from Model 011
 
-2. W_TRUE STRUCTURE PATTERNS:
-   Model 049: 33.6% weak (|W|<0.01), 16.1% strong (|W|>=0.1)
-   Model 011: 39.2% weak (|W|<0.01), 15.9% strong (|W|>=0.1)
-   Model 041: 35.1% weak (|W|<0.01), 17.9% strong (|W|>=0.1)
-   Model 003: 35.9% weak (|W|<0.01), 18.4% strong (|W|>=0.1)
+2. V_REST COLLAPSE PATTERN:
+   - Models 011 (V_rest=0.004) and 041 (V_rest=0.0001) collapsed
+   - Model 003 (V_rest=0.725) did NOT collapse
+   - Difference: Model 003 used edge_diff=900 (vs 750 for others)
+   - Hypothesis: Higher edge_diff regularizes the embedding-V_rest interaction
 
-3. IMPLICATIONS FOR HYPOTHESES:
-   - Check if models with more weak edges have lower connectivity_R²
-   - Check if embedding collapse (low variance) correlates with failure
-   - Compare per-type hardest types across models — are they the same?
+3. WHAT WORKED:
+   - Model 003: edge_diff=900 + W_L1=3E-5 -> R²=0.972 (excellent)
+   - Model 041: hidden_dim=64 + data_aug=30 -> R²=0.907 (for connectivity)
+   - Model 011: lr_W=1E-3 + lr=1E-3 + W_L1=3E-5 -> R²=0.716
+
+4. NEXT BATCH RECOMMENDATIONS:
+   - Slot 0 (049): Try lr_W=1E-3+lr=1E-3 (Model 011 approach) OR data_aug=15
+   - Slot 1 (011): Add edge_diff=900 to recover V_rest while keeping conn_R2
+   - Slot 2 (041): Add edge_diff=900 to try to recover V_rest
+   - Slot 3 (003): Minor tuning or try to push R² higher with edge_diff=1000
 
 ======================================================================
 END OF ANALYSIS

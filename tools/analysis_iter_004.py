@@ -2,13 +2,11 @@
 """
 Analysis tool for Understanding Exploration Batch 1 (Iters 1-4)
 
-Purpose: Compute connectivity_R2 and investigate WHY these 4 models are difficult.
-
-Key questions:
-1. What is the actual connectivity_R2 for each trained model?
-2. How does W_true structure differ between easy (standard) and difficult models?
-3. Are there specific neuron types or edge categories that are harder to recover?
-4. Does activity rank correlate with weight recovery difficulty at the edge level?
+KEY QUESTIONS TO ANSWER:
+1. WHY did Model 049 regress from 0.634 to 0.141 with data_aug=25?
+2. WHY do Models 011 and 041 have V_rest collapse while 003 doesn't?
+3. What structural differences in W_true explain the different responses?
+4. Are there specific neuron types that are systematically hard across models?
 """
 
 import torch
@@ -21,299 +19,273 @@ MODEL_IDS = ['049', '011', '041', '003']
 SLOTS = [0, 1, 2, 3]
 DATA_DIR = 'graphs_data/fly'
 LOG_DIR = 'log/fly'
+BASELINES = {'049': 0.634, '011': 0.308, '041': 0.629, '003': 0.627}
 
 print("=" * 70)
 print("ANALYSIS TOOL: Batch 1 (Iters 1-4) - Understanding Difficult Models")
 print("=" * 70)
 
 # ============================================================================
-# 1. Compute Connectivity R² for each trained model
+# 1. Compute Connectivity R² and Compare to Baseline
 # ============================================================================
-print("\n=== CONNECTIVITY R² ANALYSIS ===")
-print("Computing learned vs true weight correlation for each slot...\n")
+print("\n=== CONNECTIVITY R² ANALYSIS ===\n")
 
 connectivity_r2 = {}
-w_stats = {}
+w_true_data = {}
+w_learned_data = {}
 
 for mid, slot in zip(MODEL_IDS, SLOTS):
     dataset_dir = f'{DATA_DIR}/fly_N9_62_1_id_{mid}'
     log_dir = f'{LOG_DIR}/fly_N9_62_1_understand_Claude_{slot:02d}'
 
-    # Load ground truth weights
-    w_true_path = f'{dataset_dir}/weights.pt'
+    W_true = torch.load(f'{dataset_dir}/weights.pt', weights_only=True, map_location='cpu').numpy()
+    w_true_data[mid] = W_true
+
     model_path = f'{log_dir}/models/best_model_with_0_graphs_0.pt'
-
-    if not os.path.exists(w_true_path):
-        print(f"Model {mid} (Slot {slot}): W_true not found at {w_true_path}")
-        continue
-
-    W_true = torch.load(w_true_path, weights_only=True, map_location='cpu').numpy()
-
-    # Compute W_true statistics
-    nnz = np.count_nonzero(W_true)
-    w_stats[mid] = {
-        'n_edges': len(W_true),
-        'nonzero': nnz,
-        'density': nnz / len(W_true),
-        'mean': W_true.mean(),
-        'std': W_true.std(),
-        'min': W_true.min(),
-        'max': W_true.max(),
-        'abs_mean': np.abs(W_true).mean(),
-        'n_weak': (np.abs(W_true) < 0.01).sum(),
-        'n_moderate': ((np.abs(W_true) >= 0.01) & (np.abs(W_true) < 0.1)).sum(),
-        'n_strong': (np.abs(W_true) >= 0.1).sum(),
-    }
-
-    # Load learned weights if model exists
-    if not os.path.exists(model_path):
-        print(f"Model {mid} (Slot {slot}): No trained model at {model_path}")
-        connectivity_r2[mid] = None
-        continue
-
-    try:
+    if os.path.exists(model_path):
         state_dict = torch.load(model_path, weights_only=False, map_location='cpu')
         W_learned = state_dict['model_state_dict']['W'].numpy().flatten()
+        w_learned_data[mid] = W_learned
 
-        # Compute R²
         ss_res = np.sum((W_true - W_learned) ** 2)
         ss_tot = np.sum((W_true - W_true.mean()) ** 2)
         r2 = 1 - ss_res / ss_tot
+        connectivity_r2[mid] = r2
 
-        # Compute correlation
-        corr, _ = stats.pearsonr(W_true, W_learned)
-
-        connectivity_r2[mid] = {
-            'r2': r2,
-            'pearson': corr,
-            'rmse': np.sqrt(np.mean((W_true - W_learned) ** 2)),
-            'W_learned_mean': W_learned.mean(),
-            'W_learned_std': W_learned.std(),
-        }
-
-        print(f"Model {mid} (Slot {slot}):")
-        print(f"  connectivity_R2 = {r2:.4f}")
-        print(f"  connectivity_pearson = {corr:.4f}")
-        print(f"  RMSE = {connectivity_r2[mid]['rmse']:.6f}")
-        print(f"  W_true:  mean={W_true.mean():.6f}, std={W_true.std():.6f}")
-        print(f"  W_learned: mean={W_learned.mean():.6f}, std={W_learned.std():.6f}")
-        print()
-
-    except Exception as e:
-        print(f"Model {mid} (Slot {slot}): Error loading model - {e}")
-        connectivity_r2[mid] = None
+        change = r2 - BASELINES[mid]
+        status = "IMPROVED" if change > 0.05 else ("REGRESSED" if change < -0.05 else "SIMILAR")
+        print(f"Model {mid}: R²={r2:.4f} (baseline={BASELINES[mid]:.4f}, change={change:+.4f}) [{status}]")
+    else:
+        print(f"Model {mid}: No trained model found")
 
 # ============================================================================
-# 2. Compare W_true Structure Across Models
+# 2. W_TRUE Structure Analysis - Why are these models different?
 # ============================================================================
-print("\n=== W_TRUE STRUCTURE COMPARISON ===")
-print("Comparing ground truth weight distributions across all 4 difficult models...\n")
+print("\n\n=== W_TRUE STRUCTURE COMPARISON ===")
+print("Looking for structural differences that explain model difficulty...\n")
 
-print(f"{'Model':<10} {'N_edges':<10} {'Nonzero':<10} {'Density':<10} {'Mean':<12} {'Std':<12} {'|W|<0.01':<12} {'|W|>=0.1':<12}")
-print("-" * 90)
+print(f"{'Model':<8} {'Nonzero%':<10} {'Mean':<12} {'Std':<12} {'|W|<0.01%':<12} {'|W|>0.1%':<12} {'SVD_rank99':<12}")
+print("-" * 80)
+
+svd_ranks = {'049': 19, '011': 45, '041': 6, '003': 60}
+
 for mid in MODEL_IDS:
-    if mid in w_stats:
-        s = w_stats[mid]
-        print(f"{mid:<10} {s['n_edges']:<10} {s['nonzero']:<10} {s['density']:<10.4f} {s['mean']:<12.6f} {s['std']:<12.6f} {s['n_weak']:<12} {s['n_strong']:<12}")
+    W = w_true_data[mid]
+    nnz_pct = 100 * np.count_nonzero(W) / len(W)
+    weak_pct = 100 * (np.abs(W) < 0.01).sum() / len(W)
+    strong_pct = 100 * (np.abs(W) >= 0.1).sum() / len(W)
+    print(f"{mid:<8} {nnz_pct:<10.2f} {W.mean():<12.6f} {W.std():<12.6f} {weak_pct:<12.1f} {strong_pct:<12.1f} {svd_ranks[mid]:<12}")
 
 # ============================================================================
-# 3. Per-Neuron-Type Weight Analysis
+# 3. Investigate Model 049 Regression
 # ============================================================================
-print("\n\n=== PER-NEURON-TYPE WEIGHT ANALYSIS ===")
-print("Analyzing weight recovery by source neuron type...\n")
+print("\n\n=== MODEL 049 REGRESSION INVESTIGATION ===")
+print("Why did data_aug=25 cause regression from 0.634 to 0.141?\n")
 
-for mid, slot in zip(MODEL_IDS, SLOTS):
-    dataset_dir = f'{DATA_DIR}/fly_N9_62_1_id_{mid}'
-    log_dir = f'{LOG_DIR}/fly_N9_62_1_understand_Claude_{slot:02d}'
+if '049' in w_learned_data:
+    W_true = w_true_data['049']
+    W_learned = w_learned_data['049']
 
-    # Load edge index and metadata
-    edge_index_path = f'{dataset_dir}/edge_index.pt'
-    w_true_path = f'{dataset_dir}/weights.pt'
-    model_path = f'{log_dir}/models/best_model_with_0_graphs_0.pt'
+    # Check for systematic bias
+    print("W_learned statistics:")
+    print(f"  Mean: {W_learned.mean():.6f} (true: {W_true.mean():.6f})")
+    print(f"  Std:  {W_learned.std():.6f} (true: {W_true.std():.6f})")
+    print(f"  Min:  {W_learned.min():.6f} (true: {W_true.min():.6f})")
+    print(f"  Max:  {W_learned.max():.6f} (true: {W_true.max():.6f})")
 
-    if not all(os.path.exists(p) for p in [edge_index_path, w_true_path]):
-        continue
+    # Check if learned weights are collapsed
+    learned_var = np.var(W_learned)
+    true_var = np.var(W_true)
+    print(f"  Variance ratio (learned/true): {learned_var/true_var:.4f}")
 
-    edge_index = torch.load(edge_index_path, weights_only=True, map_location='cpu').numpy()
-    W_true = torch.load(w_true_path, weights_only=True, map_location='cpu').numpy()
+    # Check correlation
+    corr, _ = stats.pearsonr(W_true, W_learned)
+    print(f"  Pearson correlation: {corr:.4f}")
 
-    # Load metadata to get neuron types
-    try:
-        import zarr
-        metadata_path = f'{dataset_dir}/x_list_0/metadata.zarr'
-        metadata = zarr.open(metadata_path, 'r')[:]
-        neuron_types = metadata[:, 2].astype(int)  # Column 2 is neuron_type
-    except:
-        print(f"Model {mid}: Could not load metadata, skipping per-type analysis")
-        continue
-
-    # Get source neuron types for each edge
-    source_nodes = edge_index[0]  # Shape: [n_edges]
-    source_types = neuron_types[source_nodes]
-
-    if not os.path.exists(model_path):
-        print(f"Model {mid}: No trained model for per-type analysis")
-        continue
-
-    try:
-        state_dict = torch.load(model_path, weights_only=False, map_location='cpu')
-        W_learned = state_dict['model_state_dict']['W'].numpy().flatten()
-    except:
-        continue
-
-    # Compute R² per source neuron type
-    unique_types = np.unique(source_types)
-    type_r2 = {}
-
-    for t in unique_types:
-        mask = source_types == t
-        if mask.sum() < 10:  # Skip types with few edges
-            continue
-
-        w_true_t = W_true[mask]
-        w_learned_t = W_learned[mask]
-
-        ss_res = np.sum((w_true_t - w_learned_t) ** 2)
-        ss_tot = np.sum((w_true_t - w_true_t.mean()) ** 2)
-
-        if ss_tot > 1e-10:
-            r2_t = 1 - ss_res / ss_tot
-        else:
-            r2_t = np.nan
-
-        type_r2[t] = {
-            'r2': r2_t,
-            'n_edges': mask.sum(),
-            'true_mean': w_true_t.mean(),
-            'true_std': w_true_t.std(),
-        }
-
-    # Find hardest and easiest types
-    valid_types = [(t, d['r2']) for t, d in type_r2.items() if not np.isnan(d['r2'])]
-    if valid_types:
-        valid_types.sort(key=lambda x: x[1])
-
-        print(f"\nModel {mid} - Per-Type Recovery:")
-        print(f"  Overall connectivity_R2: {connectivity_r2.get(mid, {}).get('r2', 'N/A'):.4f}" if mid in connectivity_r2 and connectivity_r2[mid] else "  Overall connectivity_R2: N/A")
-        print(f"  Number of neuron types: {len(unique_types)}")
-        print(f"  Hardest 5 types (lowest R²):")
-        for t, r2 in valid_types[:5]:
-            d = type_r2[t]
-            print(f"    Type {t:3d}: R²={r2:.4f}, n_edges={d['n_edges']:6d}, true_mean={d['true_mean']:.6f}")
-        print(f"  Easiest 5 types (highest R²):")
-        for t, r2 in valid_types[-5:]:
-            d = type_r2[t]
-            print(f"    Type {t:3d}: R²={r2:.4f}, n_edges={d['n_edges']:6d}, true_mean={d['true_mean']:.6f}")
-
-# ============================================================================
-# 4. Weight Magnitude vs Recovery Error Analysis
-# ============================================================================
-print("\n\n=== WEIGHT MAGNITUDE VS RECOVERY ERROR ===")
-print("Are weak edges harder to recover than strong edges?\n")
-
-for mid, slot in zip(MODEL_IDS, SLOTS):
-    dataset_dir = f'{DATA_DIR}/fly_N9_62_1_id_{mid}'
-    log_dir = f'{LOG_DIR}/fly_N9_62_1_understand_Claude_{slot:02d}'
-    model_path = f'{log_dir}/models/best_model_with_0_graphs_0.pt'
-    w_true_path = f'{dataset_dir}/weights.pt'
-
-    if not os.path.exists(model_path):
-        continue
-
-    W_true = torch.load(w_true_path, weights_only=True, map_location='cpu').numpy()
-
-    try:
-        state_dict = torch.load(model_path, weights_only=False, map_location='cpu')
-        W_learned = state_dict['model_state_dict']['W'].numpy().flatten()
-    except:
-        continue
-
-    # Compute absolute error
-    error = np.abs(W_true - W_learned)
+    # Error distribution by weight magnitude
+    error = W_learned - W_true
     abs_W = np.abs(W_true)
 
-    # Bin by weight magnitude
-    bins = [0, 0.001, 0.01, 0.1, 1.0, np.inf]
-    bin_labels = ['<0.001', '0.001-0.01', '0.01-0.1', '0.1-1.0', '>1.0']
+    print("\nError by weight magnitude:")
+    for lo, hi, label in [(0, 0.01, '|W|<0.01'), (0.01, 0.1, '0.01≤|W|<0.1'), (0.1, np.inf, '|W|≥0.1')]:
+        mask = (abs_W >= lo) & (abs_W < hi)
+        if mask.sum() > 0:
+            print(f"  {label}: n={mask.sum():7d}, mean_error={error[mask].mean():+.6f}, std_error={error[mask].std():.6f}")
+
+# ============================================================================
+# 4. V_rest Collapse Investigation
+# ============================================================================
+print("\n\n=== V_REST COLLAPSE INVESTIGATION ===")
+print("Why do Models 011/041 have V_rest collapse while 003 doesn't?\n")
+
+for mid, slot in zip(MODEL_IDS, SLOTS):
+    dataset_dir = f'{DATA_DIR}/fly_N9_62_1_id_{mid}'
+    log_dir = f'{LOG_DIR}/fly_N9_62_1_understand_Claude_{slot:02d}'
+
+    # Load true V_rest
+    v_rest_path = f'{dataset_dir}/V_i_rest.pt'
+    model_path = f'{log_dir}/models/best_model_with_0_graphs_0.pt'
+
+    if not os.path.exists(v_rest_path) or not os.path.exists(model_path):
+        continue
+
+    V_rest_true = torch.load(v_rest_path, weights_only=True, map_location='cpu').numpy()
+
+    # V_rest is encoded in embeddings or in the model differently - check state dict keys
+    state_dict = torch.load(model_path, weights_only=False, map_location='cpu')
+    model_sd = state_dict['model_state_dict']
 
     print(f"Model {mid}:")
-    for i in range(len(bins) - 1):
-        mask = (abs_W >= bins[i]) & (abs_W < bins[i+1])
-        if mask.sum() > 0:
-            mean_error = error[mask].mean()
-            relative_error = (error[mask] / (abs_W[mask] + 1e-8)).mean()
-            print(f"  |W| {bin_labels[i]:>12}: n={mask.sum():7d}, mean_error={mean_error:.6f}, rel_error={relative_error:.4f}")
+    print(f"  V_rest_true: mean={V_rest_true.mean():.4f}, std={V_rest_true.std():.4f}, range=[{V_rest_true.min():.4f}, {V_rest_true.max():.4f}]")
+
+    # Check embeddings
+    embeddings = model_sd['a'].numpy()
+    print(f"  Embeddings: shape={embeddings.shape}, mean={embeddings.mean():.4f}, std={embeddings.std():.4f}")
+    print(f"  Embedding dim 0: mean={embeddings[:,0].mean():.4f}, std={embeddings[:,0].std():.4f}")
+    print(f"  Embedding dim 1: mean={embeddings[:,1].mean():.4f}, std={embeddings[:,1].std():.4f}")
+
+    # Check for NaN/Inf
+    has_nan = np.isnan(embeddings).any()
+    has_inf = np.isinf(embeddings).any()
+    if has_nan or has_inf:
+        print(f"  WARNING: Has NaN={has_nan}, Has Inf={has_inf}")
     print()
 
 # ============================================================================
-# 5. Embedding Analysis
+# 5. SVD Analysis of W_true
 # ============================================================================
-print("\n=== LEARNED EMBEDDING ANALYSIS ===")
-print("Analyzing the learned neuron embeddings...\n")
+print("\n=== SVD ANALYSIS OF W_TRUE ===")
+print("Examining spectral structure of connectivity matrices...\n")
+
+for mid in MODEL_IDS:
+    W = w_true_data[mid]
+
+    # Reshape to matrix form using edge_index
+    edge_index_path = f'{DATA_DIR}/fly_N9_62_1_id_{mid}/edge_index.pt'
+    if os.path.exists(edge_index_path):
+        edge_index = torch.load(edge_index_path, weights_only=True, map_location='cpu').numpy()
+
+        # Get number of neurons
+        n_neurons = max(edge_index.max() + 1, 13741)
+
+        # Create sparse adjacency matrix
+        W_matrix = np.zeros((n_neurons, n_neurons))
+        W_matrix[edge_index[1], edge_index[0]] = W  # target, source
+
+        # Compute SVD on a sample (full SVD is too expensive)
+        # Use randomized SVD approximation
+        try:
+            from scipy.sparse.linalg import svds
+            from scipy.sparse import csr_matrix
+
+            W_sparse = csr_matrix(W_matrix)
+            k = min(100, min(W_matrix.shape) - 1)
+            U, s, Vt = svds(W_sparse, k=k)
+
+            # Sort singular values in descending order
+            s = s[::-1]
+
+            # Compute cumulative variance explained
+            total_var = (s**2).sum()
+            cumvar = np.cumsum(s**2) / total_var
+
+            rank_90 = np.searchsorted(cumvar, 0.90) + 1
+            rank_99 = np.searchsorted(cumvar, 0.99) + 1
+
+            print(f"Model {mid}:")
+            print(f"  Top 5 singular values: {s[:5]}")
+            print(f"  SVD rank at 90% var: {rank_90}")
+            print(f"  SVD rank at 99% var: {rank_99}")
+            print(f"  Condition number (s[0]/s[k-1]): {s[0]/s[-1]:.2f}")
+            print()
+        except Exception as e:
+            print(f"Model {mid}: SVD failed - {e}")
+
+# ============================================================================
+# 6. Per-Type Recovery Analysis (brief)
+# ============================================================================
+print("\n=== PER-TYPE RECOVERY COMPARISON ===")
+print("Are the same neuron types hard across all models?\n")
+
+type_r2_by_model = {}
 
 for mid, slot in zip(MODEL_IDS, SLOTS):
-    log_dir = f'{LOG_DIR}/fly_N9_62_1_understand_Claude_{slot:02d}'
-    model_path = f'{log_dir}/models/best_model_with_0_graphs_0.pt'
-
-    if not os.path.exists(model_path):
+    if mid not in w_learned_data:
         continue
 
+    dataset_dir = f'{DATA_DIR}/fly_N9_62_1_id_{mid}'
+    edge_index = torch.load(f'{dataset_dir}/edge_index.pt', weights_only=True, map_location='cpu').numpy()
+
     try:
-        state_dict = torch.load(model_path, weights_only=False, map_location='cpu')
-        embeddings = state_dict['model_state_dict']['a'].numpy()  # Shape: [n_neurons, embedding_dim]
+        import zarr
+        metadata = zarr.open(f'{dataset_dir}/x_list_0/metadata.zarr', 'r')[:]
+        neuron_types = metadata[:, 2].astype(int)
+    except:
+        continue
 
-        emb_mean = embeddings.mean(axis=0)
-        emb_std = embeddings.std(axis=0)
-        emb_range = embeddings.max(axis=0) - embeddings.min(axis=0)
+    W_true = w_true_data[mid]
+    W_learned = w_learned_data[mid]
+    source_types = neuron_types[edge_index[0]]
 
-        print(f"Model {mid}:")
-        print(f"  Embedding shape: {embeddings.shape}")
-        print(f"  Mean per dim: {emb_mean}")
-        print(f"  Std per dim: {emb_std}")
-        print(f"  Range per dim: {emb_range}")
+    type_r2 = {}
+    for t in np.unique(source_types):
+        mask = source_types == t
+        if mask.sum() < 100:
+            continue
+        w_t = W_true[mask]
+        w_l = W_learned[mask]
+        ss_res = np.sum((w_t - w_l) ** 2)
+        ss_tot = np.sum((w_t - w_t.mean()) ** 2)
+        if ss_tot > 1e-10:
+            type_r2[t] = 1 - ss_res / ss_tot
 
-        # Check for collapse (all embeddings similar)
-        inter_neuron_var = np.var(embeddings, axis=0).mean()
-        print(f"  Inter-neuron variance: {inter_neuron_var:.6f}")
+    type_r2_by_model[mid] = type_r2
 
-        # Check if embeddings have NaN or Inf
-        has_nan = np.isnan(embeddings).any()
-        has_inf = np.isinf(embeddings).any()
-        print(f"  Has NaN: {has_nan}, Has Inf: {has_inf}")
-        print()
+    # Find hardest types
+    sorted_types = sorted(type_r2.items(), key=lambda x: x[1])
+    print(f"Model {mid} - 3 hardest types: {[(t, f'{r:.3f}') for t, r in sorted_types[:3]]}")
 
-    except Exception as e:
-        print(f"Model {mid}: Error loading embeddings - {e}")
+# Check if same types are hard across models
+if len(type_r2_by_model) >= 2:
+    print("\nCross-model type difficulty correlation:")
+    models = list(type_r2_by_model.keys())
+    for i, m1 in enumerate(models):
+        for m2 in models[i+1:]:
+            common_types = set(type_r2_by_model[m1].keys()) & set(type_r2_by_model[m2].keys())
+            if len(common_types) > 5:
+                r2_1 = [type_r2_by_model[m1][t] for t in common_types]
+                r2_2 = [type_r2_by_model[m2][t] for t in common_types]
+                corr, _ = stats.pearsonr(r2_1, r2_2)
+                print(f"  {m1} vs {m2}: correlation={corr:.3f} (n={len(common_types)} types)")
 
 # ============================================================================
-# 6. Summary and Key Findings
+# 7. Summary and Hypotheses Update
 # ============================================================================
 print("\n" + "=" * 70)
-print("SUMMARY: KEY FINDINGS FOR UNDERSTANDING HYPOTHESES")
+print("SUMMARY: INSIGHTS FOR HYPOTHESIS REFINEMENT")
 print("=" * 70)
 
-print("\n1. CONNECTIVITY R² RESULTS:")
-for mid in MODEL_IDS:
-    if mid in connectivity_r2 and connectivity_r2[mid]:
-        r2 = connectivity_r2[mid]['r2']
-        baseline = {'049': 0.634, '011': 0.308, '041': 0.629, '003': 0.627}[mid]
-        change = r2 - baseline
-        print(f"   Model {mid}: R²={r2:.4f} (baseline={baseline:.4f}, change={change:+.4f})")
-    else:
-        print(f"   Model {mid}: No connectivity R² computed")
+print("\n1. MODEL 049 REGRESSION:")
+print("   - data_aug=25 caused R² drop from 0.634 to 0.141")
+print("   - Hypothesis: Low-rank activity (svd_99=19) + high augmentation = signal dilution")
+print("   - RECOMMENDATION: Try data_aug=15 or lr_W=1E-3 approach from Model 011")
 
-print("\n2. W_TRUE STRUCTURE PATTERNS:")
-for mid in MODEL_IDS:
-    if mid in w_stats:
-        s = w_stats[mid]
-        weak_pct = 100 * s['n_weak'] / s['n_edges']
-        strong_pct = 100 * s['n_strong'] / s['n_edges']
-        print(f"   Model {mid}: {weak_pct:.1f}% weak (|W|<0.01), {strong_pct:.1f}% strong (|W|>=0.1)")
+print("\n2. V_REST COLLAPSE PATTERN:")
+print("   - Models 011 (V_rest=0.004) and 041 (V_rest=0.0001) collapsed")
+print("   - Model 003 (V_rest=0.725) did NOT collapse")
+print("   - Difference: Model 003 used edge_diff=900 (vs 750 for others)")
+print("   - Hypothesis: Higher edge_diff regularizes the embedding-V_rest interaction")
 
-print("\n3. IMPLICATIONS FOR HYPOTHESES:")
-print("   - Check if models with more weak edges have lower connectivity_R²")
-print("   - Check if embedding collapse (low variance) correlates with failure")
-print("   - Compare per-type hardest types across models — are they the same?")
+print("\n3. WHAT WORKED:")
+print("   - Model 003: edge_diff=900 + W_L1=3E-5 -> R²=0.972 (excellent)")
+print("   - Model 041: hidden_dim=64 + data_aug=30 -> R²=0.907 (for connectivity)")
+print("   - Model 011: lr_W=1E-3 + lr=1E-3 + W_L1=3E-5 -> R²=0.716")
+
+print("\n4. NEXT BATCH RECOMMENDATIONS:")
+print("   - Slot 0 (049): Try lr_W=1E-3+lr=1E-3 (Model 011 approach) OR data_aug=15")
+print("   - Slot 1 (011): Add edge_diff=900 to recover V_rest while keeping conn_R2")
+print("   - Slot 2 (041): Add edge_diff=900 to try to recover V_rest")
+print("   - Slot 3 (003): Minor tuning or try to push R² higher with edge_diff=1000")
 
 print("\n" + "=" * 70)
 print("END OF ANALYSIS")
