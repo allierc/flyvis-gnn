@@ -27,6 +27,7 @@ import pandas as pd
 # from data_loaders import *
 
 
+from flyvis_gnn.zarr_io import load_simulation_data
 from flyvis_gnn.fitting_models import linear_model
 from flyvis_gnn.sparsify import EmbeddingCluster, sparsify_cluster, clustering_gmm
 from flyvis_gnn.models.utils import (
@@ -177,15 +178,10 @@ def load_training_data(dataset_name, n_runs, log_dir, device):
     print('load data ...')
     time.sleep(0.5)
     for run in trange(n_runs, ncols=90):
-        # check if path exists
-        if os.path.exists(f'graphs_data/{dataset_name}/x_list_{run}.pt'):
-            x = torch.load(f'graphs_data/{dataset_name}/x_list_{run}.pt', map_location=device)
-            y = torch.load(f'graphs_data/{dataset_name}/y_list_{run}.pt', map_location=device)
-        else:
-            x = np.load(f'graphs_data/{dataset_name}/x_list_{run}.npy')
-            x = torch.tensor(x, dtype=torch.float32, device=device)
-            y = np.load(f'graphs_data/{dataset_name}/y_list_{run}.npy')
-            y = torch.tensor(y, dtype=torch.float32, device=device)
+        x = load_simulation_data(f'graphs_data/{dataset_name}/x_list_{run}')
+        x = torch.tensor(x, dtype=torch.float32, device=device)
+        y = load_simulation_data(f'graphs_data/{dataset_name}/y_list_{run}')
+        y = torch.tensor(y, dtype=torch.float32, device=device)
 
         x_list.append(x)
         y_list.append(y)
@@ -1077,17 +1073,10 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
     x_list = []
     y_list = []
     run =0
-    if os.path.exists(f'graphs_data/{dataset_name}/x_list_{run}.pt'):
-        x = torch.load(f'graphs_data/{dataset_name}/x_list_{run}.pt', map_location=device)
-        y = torch.load(f'graphs_data/{dataset_name}/y_list_{run}.pt', map_location=device)
-        x = to_numpy(torch.stack(x))
-        y = to_numpy(torch.stack(y))
-
-    else:
-        x = np.load(f'graphs_data/{dataset_name}/x_list_{run}.npy')
-        y = np.load(f'graphs_data/{dataset_name}/y_list_{run}.npy')
-        if os.path.exists(f'graphs_data/{dataset_name}/raw_x_list_{run}.npy'):
-            raw_x = np.load(f'graphs_data/{dataset_name}/raw_x_list_{run}.npy')
+    x = load_simulation_data(f'graphs_data/{dataset_name}/x_list_{run}')
+    y = load_simulation_data(f'graphs_data/{dataset_name}/y_list_{run}')
+    if os.path.exists(f'graphs_data/{dataset_name}/raw_x_list_{run}.npy'):
+        raw_x = np.load(f'graphs_data/{dataset_name}/raw_x_list_{run}.npy')
     x_list.append(x)
     y_list.append(y)
     vnorm = torch.load(os.path.join(log_dir, 'vnorm.pt'))
@@ -3093,14 +3082,8 @@ def plot_synaptic3(config, epoch_list, log_dir, logger, cc, style, extended, dev
     x_list = []
     y_list = []
     for run in trange(1, ncols=90):
-        if os.path.exists(f'graphs_data/{dataset_name}/x_list_{run}.pt'):
-            x = torch.load(f'graphs_data/{dataset_name}/x_list_{run}.pt', map_location=device)
-            y = torch.load(f'graphs_data/{dataset_name}/y_list_{run}.pt', map_location=device)
-            x = to_numpy(torch.stack(x))
-            y = to_numpy(torch.stack(y))
-        else:
-            x = np.load(f'graphs_data/{dataset_name}/x_list_{run}.npy')
-            y = np.load(f'graphs_data/{dataset_name}/y_list_{run}.npy')
+        x = load_simulation_data(f'graphs_data/{dataset_name}/x_list_{run}')
+        y = load_simulation_data(f'graphs_data/{dataset_name}/y_list_{run}')
         x_list.append(x)
         y_list.append(y)
     vnorm = torch.load(os.path.join(log_dir, 'vnorm.pt'))
@@ -3914,16 +3897,10 @@ def plot_synaptic_CElegans(config, epoch_list, log_dir, logger, cc, style, exten
     x_list = []
     y_list = []
     for run in trange(0,n_runs, ncols=90):
-        if os.path.exists(f'graphs_data/{dataset_name}/x_list_{run}.pt'):
-            x = torch.load(f'graphs_data/{dataset_name}/x_list_{run}.pt', map_location=device)
-            y = torch.load(f'graphs_data/{dataset_name}/y_list_{run}.pt', map_location=device)
-            x = to_numpy(torch.stack(x))
-            y = to_numpy(torch.stack(y))
-        else:
-            x = np.load(f'graphs_data/{dataset_name}/x_list_{run}.npy')
-            y = np.load(f'graphs_data/{dataset_name}/y_list_{run}.npy')
-            if os.path.exists(f'graphs_data/{dataset_name}/raw_x_list_{run}.npy'):
-                np.load(f'graphs_data/{dataset_name}/raw_x_list_{run}.npy')
+        x = load_simulation_data(f'graphs_data/{dataset_name}/x_list_{run}')
+        y = load_simulation_data(f'graphs_data/{dataset_name}/y_list_{run}')
+        if os.path.exists(f'graphs_data/{dataset_name}/raw_x_list_{run}.npy'):
+            np.load(f'graphs_data/{dataset_name}/raw_x_list_{run}.npy')
         x_list.append(x)
         y_list.append(y)
     vnorm = torch.load(os.path.join(log_dir, 'vnorm.pt'))
@@ -5776,14 +5753,8 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
     time.sleep(0.5)
     print('load simulation data...')
     for run in range(0, n_runs):
-        if os.path.exists(f'graphs_data/{dataset_name}/x_list_{run}.pt'):
-            x = torch.load(f'graphs_data/{dataset_name}/x_list_{run}.pt', map_location=device)
-            y = torch.load(f'graphs_data/{dataset_name}/y_list_{run}.pt', map_location=device)
-            x = to_numpy(torch.stack(x))
-            y = to_numpy(torch.stack(y))
-        else:
-            x = np.load(f'graphs_data/{dataset_name}/x_list_{run}.npy')
-            y = np.load(f'graphs_data/{dataset_name}/y_list_{run}.npy')
+        x = load_simulation_data(f'graphs_data/{dataset_name}/x_list_{run}')
+        y = load_simulation_data(f'graphs_data/{dataset_name}/y_list_{run}')
         x_list.append(x)
         y_list.append(y)
 
@@ -6531,97 +6502,85 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
 
 
 
-            # Plot connectivity matrix comparison
-            print('plot connectivity matrix comparison')
-            row_start = 1736
-            row_end = 1736 + 217 * 2  # 2160   L1 L2
-            col_start = 0
-            col_end = 217 * 2  # 424        R1 R2
+            # Plot connectivity matrix comparison (skipped — dense NxN heatmaps too slow)
+            if False:  # disabled: dense NxN matrix plots are too slow for automated exploration
+                print('plot connectivity matrix comparison')
+                row_start = 1736
+                row_end = 1736 + 217 * 2  # 2160   L1 L2
+                col_start = 0
+                col_end = 217 * 2  # 424        R1 R2
 
-            true_in_region = torch.zeros((n_neurons, n_neurons), dtype=torch.float32, device=edges.device)
-            true_in_region[edges[1], edges[0]] = gt_weights
-            learned_in_region = torch.zeros((n_neurons, n_neurons), dtype=torch.float32, device=edges.device)
-            learned_in_region[edges[1], edges[0]] = corrected_W.squeeze()
+                true_in_region = torch.zeros((n_neurons, n_neurons), dtype=torch.float32, device=edges.device)
+                true_in_region[edges[1], edges[0]] = gt_weights
+                learned_in_region = torch.zeros((n_neurons, n_neurons), dtype=torch.float32, device=edges.device)
+                learned_in_region[edges[1], edges[0]] = corrected_W.squeeze()
 
-            fig, axes = plt.subplots(1, 2, figsize=(20, 10))
-            # First panel: true_in connectivity
-            ax1 = sns.heatmap(to_numpy(true_in_region[row_start:row_end, col_start:col_end]), center=0, square=True, cmap='bwr',
-                              cbar_kws={'fraction': 0.046}, ax=axes[0])
-            axes[0].set_title('true connectivity', fontsize=24)
-            axes[0].set_xlabel('columns [1736:2170]', fontsize=18)
-            axes[0].set_ylabel('rows [0:434]', fontsize=18)
-            cbar1 = ax1.collections[0].colorbar
-            cbar1.ax.tick_params(labelsize=16)
-            # Second panel: learned_in connectivity
-            ax2 = sns.heatmap(to_numpy(learned_in_region[row_start:row_end, col_start:col_end]), center=0, square=True, cmap='bwr',
-                              cbar_kws={'fraction': 0.046}, ax=axes[1])
-            axes[1].set_title('learned connectivity', fontsize=24)
-            axes[1].set_xlabel('columns [1736:2170]', fontsize=18)
-            axes[1].set_ylabel('rows [0:434]', fontsize=18)
-            cbar2 = ax2.collections[0].colorbar
-            cbar2.ax.tick_params(labelsize=16)
-
-            plt.tight_layout()
-            plt.savefig(f'{log_dir}/results/connectivity_comparison_R_to_L.png', dpi=150, bbox_inches='tight')
-            plt.close()
-
-
-
-            # Plot true connectivity: full NxN matrix with R_to_L region as inset
-            true_connectivity_path = f'{log_dir}/results/true connectivity.png'
-            if not os.path.exists(true_connectivity_path):
-                full_true_data = to_numpy(true_in_region)
-                # Inset region from R_to_L (rows 1736:2170, cols 0:434)
-                inset_row_start = 1736
-                inset_row_end = 1736 + 217 * 2
-                inset_col_start = 0
-                inset_col_end = 217 * 2
-                inset_data = full_true_data[inset_row_start:inset_row_end, inset_col_start:inset_col_end]
-
-                plt.figure(figsize=(10, 10))
-                ax = sns.heatmap(full_true_data, center=0, square=True, cmap='bwr', cbar_kws={'fraction': 0.046})
-                cbar = ax.collections[0].colorbar
-                cbar.ax.tick_params(labelsize=32)
-                plt.xticks([0, n_neurons - 1], [0, n_neurons], fontsize=48)
-                plt.yticks([0, n_neurons - 1], [0, n_neurons], fontsize=48)
-                plt.xticks(rotation=0)
-                plt.subplot(2, 2, 1)
-                ax = sns.heatmap(inset_data, cbar=False, center=0, square=True, cmap='bwr')
-                plt.xticks([])
-                plt.yticks([])
+                fig, axes = plt.subplots(1, 2, figsize=(20, 10))
+                ax1 = sns.heatmap(to_numpy(true_in_region[row_start:row_end, col_start:col_end]), center=0, square=True, cmap='bwr',
+                                  cbar_kws={'fraction': 0.046}, ax=axes[0])
+                axes[0].set_title('true connectivity', fontsize=24)
+                axes[0].set_xlabel('columns [1736:2170]', fontsize=18)
+                axes[0].set_ylabel('rows [0:434]', fontsize=18)
+                cbar1 = ax1.collections[0].colorbar
+                cbar1.ax.tick_params(labelsize=16)
+                ax2 = sns.heatmap(to_numpy(learned_in_region[row_start:row_end, col_start:col_end]), center=0, square=True, cmap='bwr',
+                                  cbar_kws={'fraction': 0.046}, ax=axes[1])
+                axes[1].set_title('learned connectivity', fontsize=24)
+                axes[1].set_xlabel('columns [1736:2170]', fontsize=18)
+                axes[1].set_ylabel('rows [0:434]', fontsize=18)
+                cbar2 = ax2.collections[0].colorbar
+                cbar2.ax.tick_params(labelsize=16)
                 plt.tight_layout()
-                plt.savefig(true_connectivity_path, dpi=300)
+                plt.savefig(f'{log_dir}/results/connectivity_comparison_R_to_L.png', dpi=150, bbox_inches='tight')
                 plt.close()
 
-            row_start = 0
-            row_end = 217 * 2  # 424        R1 R2
-            col_start = 1736
-            col_end = 1736 + 217 * 2  # 2160   L1 L2
+                true_connectivity_path = f'{log_dir}/results/true connectivity.png'
+                if not os.path.exists(true_connectivity_path):
+                    full_true_data = to_numpy(true_in_region)
+                    inset_row_start = 1736
+                    inset_row_end = 1736 + 217 * 2
+                    inset_col_start = 0
+                    inset_col_end = 217 * 2
+                    inset_data = full_true_data[inset_row_start:inset_row_end, inset_col_start:inset_col_end]
+                    plt.figure(figsize=(10, 10))
+                    ax = sns.heatmap(full_true_data, center=0, square=True, cmap='bwr', cbar_kws={'fraction': 0.046})
+                    cbar = ax.collections[0].colorbar
+                    cbar.ax.tick_params(labelsize=32)
+                    plt.xticks([0, n_neurons - 1], [0, n_neurons], fontsize=48)
+                    plt.yticks([0, n_neurons - 1], [0, n_neurons], fontsize=48)
+                    plt.xticks(rotation=0)
+                    plt.subplot(2, 2, 1)
+                    ax = sns.heatmap(inset_data, cbar=False, center=0, square=True, cmap='bwr')
+                    plt.xticks([])
+                    plt.yticks([])
+                    plt.tight_layout()
+                    plt.savefig(true_connectivity_path, dpi=300)
+                    plt.close()
 
-            true_data = to_numpy(true_in_region[row_start:row_end, col_start:col_end])
-            learned_data = to_numpy(learned_in_region[row_start:row_end, col_start:col_end])
-
-            fig, axes = plt.subplots(1, 2, figsize=(20, 10))
-            # First panel: true_in connectivity
-            ax1 = sns.heatmap(true_data, center=0, square=True, cmap='bwr',
-                              cbar_kws={'fraction': 0.046}, ax=axes[0])
-            axes[0].set_title('true connectivity', fontsize=24)
-            axes[0].set_xlabel('columns [1736:2170]', fontsize=18)
-            axes[0].set_ylabel('rows [0:434]', fontsize=18)
-            cbar1 = ax1.collections[0].colorbar
-            cbar1.ax.tick_params(labelsize=16)
-            # Second panel: learned_in connectivity
-            ax2 = sns.heatmap(learned_data, center=0, square=True, cmap='bwr',
-                              cbar_kws={'fraction': 0.046}, ax=axes[1])
-            axes[1].set_title('learned connectivity', fontsize=24)
-            axes[1].set_xlabel('columns [1736:2170]', fontsize=18)
-            axes[1].set_ylabel('rows [0:434]', fontsize=18)
-            cbar2 = ax2.collections[0].colorbar
-            cbar2.ax.tick_params(labelsize=16)
-
-            plt.tight_layout()
-            plt.savefig(f'{log_dir}/results/connectivity_comparison_L_to_R.png', dpi=150, bbox_inches='tight')
-            plt.close()
+                row_start = 0
+                row_end = 217 * 2  # 424        R1 R2
+                col_start = 1736
+                col_end = 1736 + 217 * 2  # 2160   L1 L2
+                true_data = to_numpy(true_in_region[row_start:row_end, col_start:col_end])
+                learned_data = to_numpy(learned_in_region[row_start:row_end, col_start:col_end])
+                fig, axes = plt.subplots(1, 2, figsize=(20, 10))
+                ax1 = sns.heatmap(true_data, center=0, square=True, cmap='bwr',
+                                  cbar_kws={'fraction': 0.046}, ax=axes[0])
+                axes[0].set_title('true connectivity', fontsize=24)
+                axes[0].set_xlabel('columns [1736:2170]', fontsize=18)
+                axes[0].set_ylabel('rows [0:434]', fontsize=18)
+                cbar1 = ax1.collections[0].colorbar
+                cbar1.ax.tick_params(labelsize=16)
+                ax2 = sns.heatmap(learned_data, center=0, square=True, cmap='bwr',
+                                  cbar_kws={'fraction': 0.046}, ax=axes[1])
+                axes[1].set_title('learned connectivity', fontsize=24)
+                axes[1].set_xlabel('columns [1736:2170]', fontsize=18)
+                axes[1].set_ylabel('rows [0:434]', fontsize=18)
+                cbar2 = ax2.collections[0].colorbar
+                cbar2.ax.tick_params(labelsize=16)
+                plt.tight_layout()
+                plt.savefig(f'{log_dir}/results/connectivity_comparison_L_to_R.png', dpi=150, bbox_inches='tight')
+                plt.close()
 
 
             # eigenvalue and singular value analysis using sparse matrices
@@ -6989,9 +6948,9 @@ def plot_synaptic_zebra(config, epoch_list, log_dir, logger, cc, style, extended
     print('load data...')
 
     run = 0
-    x = np.load(f'graphs_data/{dataset_name}/x_list_{run}.npy')
+    x = load_simulation_data(f'graphs_data/{dataset_name}/x_list_{run}')
     x = torch.tensor(x, dtype=torch.float32, device=device)
-    y = np.load(f'graphs_data/{dataset_name}/y_list_{run}.npy')
+    y = load_simulation_data(f'graphs_data/{dataset_name}/y_list_{run}')
     y = torch.tensor(y, dtype=torch.float32, device=device)
     x_list.append(x)
     y_list.append(y)

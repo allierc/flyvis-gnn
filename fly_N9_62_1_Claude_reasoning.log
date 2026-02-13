@@ -968,3 +968,59 @@ Starting Block 6 (Combined Best) to try achieving conn_R2>0.98 AND V_rest>0.75 s
 | 2 | 123 | explore | Node 105 | lr: 1.2E-3→1.1E-3, W_L2=3E-6 | Slightly lower MLP lr may help V_rest |
 | 3 | 124 | principle-test | Node 102 | hidden_dim: 80→96, W_L2=2E-6 | Test if hidden_dim=96 improves V_rest (principle #18) |
 
+
+============================================================
+=== Batch 121-124 ===
+============================================================
+**Batch 121-124 Analysis Complete**
+
+## Summary
+
+**Results (all partial, degradation from baseline):**
+- **Node 121**: lr_W=5E-4 + edge_norm=0.75 → conn_R2=0.972, V_rest=0.487 (V_rest collapse)
+- **Node 122**: W_L2=2.5E-6 + data_aug=25 → conn_R2=0.973, V_rest=0.553 (confirms W_L2=2.5E-6 suboptimal)
+- **Node 123**: lr=1.1E-3 → conn_R2=0.913, V_rest=0.282 (**CATASTROPHIC** collapse)
+- **Node 124**: hidden_dim=96 + W_L2=2E-6 → conn_R2=0.956, V_rest=0.611 (trade-off)
+
+**New Principles:**
+- **#64**: lr=1.1E-3 is CATASTROPHIC → lr=1.2E-3 is STRICTLY optimal
+- **#65**: lr_W=5E-4 is harmful with edge_norm=0.75 (but cluster_acc=0.909 improved)
+- **#66**: hidden_dim=96 trades conn_R2 for V_rest with W_L2=2E-6
+
+**Next Batch (125-128) Setup:**
+| Slot | Parent | Mutation |
+|------|--------|----------|
+| 0 | Node 122 | W_L2: 2.5E-6 → 3E-6, data_aug: 25 → 20 (revert to Node 105 best V_rest config) |
+| 1 | Node 124 | hidden_dim: 96 → 80, W_L2: 2E-6 → 2.8E-6 (test middle W_L2) |
+| 2 | Node 121 | edge_norm: 0.75 → 1.0, lr_W: 5E-4 → 6E-4, edge_L1: 0.3 → 0.28 |
+| 3 | Node 102 | lr_emb: 1.5E-3 → 1.55E-3 (principle #4 boundary test) |
+
+
+============================================================
+=== Batch 125-128 ===
+============================================================
+All 4 configs are set up correctly for the next batch:
+
+**Batch 125-128 Analysis Complete:**
+
+| Node | Result | conn_R2 | V_rest_R2 | Key Finding |
+|------|--------|---------|-----------|-------------|
+| 125 | partial | 0.953 | 0.569 | W_L2=3E-6 from bad parent didn't recover |
+| 126 | **converged** | **0.981** | 0.562 | W_L2=2.8E-6 viable middle ground |
+| 127 | **converged** | 0.979 | **0.667** | edge_L1=0.28 improves V_rest! |
+| 128 | **converged** | 0.978 | **0.702** | lr_emb=1.55E-3 boosts V_rest! |
+
+**New Principles Added:**
+- #67: W_L2=2.8E-6 achieves excellent conn_R2
+- #68: edge_L1=0.28 improves V_rest over 0.3
+- #69: lr_emb=1.55E-3 is BENEFICIAL for V_rest (0.702)
+
+**Next Batch Plan (Iter 129-132):**
+
+| Slot | Parent | Strategy | Mutation |
+|------|--------|----------|----------|
+| 0 | Node 126 | exploit | W_L2: 2.8E-6 → 2.6E-6 (fine-tune toward optimal 2E-6) |
+| 1 | Node 128 | exploit | edge_L1: 0.3 → 0.28 (combine best V_rest findings) |
+| 2 | Node 127 | explore | edge_L1: 0.28 → 0.26 (continue exploring lower) |
+| 3 | Node 127 | principle-test | W_L2: 3E-6 → 2E-6 (test principle #50: W_L2=2E-6 optimal) |
+

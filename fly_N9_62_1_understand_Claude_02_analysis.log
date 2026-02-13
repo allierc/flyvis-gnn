@@ -1,0 +1,17 @@
+training_time_min: 39.6
+n_epochs: 1
+data_augmentation_loop: 20
+recurrent_training: False
+batch_size: 2
+learning_rate_W: 0.0006
+learning_rate: 0.0012
+learning_rate_embedding: 0.0015
+coeff_edge_diff: 750.0
+coeff_edge_norm: 1.0
+coeff_edge_weight_L1: 0.3
+coeff_phi_weight_L1: 0.5
+coeff_phi_weight_L2: 0.001
+coeff_W_L1: 5e-05
+test_R2: -inf
+test_pearson: 0.0555
+final_loss: 1.2848e+04

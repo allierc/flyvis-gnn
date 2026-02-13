@@ -1459,7 +1459,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                 # finalize iteration to record history
                 regularizer.finalize_iteration()
 
-                if (N % 2000 == 0) & hasattr(model, 'W') :
+                if False: #(N % 2000 == 0) & hasattr(model, 'W') :
 
                     plt.style.use('default')
 
@@ -4304,6 +4304,7 @@ def data_test_flyvis(
     extent = 8
     # Import only what's needed for mixed functionality
     from flyvis.datasets.sintel import AugmentedSintel
+    import flyvis
     from flyvis import NetworkView, Network
     from flyvis.utils.config_utils import get_default_config, CONFIG_PATH
     from flyvis_gnn.generators.PDE_N9 import PDE_N9, get_photoreceptor_positions_from_net, \
@@ -4348,6 +4349,7 @@ def data_test_flyvis(
         stimulus_dataset = davis_dataset
     else:
         sintel_config = {
+            "sintel_path": flyvis.sintel_dir,
             "n_frames": 19,
             "flip_axes": [0, 1],
             "n_rotations": [0, 1, 2, 3, 4, 5],

@@ -1,0 +1,84 @@
+
+============================================================
+=== BATCH 0 (start call) ===
+============================================================
+Initialization complete. Here is a summary of the 4 config variations for the first batch:
+
+**Batch 1 — Initial Hypothesis Testing**
+
+| Slot | Model | Config File | Mutation from Node 79 | Hypothesis |
+|------|-------|-------------|----------------------|------------|
+| 0 | 049 | `_Claude_00.yaml` | `data_augmentation_loop: 20→30` | More training exposure helps recover weights for low-rank activity models |
+| 1 | 011 | `_Claude_01.yaml` | `coeff_W_L1: 5E-5→2E-5` | Less W regularization allows flexibility for hard connectivity |
+| 2 | 041 | `_Claude_02.yaml` | `hidden_dim: 80→96, hidden_dim_update: 80→96` | More MLP capacity extracts structure from collapsed activity (6 SVD components) |
+| 3 | 003 | `_Claude_03.yaml` | `coeff_edge_diff: 750→900` | Stronger type-consistency regularization helps with complex connectivity |
+
+Initial hypotheses and experiment rationales have been written to:
+- `fly_N9_62_1_understand_Claude_memory.md` (UNDERSTANDING section)
+- `fly_N9_62_1_understand_Claude_analysis.md` (full log)
+
+The configs are ready for training. Each slot tests a different hypothesis tailored to its model's known characteristics.
+
+
+============================================================
+=== Batch 1-4 (pass 1: analyze + write tool) ===
+============================================================
+The analysis tool has been written successfully. Let me provide a summary of what was completed in this pass:
+
+## Pass 1 Summary
+
+### Tasks Completed:
+1. **Read metrics for all 4 slots** - All slots showed catastrophic rollout R² values:
+   - Slot 0 (Model 049): test_R²=-1835, pearson=0.198, loss=1747, time=53.2min
+   - Slot 1 (Model 011): test_R²=-inf, pearson=0.032, loss=2965, time=37.5min
+   - Slot 2 (Model 041): test_R²=-inf, pearson=0.056, loss=12848, time=39.6min
+   - Slot 3 (Model 003): test_R²=-2441, pearson=0.409, loss=2168, time=38.5min
+
+2. **Wrote iteration entries** to `fly_N9_62_1_understand_Claude_analysis.md` - Documented all 4 iterations with observations
+
+3. **Updated UNDERSTANDING section** in `fly_N9_62_1_understand_Claude_memory.md`:
+   - Model 049: Hypothesis FALSIFIED (more data_aug hurt, not helped)
+   - Model 011: Hypothesis FALSIFIED, REVISED (less regularization made things worse → need MORE regularization)
+   - Model 041: Hypothesis FALSIFIED, REVISED (more capacity caused disaster → need LESS capacity for sparse signal)
+   - Model 003: Hypothesis PARTIALLY SUPPORTED (best pearson 0.409 with edge_diff=900)
+
+4. **Wrote analysis tool** to `tools/analysis_iter_004.py` - Computes connectivity_R², analyzes W_true structure, per-neuron-type recovery, weight magnitude vs error, and embedding analysis
+
+### Key Cross-Model Findings:
+- ALL 4 initial hypotheses led to worse results — these models require different approaches
+- Model 041 (6 SVD components) + increased capacity = worst loss (12848) — sparse signal is incompatible with high capacity
+- Model 011 needed MORE regularization, not less
+- Model 003 showed the best test_pearson, suggesting stronger edge_diff may be the right direction
+
+The analysis tool is ready for execution. Its stdout output will be provided in Pass 2.
+
+
+============================================================
+=== Batch 1-4 (pass 2: analysis feedback + mutations) ===
+============================================================
+Pass 2 complete. Here's the summary:
+
+## Pass 2 Summary — Batch 1 Analysis Results + Batch 2 Mutations
+
+### Key Analysis Findings (analysis_iter_004.py)
+
+**Two distinct failure modes identified:**
+
+| Model | connectivity_R² | pearson | Failure Mode |
+|-------|-----------------|---------|--------------|
+| 049 | -1.35 | -0.25 | **Sign inversion** — GNN learns inverted weights |
+| 011 | -0.58 | -0.17 | **Universal inversion** — all 13 types negative R² |
+| 041 | +0.33 | +0.57 | **Partial recovery** — correct direction, wrong magnitude |
+| 003 | +0.56 | +0.78 | **Best recovery** — edge_diff=900 working |
+
+**Critical insight:** Type 0 neurons (~425k edges, 98% of all edges) dominate recovery. All models have W_learned std < W_true std (under-fitting magnitudes).
+
+### Batch 2 Mutations (Iters 5-8)
+
+| Slot | Model | Change | Rationale |
+|------|-------|--------|-----------|
+| 0 | 049 | lr_W: 6E-4→3E-4, data_aug: 30→20 | Lower lr_W to prevent gradient sign instability |
+| 1 | 011 | lr_W: 6E-4→1E-3, lr: 1.2E-3→1E-3, W_L1: 2E-5→5E-5 | Higher lr_W to escape negative-weight basin |
+| 2 | 041 | hidden_dim: 96→64, hidden_dim_update: 96→64 | Smaller capacity for 6-component low-rank signal |
+| 3 | 003 | W_L1: 5E-5→3E-5 (keep edge_diff=900) | Lower W_L1 to allow larger weight magnitudes |
+

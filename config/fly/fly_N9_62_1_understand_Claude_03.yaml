@@ -62,7 +62,7 @@ training:
   coeff_phi_weight_L1_rate: 0.5
   coeff_edge_weight_L2: 0
   coeff_phi_weight_L2: 0.001
-  coeff_W_L1: 5.0e-05
+  coeff_W_L1: 3.0e-05
   coeff_W_L1_rate: 0.5
   coeff_W_L2: 3.0e-06
   w_init_mode: zeros

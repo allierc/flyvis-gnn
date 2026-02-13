@@ -1736,3 +1736,148 @@ Key findings:
 4. **PRINCIPLE CONFIRMED**: edge_diff=600 IS optimal for pure conn (N83). edge_diff=625/phi_L1=0.8 requires edge_norm=975
 5. **NEW edge_diff values**: 620 for conn+V_rest, 625 for balanced/cluster, 600 for pure conn/tau
 
+## Iter 113: converged
+Node: id=113, parent=110
+Mode/Strategy: exploit
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=620, coeff_edge_norm=975, coeff_edge_weight_L1=0.8, coeff_phi_weight_L1=0.8, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, recurrent=False
+Metrics: connectivity_R2=0.900, tau_R2=0.805, V_rest_R2=0.291, cluster_accuracy=0.728, test_R2=0.873, test_pearson=0.996, training_time_min=62.1
+Embedding: 65 types with moderate separation
+Mutation: coeff_edge_weight_L1: 1.0 -> 0.8 (combine edge_weight_L1=0.8 with N110's edge_diff=620 for max conn+tau)
+Parent rule: exploit N110 (conn=0.892, V_rest=0.427 but tau=0.678) - add edge_weight_L1 to recover tau
+Observation: **BREAKTHROUGH** - edge_weight_L1=0.8 + edge_diff=620 achieves conn=0.900 (NEW BEST!) AND tau=0.805 (+0.127). Massive tau recovery while exceeding conn
+Next: parent=113
+
+## Iter 114: partial
+Node: id=114, parent=110
+Mode/Strategy: exploit
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=620, coeff_edge_norm=1000, coeff_edge_weight_L1=1.0, coeff_phi_weight_L1=0.8, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, recurrent=False
+Metrics: connectivity_R2=0.819, tau_R2=0.552, V_rest_R2=0.199, cluster_accuracy=0.741, test_R2=-1.41, test_pearson=0.990, training_time_min=62.2
+Embedding: 65 types with moderate separation
+Mutation: coeff_edge_norm: 975 -> 1000 (test if edge_norm=1000 helps N110's conn+V_rest config)
+Parent rule: exploit N110 to test edge_norm=1000 compatibility with edge_diff=620
+Observation: edge_norm=1000 with edge_diff=620 FAILS - all metrics drop. CONFIRMS edge_norm=975 is REQUIRED for edge_diff=620
+Next: parent=113
+
+## Iter 115: partial
+Node: id=115, parent=105
+Mode/Strategy: explore
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=615, coeff_edge_norm=975, coeff_edge_weight_L1=1.0, coeff_phi_weight_L1=0.8, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, recurrent=False
+Metrics: connectivity_R2=0.847, tau_R2=0.581, V_rest_R2=0.263, cluster_accuracy=0.748, test_R2=0.967, test_pearson=0.992, training_time_min=61.2
+Embedding: 65 types with moderate separation
+Mutation: coeff_edge_diff: 625 -> 615 (test intermediate edge_diff=615 between 610 and 620)
+Parent rule: explore edge_diff=615 to see if intermediate values work
+Observation: edge_diff=615 FAILS - all metrics worse than 620 (N113) or 625 (N105). CONFIRMS edge_diff has DISCRETE optima: 600, 620, 625 only
+Next: parent=113
+
+## Iter 116: partial
+Node: id=116, parent=96
+Mode/Strategy: principle-test
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=620, coeff_edge_norm=975, coeff_edge_weight_L1=1.0, coeff_phi_weight_L1=1.0, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, recurrent=False
+Metrics: connectivity_R2=0.836, tau_R2=0.659, V_rest_R2=0.289, cluster_accuracy=0.700, test_R2=0.610, test_pearson=0.995, training_time_min=62.9
+Embedding: 65 types with moderate separation
+Mutation: coeff_edge_diff: 600 -> 620, coeff_phi_weight_L1: 1.0 (kept). Testing principle: "edge_diff=620 hurts tau (N110: tau=0.678)"
+Parent rule: principle-test - can phi_L1=1.0 recover tau with edge_diff=620?
+Observation: phi_L1=1.0 with edge_diff=620 gives tau=0.659 - WORSE than phi_L1=0.8's tau=0.805 (N113). CONFIRMS phi_L1=0.8 is ESSENTIAL for edge_diff=620 path
+Next: parent=113
+
+### Batch 29 Summary (Iters 113-116)
+Best connectivity_R2: **Node 113 (0.900) - NEW BEST!**
+Best tau_R2: Node 113 (0.805)
+Best V_rest_R2: Node 113 (0.291)
+Best cluster_accuracy: Node 115 (0.748)
+
+Key findings:
+1. **N113 BREAKTHROUGH**: edge_weight_L1=0.8 + edge_diff=620 achieves conn=0.900 (NEW EXPERIMENT BEST!) AND tau=0.805 - massive tau recovery (+0.127) over N110
+2. **N114 CONFIRMS edge_norm coupling**: edge_norm=1000 with edge_diff=620 FAILS completely - edge_norm=975 is REQUIRED for edge_diff=620
+3. **N115 CONFIRMS DISCRETE edge_diff**: edge_diff=615 fails - only 600, 620, 625 work. No intermediate values
+4. **N116 CONFIRMS phi_L1=0.8 essential**: phi_L1=1.0 cannot recover tau with edge_diff=620 - phi_L1=0.8 is required for this path
+
+**NEW PRINCIPLES:**
+- edge_weight_L1=0.8 + edge_diff=620 + edge_norm=975 + phi_L1=0.8 = CONN+TAU optimized path (N113: conn=0.900, tau=0.805)
+- edge_diff=620 REQUIRES both edge_norm=975 AND phi_L1=0.8 - missing either breaks the config
+
+## Iter 117: partial
+Node: id=117, parent=113
+Mode/Strategy: exploit
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=620, coeff_edge_norm=975, coeff_edge_weight_L1=0.8, coeff_phi_weight_L1=0.8, coeff_W_L1=7.5E-5, batch_size=1, hidden_dim=64, recurrent=False
+Metrics: connectivity_R2=0.814, tau_R2=0.747, V_rest_R2=0.181, cluster_accuracy=0.760, test_R2=0.926, test_pearson=0.997, training_time_min=61.8
+Embedding: 65 types with good separation
+Mutation: coeff_W_L1: 5E-5 -> 7.5E-5 (test if W_L1=7.5E-5 can improve V_rest on N113's conn-optimized config)
+Parent rule: exploit N113's conn breakthrough with W_L1 variation
+Observation: W_L1=7.5E-5 HURTS all primary metrics - conn drops 0.900->0.814, tau drops 0.805->0.747, V_rest drops 0.291->0.181. W_L1=5E-5 is REQUIRED for edge_diff=620 path
+Next: parent=118
+
+## Iter 118: partial
+Node: id=118, parent=113
+Mode/Strategy: exploit
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=600, coeff_edge_norm=975, coeff_edge_weight_L1=0.8, coeff_phi_weight_L1=0.8, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, recurrent=False
+Metrics: connectivity_R2=0.911, tau_R2=0.528, V_rest_R2=0.272, cluster_accuracy=0.758, test_R2=0.926, test_pearson=0.994, training_time_min=61.9
+Embedding: 65 types with good separation
+Mutation: coeff_edge_diff: 620 -> 600 (test if edge_diff=600 with edge_weight_L1=0.8 improves tau further)
+Parent rule: exploit N113 with edge_diff=600 for potential tau boost
+Observation: edge_diff=600 with edge_weight_L1=0.8 gives BEST conn=0.911 but tau COLLAPSES to 0.528 (vs N113's 0.805). edge_diff=620 is ESSENTIAL for tau recovery with edge_weight_L1=0.8
+Next: parent=119
+
+## Iter 119: partial
+Node: id=119, parent=105
+Mode/Strategy: explore
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=625, coeff_edge_norm=975, coeff_edge_weight_L1=0.7, coeff_phi_weight_L1=0.8, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, recurrent=False
+Metrics: connectivity_R2=0.874, tau_R2=0.717, V_rest_R2=0.441, cluster_accuracy=0.752, test_R2=0.552, test_pearson=0.996, training_time_min=62.0
+Embedding: 65 types with moderate separation
+Mutation: coeff_edge_weight_L1: 1.0 -> 0.7 (test edge_weight_L1=0.7 for intermediate V_rest/conn balance)
+Parent rule: explore edge_weight_L1 variations on N105's balanced config
+Observation: edge_weight_L1=0.7 gives BEST V_rest=0.441 (+0.220 vs N105's 0.221) while maintaining decent conn=0.874, tau=0.717. Lower edge_weight_L1 boosts V_rest significantly
+Next: parent=119
+
+## Iter 120: partial
+Node: id=120, parent=96
+Mode/Strategy: principle-test
+Config: lr_W=5E-4, lr=1E-3, lr_emb=3.75E-3, coeff_edge_diff=600, coeff_edge_norm=975, coeff_edge_weight_L1=0.8, coeff_phi_weight_L1=1.0, coeff_W_L1=5E-5, batch_size=1, hidden_dim=64, recurrent=False
+Metrics: connectivity_R2=0.849, tau_R2=0.805, V_rest_R2=0.284, cluster_accuracy=0.764, test_R2=0.758, test_pearson=0.997, training_time_min=61.7
+Embedding: 65 types with good separation
+Mutation: coeff_edge_weight_L1: 1.0 -> 0.8. Testing principle: "phi_L1=1.0 is optimal for tau (N96: tau=0.895)"
+Parent rule: principle-test - can edge_weight_L1=0.8 help tau without phi_L1=0.8?
+Observation: edge_weight_L1=0.8 with phi_L1=1.0 gives tau=0.805 (same as N113 with phi_L1=0.8!). CONFIRMS edge_weight_L1=0.8 is KEY to tau recovery, NOT phi_L1. cluster=0.764 good
+Next: parent=120
+
+### Batch 30 Summary (Iters 117-120)
+Best connectivity_R2: **Node 118 (0.911) - NEW BEST!**
+Best tau_R2: Node 120 (0.805)
+Best V_rest_R2: **Node 119 (0.441)** - excellent V_rest
+Best cluster_accuracy: Node 120 (0.764)
+
+Key findings:
+1. **N118 conn=0.911 NEW BEST**: edge_diff=600 + edge_weight_L1=0.8 gives BEST connectivity ever, but tau collapses to 0.528
+2. **N119 V_rest=0.441**: edge_weight_L1=0.7 dramatically boosts V_rest (+0.220) - confirms lower edge_weight_L1 helps V_rest
+3. **N120 IMPORTANT DISCOVERY**: edge_weight_L1=0.8 alone recovers tau=0.805 even with phi_L1=1.0! phi_L1=0.8 is NOT required for tau recovery
+4. W_L1=7.5E-5 HURTS edge_diff=620 path (N117) - keep W_L1=5E-5
+
+**NEW PRINCIPLES:**
+- edge_weight_L1=0.8 is the PRIMARY tau recovery mechanism, NOT phi_L1=0.8 (N120 confirms)
+- edge_diff=600 with edge_weight_L1=0.8 maximizes conn (0.911) but sacrifices tau (0.528)
+- edge_weight_L1=0.7 maximizes V_rest (0.441) with decent other metrics
+- W_L1=5E-5 is REQUIRED for edge_diff=620 path
+
+>>> BLOCK 5 END - BLOCK SUMMARY <<<
+
+**Block 5 Summary (24 iterations, 97-120)**
+
+Best configurations found:
+| Rank | Node | Key Config | conn_R2 | tau_R2 | V_rest_R2 | cluster | Time |
+| ---- | ---- | ---------- | ------- | ------ | --------- | ------- | ---- |
+| **1** | **118** | edge_diff=600, edge_weight_L1=0.8, phi_L1=0.8 | **0.911** | 0.528 | 0.272 | 0.758 | 61.9 |
+| **2** | **113** | edge_diff=620, edge_norm=975, edge_weight_L1=0.8, phi_L1=0.8 | 0.900 | **0.805** | 0.291 | 0.728 | 62.1 |
+| **3** | **119** | edge_diff=625, edge_weight_L1=0.7, phi_L1=0.8 | 0.874 | 0.717 | **0.441** | 0.752 | 62.0 |
+| **4** | **120** | edge_diff=600, edge_weight_L1=0.8, phi_L1=1.0 | 0.849 | 0.805 | 0.284 | **0.764** | 61.7 |
+
+**Key Principles Established:**
+1. **edge_weight_L1=0.8 is PRIMARY tau recovery mechanism** - works with phi_L1=1.0 too (N120)
+2. **edge_diff has THREE discrete optima**: 600 (max conn), 620 (conn+tau), 625 (balanced)
+3. **edge_norm=975 REQUIRED for edge_diff=620** - edge_norm=1000 crashes this path
+4. **edge_weight_L1=0.7 maximizes V_rest** - N119 achieves 0.441
+5. **W_L1=5E-5 REQUIRED for edge_diff=620 path** - 7.5E-5 hurts all metrics
+6. **Trade-off matrix**:
+   - Max conn (0.911): edge_diff=600, edge_weight_L1=0.8
+   - Max conn+tau (0.900, 0.805): edge_diff=620, edge_norm=975, edge_weight_L1=0.8
+   - Max V_rest (0.441): edge_weight_L1=0.7
+

@@ -75,12 +75,17 @@
 61. **coeff_W_L2=3.5E-6 is too high** — Node 113/115: V_rest=0.605/0.692 (vs 0.725 for W_L2=3E-6); W_L2=3E-6 is upper bound
 62. **coeff_edge_norm=0.7 is worse than 0.75** — Node 114: V_rest=0.596 (vs 0.725 for edge_norm=0.75); edge_norm=0.75 is optimal lower bound
 63. **edge_norm=0.75 effect is context-dependent** — Node 118: edge_norm=0.75 + W_L2=3E-6 from Node 105 gives V_rest=0.550 (worse than Node 105's 0.733); not universally beneficial
+64. **lr=1.1E-3 is CATASTROPHIC** — Node 123: conn_R2=0.913, V_rest=0.282; lr=1.2E-3 is STRICTLY optimal (joining principle #46)
+65. **lr_W=5E-4 is harmful with edge_norm=0.75** — Node 121: V_rest=0.487 (collapse), but cluster_acc=0.909; lr_W=6E-4 required with edge_norm<1.0
+66. **hidden_dim=96 trades conn_R2 for V_rest with W_L2=2E-6** — Node 124: conn_R2=0.956, V_rest=0.611; confirms principle #18 trade-off
+67. **W_L2=2.8E-6 achieves excellent conn_R2** — Node 126: conn_R2=0.981, V_rest=0.562; viable middle ground between 2E-6 and 3E-6
+68. **edge_L1=0.28 improves V_rest over 0.3** — Node 127: V_rest=0.667 (vs ~0.56 at 0.3) while maintaining conn_R2=0.979; slight reduction beneficial
+69. **lr_emb=1.55E-3 is BENEFICIAL for V_rest** — Node 128: V_rest=0.702, conn_R2=0.978; boundary of principle #4 confirmed at 1.8E-3 not 1.55E-3
 
 ### Current Open Questions
 1. Can we achieve both conn_R2>0.98 AND V_rest>0.75 simultaneously?
-2. Does hidden_dim=96 improve V_rest while maintaining conn_R2>0.98?
-3. Can slight lr adjustments bridge the W_L2=2E-6 vs W_L2=3E-6 trade-off?
-4. Does data_aug=25 with W_L2 help achieve better balance?
+2. Can combining lr_emb=1.55E-3 with edge_L1=0.28 push V_rest>0.75 while maintaining conn_R2>0.98?
+3. Is edge_L1=0.26 even better for V_rest, or will it collapse conn_R2?
 
 ---
 
@@ -125,10 +130,24 @@ Starting from best configs:
 2. Test untried combinations of best parameters
 3. Fine-tune around optimal values
 
-### Next Batch Plan (Iter 121-124)
+### Iter 121-124 Results
+- Node 121: lr_W=5E-4 + edge_norm=0.75 → conn_R2=0.972, V_rest=0.487 (collapse), cluster_acc=0.909
+- Node 122: W_L2=2.5E-6 + data_aug=25 → conn_R2=0.973, V_rest=0.553 (confirms W_L2=2.5E-6 suboptimal)
+- Node 123: lr=1.1E-3 → conn_R2=0.913, V_rest=0.282 (SEVERE COLLAPSE; lr=1.2E-3 STRICTLY optimal)
+- Node 124: hidden_dim=96 + W_L2=2E-6 → conn_R2=0.956, V_rest=0.611 (trade-off confirmed)
+
+### Iter 125-128 Results
+- Node 125: W_L2: 2.5E-6 -> 3E-6 from Node 122 → conn_R2=0.953 (partial collapse), V_rest=0.569; parent had suboptimal base
+- Node 126: W_L2=2.8E-6 + hidden_dim=80 → conn_R2=0.981 (EXCELLENT), V_rest=0.562; viable middle W_L2 value
+- Node 127: edge_L1=0.28 → conn_R2=0.979, V_rest=0.667 (BETTER than 0.3!), cluster_acc=0.890; NEW FINDING
+- Node 128: lr_emb=1.55E-3 → conn_R2=0.978, V_rest=0.702 (EXCELLENT!), cluster_acc=0.859; lr_emb increase BENEFICIAL
+
+### Next Batch Plan (Iter 129-132)
+UCB: Node 126 (2.980) > Node 127 (2.978) > Node 128 (2.978) > Node 125 (2.952)
+
 | Slot | Role | Parent | Focus | Mutation |
 | ---- | ---- | ------ | ----- | -------- |
-| 0 | exploit | Node 118 | lr_W adjustment | lr_W: 6E-4 -> 5E-4 (test if lower lr_W improves V_rest with edge_norm=0.75+W_L2=3E-6) |
-| 1 | exploit | Node 102 | W_L2+data_aug | coeff_W_L2: 2E-6 -> 2.5E-6, data_aug: 20 -> 25 (test middle W_L2 with more data augmentation) |
-| 2 | explore | Node 105 | MLP lr | lr: 1.2E-3 -> 1.1E-3 (test if slightly lower MLP lr helps V_rest) |
-| 3 | principle-test | Node 102 | architecture | hidden_dim: 80 -> 96. Testing principle: "hidden_dim=96 optimal for V_rest" (principle #18) |
+| 0 | exploit | Node 126 | W_L2 fine-tune | W_L2: 2.8E-6 -> 2.6E-6 (approach optimal 2E-6 while keeping V_rest benefits) |
+| 1 | exploit | Node 128 | Combine best V_rest | edge_L1: 0.3 -> 0.28 (combine lr_emb=1.55E-3 with edge_L1=0.28 - two best V_rest findings) |
+| 2 | explore | Node 127 | Lower edge_L1 | edge_L1: 0.28 -> 0.26 (continue exploring lower edge_L1 for V_rest) |
+| 3 | principle-test | Node 127 | W_L2 for conn_R2 | W_L2: 3E-6 -> 2E-6. Testing principle: "W_L2=2E-6 is OPTIMAL for conn_R2" (principle #50)

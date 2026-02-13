@@ -49,8 +49,8 @@ training:
   batch_ratio: 1
   small_init_batch_size: false
   sparsity: none
-  data_augmentation_loop: 30
-  learning_rate_W_start: 0.0006
+  data_augmentation_loop: 20
+  learning_rate_W_start: 0.0003
   learning_rate_start: 0.0012
   learning_rate_embedding_start: 0.0015
   coeff_edge_diff: 750

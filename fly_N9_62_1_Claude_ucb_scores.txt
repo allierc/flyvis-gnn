@@ -1,0 +1,10 @@
+=== UCB Scores (Simulation block 5, iters 121-144, N=8, c=1.414) ===
+
+Node 128: UCB=2.978, parent=127, visits=1, R2=0.978, Pearson=0.981, Cluster=0.859, tau_R2=0.989, V_rest_R2=0.702, Mutation=lr_emb: 1.5E-3 -> 1.55E-3. Testing principle: "lr_emb >= 1.8E-3 destroys V_rest" (principle #4)
+Node 121: UCB=2.972, parent=root, visits=1, R2=0.972, Pearson=0.982, Cluster=0.909, tau_R2=0.984, V_rest_R2=0.487, Mutation=lr_W: 6E-4 -> 5E-4
+Node 125: UCB=2.953, parent=122, visits=1, R2=0.953, Pearson=0.977, Cluster=0.821, tau_R2=0.987, V_rest_R2=0.569, Mutation=coeff_W_L2: 2.5E-6 -> 3E-6, data_augmentation_loop: 25 -> 20
+Node 123: UCB=2.913, parent=124, visits=1, R2=0.913, Pearson=0.990, Cluster=0.806, tau_R2=0.980, V_rest_R2=0.282, Mutation=lr: 1.2E-3 -> 1.1E-3
+Node 127: UCB=2.312, parent=126, visits=2, R2=0.979, Pearson=0.973, Cluster=0.890, tau_R2=0.992, V_rest_R2=0.667, Mutation=edge_L1: 0.3 -> 0.28, lr_W: 5E-4 -> 6E-4, edge_norm: 0.75 -> 1.0
+Node 122: UCB=2.306, parent=root, visits=2, R2=0.973, Pearson=0.982, Cluster=0.851, tau_R2=0.989, V_rest_R2=0.553, Mutation=coeff_W_L2: 2E-6 -> 2.5E-6, data_augmentation_loop: 20 -> 25
+Node 126: UCB=1.981, parent=124, visits=3, R2=0.981, Pearson=0.991, Cluster=0.845, tau_R2=0.989, V_rest_R2=0.562, Mutation=hidden_dim: 96 -> 80, coeff_W_L2: 2E-6 -> 2.8E-6
+Node 124: UCB=1.623, parent=root, visits=5, R2=0.956, Pearson=0.971, Cluster=0.852, tau_R2=0.990, V_rest_R2=0.611, Mutation=hidden_dim: 80 -> 96. Testing principle: "hidden_dim=96 optimal for V_rest" (principle #18)
