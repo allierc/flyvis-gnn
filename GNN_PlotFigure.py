@@ -143,6 +143,12 @@ def get_training_files(log_dir, n_runs):
 
     files = files[file_id:]
 
+    # Filter out files without the expected X_Y.pt suffix (e.g., "graphs_0.pt" has no Y)
+    files = [f for f in files if f.split('_')[-2].isdigit()]
+
+    if len(files) == 0:
+        return [], np.array([])
+
     # Filter based on the Y value (number after "graphs")
     files_with_0 = [file for file in files if int(file.split('_')[-2]) == 0]
     files_without_0 = [file for file in files if int(file.split('_')[-2]) != 0]

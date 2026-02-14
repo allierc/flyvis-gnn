@@ -204,16 +204,32 @@ Edit the config file with one or two parameter changes. Test one hypothesis at a
 
 ## Block Partition (suggested)
 
-GNN learning rates and regularization are pre-tuned from fly_N9_62_1 (48 iterations). Blocks focus on the unknowns first.
+GNN learning rates and regularization are pre-tuned from fly_N9_62_1 (96 iterations). Blocks focus on the two key unknowns: **Siren learning rate** and **batch_size × learning rate interaction**.
+
+### Key context from 62_1 and prior baselines
+
+Two LR regimes have been tested for fly_N9_63_1:
+
+| Config | batch_size | lr_W | lr | lr_emb | edge_norm | LR regime | Results |
+|--------|-----------|------|------|--------|-----------|-----------|---------|
+| test_1/oct16 (Nov_29 baseline) | 16 | 1E-3 | 5E-4 | 1E-3 | 1000 | original | conn_R2≈0.95, tau=0.98, V_rest=0.42 (10 epochs) |
+| Claude_00 (62_1-optimized) | 1 | 5E-4 | 1.2E-3 | 1.5E-3 | 1.0 | 62_1 optimal | untested with Siren |
+
+From 62_1 exploration (without Siren):
+- **batch=2 + lr_W=6E-4 + data_aug=20** → conn_R2=0.980, V_rest=0.716, time=39 min (BEST)
+- **batch=1** → conn_R2=0.977, V_rest=0.484 (worse V_rest than batch=2)
+- **batch≥3** → V_rest collapse (batch=3: V_rest=0.412; batch=4: V_rest=0.351)
+- batch_size interacts tightly with lr_W: batch=2 requires lr_W=6E-4 (not 5E-4 or 8E-4)
+- batch_size interacts with data_augmentation_loop: batch=2 + data_aug=20 optimal
+
+**Critical question**: The Nov_29 baseline ran at batch=16 and still got conn_R2≈0.95 — but with different learning rates (lr_W=1E-3, edge_norm=1000) and 10 epochs. Does batch=16 work at 1 epoch? Does the 62_1 V_rest collapse at batch≥3 also occur with Siren present?
 
 | Block | Focus | Parameters to explore | Rationale |
 |-------|-------|----------------------|-----------|
-| 1 | Siren learning rate | learning_rate_NNR_f (1E-8 to 1E-4) | Key unknown — explore with proven GNN params |
-| 2 | Siren architecture | hidden_dim_nnr_f, n_layers_nnr_f, omega_f, nnr_f_T_period, nnr_f_xy_period | Find what Siren capacity works |
-| 3 | GNN-Siren LR interaction | lr_W, lr, lr_emb vs learning_rate_NNR_f | Does adding Siren change optimal GNN lr? |
-| 4 | Regularization fine-tuning | coeff_edge_diff, coeff_edge_norm, coeff_W_L1, coeff_phi_weight_L1/L2, coeff_edge_weight_L1 | Fine-tune with Siren present |
-| 5 | GNN Architecture | hidden_dim, n_layers, hidden_dim_update, n_layers_update, embedding_dim | Informed by 62_1 Block 3 results |
-| 6 | Combined best | Best parameters from blocks 1-5 | Final optimization |
+| 1 | Siren LR + batch baseline | learning_rate_NNR_f (1E-8 to 1E-4) at batch={1, 16} | Establish if Siren learns, and whether batch=16 baseline transfers to 1-epoch. Two LR regimes tested in parallel. |
+| 2 | Batch_size × GNN learning rates | batch_size={1, 2, 4, 8, 16} × {lr_W, lr, lr_emb} at best lr_siren | Key interaction: does batch=2 remain optimal with Siren? Do 62_1-optimized LRs or original LRs work better at each batch_size? |
+| 3 | Siren architecture at optimal batch | hidden_dim_nnr_f, omega_f, n_layers_nnr_f, nnr_f_T_period | Find Siren capacity that matches optimal batch+LR regime |
+| 4 | Combined optimization | Best params from blocks 1-3 + fine-tune regularization | Final push for both connectivity_R2 and field_R2 |
 
 ## Block Boundaries
 
@@ -292,32 +308,47 @@ These findings are from MPM (material point method) physics — the FlyVis conte
 
 ## Known Results (from prior experiments)
 
+### fly_N9_63_1 Nov_29 baseline (10 epochs, batch=16, original LRs)
+- Config: batch=16, lr_W=1E-3, lr=5E-4, lr_emb=1E-3, edge_norm=1000, lr_siren=1E-8
+- **connectivity_R2≈0.95** (first=0.94, second=0.958), tau_R2=0.980, V_rest_R2=0.418
+- GMM clustering accuracy=0.883
+- Note: 10 epochs, NOT 1 epoch — results at 1 epoch unknown
+
 ### fly_N9_62_1 baseline (10 epochs, no learned field)
 - connectivity_R2=0.95, tau_R2=0.80, V_rest_R2=0.40 (with full regularization)
 
-### fly_N9_62_1 LLM exploration (48 iterations, 1 epoch, H100)
+### fly_N9_62_1 LLM exploration (96 iterations, 1 epoch, H100)
 
 **Best results by metric:**
 
 | Metric | Best | Config |
 |--------|------|--------|
-| connectivity_R2 | **0.980** | lr_W=5E-4, lr=1.2E-3, lr_emb=1.5E-3, edge_diff=750, phi_L1=0.5, edge_L1=0.5 |
+| connectivity_R2 | **0.980** | lr_W=6E-4, lr=1.2E-3, lr_emb=1.5E-3, edge_diff=750, phi_L1=0.5, edge_L1=0.3, batch=2, data_aug=20 |
 | tau_R2 | **0.997** | lr_W=7E-4, lr=1.2E-3, lr_emb=1.5E-3, edge_diff=1000, phi_L1=0.5, edge_L1=0.5 |
 | V_rest_R2 | **0.817** | lr_W=7E-4, lr=1.2E-3, lr_emb=1.5E-3 (default reg) |
 | cluster_accuracy | **0.910** | lr_W=5E-4, edge_diff=1000, phi_L1=0.5, edge_L1=0.5 |
 
 **Established principles (from 62_1):**
-1. **lr_W=5E-4 to 7E-4** with lr=1.2E-3 and lr_emb=1.5E-3 is optimal (these are pre-set in this config)
+1. **lr_W=5E-4 to 7E-4** with lr=1.2E-3 and lr_emb=1.5E-3 is optimal
 2. **lr_emb=1.5E-3 is critical** for low lr_W — lower values cause connectivity collapse
 3. **lr_emb >= 1.8E-3 destroys V_rest recovery**
 4. **coeff_edge_norm >= 10 is catastrophic** — keep at 1.0
-5. **coeff_phi_weight_L1=0.5 + coeff_edge_weight_L1=0.5** improves both connectivity and V_rest (pre-set)
+5. **coeff_phi_weight_L1=0.5 + coeff_edge_weight_L1=0.5** improves both connectivity and V_rest
 6. **coeff_edge_diff=750-1000** optimal; 1250+ is harmful
 7. **coeff_phi_weight_L2 must stay at 0.001** — 0.005 destroys tau and V_rest
 8. **coeff_W_L1=5E-5** is optimal for V_rest; 1E-4 boosts conn but hurts V_rest
-9. **batch_size=1** used throughout 62_1 exploration (~45 min/epoch on H100)
+
+**Batch_size findings (from 62_1 — WITHOUT Siren):**
+9. **batch=2 is optimal** — conn_R2=0.980, V_rest=0.716, time=39 min (Node 79)
+10. **batch=1 gives worse V_rest** — V_rest=0.484 vs 0.716 at batch=2 (multiply confirmed)
+11. **batch≥3 causes V_rest collapse** — batch=3: V_rest=0.412; batch=4: V_rest=0.351
+12. **batch=2 requires lr_W=6E-4** — lr_W=5E-4 or 8E-4 with batch=2 underperforms
+13. **batch=2 requires data_aug=20** — data_aug=22 causes conn_R2 collapse; data_aug=30 exceeds time limit
+14. **Batch_size interacts with LR regime** — 62_0 exploration (different LRs: lr_emb=3.5-4E-3) found batch=2 harmful, suggesting batch effects are context-dependent
 
 ### fly_N9_63_1 specific expectations
 - Adds joint learning of the visual field — expect connectivity_R2 may be lower initially due to the additional unknown
 - The Siren learning rate (learning_rate_NNR_f) is critical: too high destabilizes W recovery, too low prevents field learning
 - `omega_f` controls spectral bandwidth: higher values capture finer spatiotemporal detail but may overfit noise
+- **Batch_size may behave differently with Siren** — the Nov_29 baseline used batch=16 successfully (10 epochs), but the 62_1 batch findings were without Siren
+- **Two LR regimes to test**: original (lr_W=1E-3, lr=5E-4, lr_emb=1E-3, edge_norm=1000) vs 62_1-optimized (lr_W=6E-4, lr=1.2E-3, lr_emb=1.5E-3, edge_norm=1.0)

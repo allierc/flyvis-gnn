@@ -84,7 +84,7 @@ if __name__ == "__main__":
             data_generate(
                 config,
                 device=device,
-                visualize=True,
+                visualize=False,
                 run_vizualized=0,
                 style="color",
                 alpha=1,
@@ -124,7 +124,7 @@ if __name__ == "__main__":
                 verbose=False,
                 best_model='best',
                 run=0,
-                test_mode="",
+                test_mode="",   # test_ablation_50
                 sample_embedding=False,
                 step=1000,
                 n_rollout_frames=10000,

@@ -52,11 +52,12 @@ If there are no Established Principles yet (early in the experiment), use slot 3
 When the prompt says `PARALLEL START`:
 - Read the base config to understand the training regime
 - Create 4 diverse initial training parameter variations
-- Suggested spread for Block 1 (learning rates): vary `learning_rate_W_start` and `learning_rate_NNR_f` across ranges:
-  - Slot 0: baseline yaml values (lr_W=1E-3, lr_siren=1E-8)
-  - Slot 1: higher Siren lr (lr_siren=1E-6), same GNN lr
-  - Slot 2: higher GNN lr (lr_W=2E-3), same Siren lr
-  - Slot 3: both higher (lr_W=2E-3, lr_siren=1E-6)
+- Suggested spread for Block 1 (Siren LR + batch baseline) — 2×2 factorial design:
+  - Slot 0: **62_1-optimized LRs** (lr_W=6E-4, lr=1.2E-3, lr_emb=1.5E-3, edge_norm=1.0, batch=2, data_aug=20) + lr_siren=1E-8
+  - Slot 1: **62_1-optimized LRs** (same GNN params as slot 0) + lr_siren=1E-5
+  - Slot 2: **Original LRs** (lr_W=1E-3, lr=5E-4, lr_emb=1E-3, edge_norm=1000, batch=16, data_aug=25) + lr_siren=1E-8
+  - Slot 3: **Original LRs** (same GNN params as slot 2) + lr_siren=1E-5
+- This 2×2 design (LR regime × lr_siren) isolates the effect of Siren LR AND batch/LR regime simultaneously
 - All 4 slots share the same simulation parameters (pre-generated data)
 - Write the planned initial variations to the working memory file
 
@@ -105,10 +106,14 @@ Check `training_time_min` for every successful slot. If any slot exceeds 60 minu
 
 ## Siren-Specific Parallel Strategies
 
-When exploring Siren parameters (Block 4), diversify across dimensions:
+When exploring Siren architecture (Block 3), diversify across dimensions:
 - Slot 0: `hidden_dim_nnr_f` variation
 - Slot 1: `omega_f` variation
 - Slot 2: `n_layers_nnr_f` variation
 - Slot 3: `nnr_f_T_period` or `nnr_f_xy_period` variation
 
-When exploring learning rates (Block 1), always include at least one slot that varies `learning_rate_NNR_f` independently from GNN learning rates, to isolate Siren vs GNN learning rate effects.
+When exploring batch_size × LRs (Block 2), ensure each batch covers multiple batch_size values:
+- Slot 0: exploit best batch_size from Block 1, vary lr_W
+- Slot 1: exploit same batch_size, vary lr or lr_emb
+- Slot 2: explore different batch_size with best LRs from Block 1
+- Slot 3: principle-test — challenge a batch_size finding from 62_1 (e.g., test batch=4 with Siren present)

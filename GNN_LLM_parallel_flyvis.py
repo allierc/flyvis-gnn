@@ -334,23 +334,41 @@ if __name__ == "__main__":
         analysis_log_paths[slot] = f"{root_dir}/{slot_name}_analysis.log"
 
         if start_iteration == 1 and not args.resume:
-            shutil.copy2(source_config, target)
-            with open(target, 'r') as f:
-                config_data = yaml.safe_load(f)
-            # DO NOT change dataset — data is pre-generated in graphs_data/fly/{original_dataset}/
-            config_data['training']['n_epochs'] = claude_n_epochs
-            config_data['training']['data_augmentation_loop'] = claude_data_augmentation_loop
-            config_data['description'] = 'designed by Claude (parallel flyvis)'
-            config_data['claude'] = {
-                'n_epochs': claude_n_epochs,
-                'data_augmentation_loop': claude_data_augmentation_loop,
-                'n_iter_block': claude_n_iter_block,
-                'ucb_c': claude_ucb_c,
-                'node_name': claude_node_name
-            }
-            with open(target, 'w') as f:
-                yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
-            print(f"\033[93m  slot {slot}: created {target} (dataset='{config_data['dataset']}', config_file='{slot_name}')\033[0m")
+            if os.path.exists(target):
+                # Slot config already exists (pre-seeded) — preserve ALL training/graph_model params
+                # Only update n_epochs and claude section (not data_augmentation_loop or other training params)
+                with open(target, 'r') as f:
+                    config_data = yaml.safe_load(f)
+                config_data['training']['n_epochs'] = claude_n_epochs
+                config_data['claude'] = {
+                    'n_epochs': claude_n_epochs,
+                    'data_augmentation_loop': claude_data_augmentation_loop,
+                    'n_iter_block': claude_n_iter_block,
+                    'ucb_c': claude_ucb_c,
+                    'node_name': claude_node_name
+                }
+                with open(target, 'w') as f:
+                    yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+                print(f"\033[93m  slot {slot}: preserved pre-seeded {target} (dataset='{config_data['dataset']}')\033[0m")
+            else:
+                # No pre-seeded config — create from source
+                shutil.copy2(source_config, target)
+                with open(target, 'r') as f:
+                    config_data = yaml.safe_load(f)
+                # DO NOT change dataset — data is pre-generated in graphs_data/fly/{original_dataset}/
+                config_data['training']['n_epochs'] = claude_n_epochs
+                config_data['training']['data_augmentation_loop'] = claude_data_augmentation_loop
+                config_data['description'] = 'designed by Claude (parallel flyvis)'
+                config_data['claude'] = {
+                    'n_epochs': claude_n_epochs,
+                    'data_augmentation_loop': claude_data_augmentation_loop,
+                    'n_iter_block': claude_n_iter_block,
+                    'ucb_c': claude_ucb_c,
+                    'node_name': claude_node_name
+                }
+                with open(target, 'w') as f:
+                    yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+                print(f"\033[93m  slot {slot}: created {target} from source (dataset='{config_data['dataset']}')\033[0m")
         else:
             print(f"\033[93m  slot {slot}: preserving {target} (resuming)\033[0m")
 
