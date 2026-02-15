@@ -425,7 +425,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         Niter = int(n_frames * data_augmentation_loop // batch_size * 0.2)
         plot_frequency = int(Niter // 20)
         n_plots_per_epoch = 4
-        plot_iterations = set(np.linspace(Niter // n_plots_per_epoch, Niter - 1, n_plots_per_epoch, dtype=int))
+        plot_iterations = set(int(x) for x in np.linspace(Niter // n_plots_per_epoch, Niter - 1, n_plots_per_epoch))
         print(f'{Niter} iterations per epoch, plot at iterations {sorted(plot_iterations)}')
 
         total_loss = 0
