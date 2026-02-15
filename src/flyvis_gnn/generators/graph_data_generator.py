@@ -41,12 +41,6 @@ from tifffile import imread
 from tqdm import tqdm, trange
 import os
 
-# from fa2_modified import ForceAtlas2
-# import h5py as h5
-# import zarr
-# import xarray as xr
-
-# import taichi as ti
 
 def data_generate(
     config,
@@ -223,9 +217,6 @@ def apply_pairwise_knobs_torch(code_pm1: torch.Tensor,
         out[flips] = -out[flips]
 
     return out
-
-
-
 
 
 def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="color", erase=False, step=5, device=None,
@@ -534,7 +525,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
 
     with torch.no_grad():
         for pass_num in range(num_passes_needed):
-            for data_idx, data in enumerate(tqdm(stimulus_dataset, desc="Processing stimulus data")):
+            for data_idx, data in enumerate(tqdm(stimulus_dataset, desc="processing stimulus data")):
                 if simulation_config.simulation_initial_state:
                     x.voltage[:] = initial_state
                     if only_noise_visual_input > 0:
@@ -793,9 +784,6 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                                 axes_flat[panel_idx].set_visible(False)
                                 axes_flat[panel_idx].set_visible(False)
 
-                            # Add row labels
-                            # fig.text(0.5, 0.95, 'Voltage', ha='center', va='center', fontsize=22, color='white')
-                            # fig.text(0.5, 0.48, 'Calcium', ha='center', va='center', fontsize=22, color='white')
 
                             panel_idx = 0
                             for type_idx in anatomical_order:
@@ -935,7 +923,6 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                     break
             if it >= target_frames:
                 break
-
 
 
     # finalize zarr writers
@@ -1472,14 +1459,6 @@ def data_generate_synaptic(
 
         model, bc_pos, bc_dpos = choose_model(config=config, W=connectivity, device=device)
 
-        # NEW x tensor layout (like flyvis):
-        # x[:, 0]   = index (neuron ID)
-        # x[:, 1:3] = positions (x, y)
-        # x[:, 3]   = signal u (state)
-        # x[:, 4]   = external_input
-        # x[:, 5]   = plasticity p (PDE_N6/N7)
-        # x[:, 6]   = neuron_type
-        # x[:, 7]   = calcium
         x = torch.zeros((n_neurons, 8), dtype=torch.float32, device=device)
         x[:, 0] = torch.arange(n_neurons, dtype=torch.float32, device=device)  # index
         x[:, 1:3] = X1.clone().detach()  # positions

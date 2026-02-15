@@ -164,9 +164,6 @@ import imageio
 
 
 def data_train(config=None, erase=False, best_model=None, style=None, device=None, log_file=None):
-    # plt.rcParams['text.usetex'] = False  # LaTeX disabled - use mathtext instead
-    # rc('font', **{'family': 'serif', 'serif': ['Times New Roman', 'Liberation Serif', 'DejaVu Serif', 'serif']})
-    # matplotlib.rcParams['savefig.pad_inches'] = 0
 
     seed = config.training.seed
 
@@ -191,7 +188,6 @@ def data_train(config=None, erase=False, best_model=None, style=None, device=Non
         raise ValueError(f"Unknown dataset type: {config.dataset}")
 
     print("training completed.")
-
 
 
 def data_train_flyvis(config, erase, best_model, device, log_file=None):
@@ -524,7 +520,6 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                     loss = loss + (visual_input_batch - y_batch).norm(2)
 
 
-
                 elif 'MLP_ODE' in signal_model_name:
                     batch_x = torch.cat(dataset_batch, dim=0)
                     pred = model(batch_x, data_id=data_id, return_all=False)
@@ -630,28 +625,6 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
                 # finalize iteration to record history
                 regularizer.finalize_iteration()
-
-                if False: #(N % 2000 == 0) & hasattr(model, 'W') :
-
-                    plt.style.use('default')
-
-                    row_start = 1736
-                    row_end = 1736 + 217 * 2  # 2160   L1 L2
-                    col_start = 0
-                    col_end = 217 * 2  # 424
-                    learned_in_region = torch.zeros((n_neurons, n_neurons), dtype=torch.float32, device=edges.device)
-                    learned_in_region[edges[1], edges[0]] = model.W.squeeze()
-                    fig, ax = plt.subplots(1, 1, figsize=(10, 10))
-                    ax1 = sns.heatmap(to_numpy(learned_in_region[row_start:row_end, col_start:col_end]), center=0, square=True, cmap='bwr',
-                                        cbar=False, ax=ax)
-                    ax.set_title('learned connectivity', fontsize=24)
-                    ax.set_xlabel('columns [0:434] (R1 R2)', fontsize=18)
-                    ax.set_ylabel('rows [1736:2160] (L1 L2)', fontsize=18)
-                    plt.tight_layout()
-                    plt.savefig(f'{log_dir}/results/connectivity_comparison_R_to_L_{N:04d}.png', dpi=150, bbox_inches='tight')
-                    plt.close()
-
-
 
                 if regularizer.should_record():
                     # get history from regularizer and add loss component
@@ -832,8 +805,6 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                         os.path.join(log_dir, 'models', f'best_model_with_{n_runs - 1}_graphs_{epoch}_{N}.pt'))
 
             # check_and_clear_memory(device=device, iteration_number=N, every_n_iterations=Niter // 50, memory_percentage_threshold=0.6)
-
-
 
 
         # Calculate epoch-level losses
@@ -1559,12 +1530,6 @@ def data_train_INR(config=None, device=None, total_steps=5000, erase=False):
                 plt.savefig(f"{output_folder}/{inr_type}_{step}.png", dpi=150)
                 plt.close()
 
-    # save trained model
-    # save_path = f"{output_folder}/nnr_f_{inr_type}_pretrained.pt"
-    # torch.save(nnr_f.state_dict(), save_path)
-    # print(f"\nsaved pretrained nnr_f to: {save_path}")
-
-    # compute final MSE
     with torch.no_grad():
         if inr_type == 'siren_t':
             pred_all = nnr_f(time_input)
@@ -1594,11 +1559,6 @@ def data_train_INR(config=None, device=None, total_steps=5000, erase=False):
             print(f"final omegas: {nnr_f.get_omegas()}")
 
     return nnr_f, loss_list
-
-
-
-
-
 
 
 def data_test(config=None, config_file=None, visualize=False, style='color frame', verbose=True, best_model=20, step=15, n_rollout_frames=600,
@@ -2318,9 +2278,6 @@ def data_test_flyvis(
                                 axes_flat[panel_idx].set_visible(False)
                                 axes_flat[panel_idx].set_visible(False)
 
-                            # Add row labels
-                            # fig.text(0.5, 0.95, 'Voltage', ha='center', va='center', fontsize=22, color='white')
-                            # fig.text(0.5, 0.48, 'Calcium', ha='center', va='center', fontsize=22, color='white')
 
                             panel_idx = 0
                             for type_idx in anatomical_order:
@@ -2466,7 +2423,6 @@ def data_test_flyvis(
     print(f"generated {len(x_list)} frames total")
 
 
-
     if visualize:
         print('generating lossless video ...')
 
@@ -2478,10 +2434,6 @@ def data_test_flyvis(
 
         generate_compressed_video_mp4(output_dir=f"./{log_dir}/results", run=run,
                                         output_name=output_name,framerate=20)
-
-        # files = glob.glob(f'./{log_dir}/tmp_recons/*')
-        # for f in files:
-        #     os.remove(f)
 
 
     x_list = np.array(x_list)
