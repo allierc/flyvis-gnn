@@ -1670,7 +1670,11 @@ def data_test_flyvis(
     run = 0
 
     extent = 8
-    # Import only what's needed for mixed functionality
+    # Suppress noisy flyvis logging
+    import logging
+    for _logger_name in ['flyvis', 'flyvis.datasets', 'flyvis.network', 'flyvis.utils']:
+        logging.getLogger(_logger_name).setLevel(logging.WARNING)
+
     from flyvis.datasets.sintel import AugmentedSintel
     import flyvis
     from flyvis import NetworkView, Network

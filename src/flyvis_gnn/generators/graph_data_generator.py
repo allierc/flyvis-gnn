@@ -274,7 +274,11 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     plt.style.use('default')
     extent = 8
 
-    # Import only what's needed for mixed functionality
+    # Suppress noisy flyvis logging
+    import logging
+    for _logger_name in ['flyvis', 'flyvis.datasets', 'flyvis.network', 'flyvis.utils']:
+        logging.getLogger(_logger_name).setLevel(logging.WARNING)
+
     from flyvis.datasets.sintel import AugmentedSintel
     from flyvis import NetworkView, Network
     from flyvis.utils.config_utils import get_default_config, CONFIG_PATH
