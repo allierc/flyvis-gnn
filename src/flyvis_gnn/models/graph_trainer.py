@@ -15,7 +15,6 @@ logging.getLogger('fontTools').setLevel(logging.ERROR)
 logging.getLogger('fontTools.subset').setLevel(logging.ERROR)
 
 import matplotlib.pyplot as plt
-from matplotlib import rc
 from matplotlib.animation import FFMpegWriter
 import matplotlib as mpl
 import torch
@@ -50,6 +49,8 @@ from flyvis_gnn.utils import (
     compute_trace_metrics,
     get_datavis_root_dir,
 )
+from flyvis_gnn.figure_style import dark_style
+from flyvis_gnn.generators.plots import plot_spatial_activity_grid, INDEX_TO_NAME
 from flyvis_gnn.models.Signal_Propagation_FlyVis import Signal_Propagation_FlyVis
 from flyvis_gnn.models.Neural_ode_wrapper_FlyVis import (
     integrate_neural_ode_FlyVis, neural_ode_loss_FlyVis,
@@ -1972,22 +1973,8 @@ def data_test_flyvis(
         plot_weight_comparison(pde.p['w'], pde_modified.p['w'], f"./{log_dir}/results/weight_comparison_{noise_W}.png")
 
 
-    neuron_types = to_numpy(x[:, 6]).astype(int)
-    index_to_name = {0: 'Am', 1: 'C2', 2: 'C3', 3: 'CT1(Lo1)', 4: 'CT1(M10)', 5: 'L1', 6: 'L2',
-                        7: 'L3', 8: 'L4', 9: 'L5', 10: 'Lawf1', 11: 'Lawf2', 12: 'Mi1', 13: 'Mi10',
-                        14: 'Mi11', 15: 'Mi12', 16: 'Mi13', 17: 'Mi14', 18: 'Mi15', 19: 'Mi2',
-                        20: 'Mi3', 21: 'Mi4', 22: 'Mi9', 23: 'R1', 24: 'R2', 25: 'R3', 26: 'R4',
-                        27: 'R5', 28: 'R6', 29: 'R7', 30: 'R8', 31: 'T1', 32: 'T2', 33: 'T2a',
-                        34: 'T3', 35: 'T4a', 36: 'T4b', 37: 'T4c', 38: 'T4d', 39: 'T5a', 40: 'T5b',
-                        41: 'T5c', 42: 'T5d', 43: 'Tm1', 44: 'Tm16', 45: 'Tm2', 46: 'Tm20', 47: 'Tm28',
-                        48: 'Tm3', 49: 'Tm30', 50: 'Tm4', 51: 'Tm5Y', 52: 'Tm5a', 53: 'Tm5b',
-                        54: 'Tm5c', 55: 'Tm9', 56: 'TmY10', 57: 'TmY13', 58: 'TmY14', 59: 'TmY15',
-                        60: 'TmY18', 61: 'TmY3', 62: 'TmY4', 63: 'TmY5a', 64: 'TmY9'}
-
-    anatomical_order = [None, 23, 24, 25, 26, 27, 28, 29, 30, 5, 6, 7, 8, 9, 10, 11, 12, 19, 20, 21,
-                        22, 13, 14, 15, 16, 17, 18, 43, 45, 48, 50, 44, 46, 47, 49, 51, 52, 53, 54,
-                        55, 61, 62, 63, 56, 57, 58, 59, 60, 64, 1, 2, 4, 3, 31, 32, 33, 34, 35, 36,
-                        37, 38, 39, 40, 41, 42, 0]
+    fig_style = dark_style
+    index_to_name = INDEX_TO_NAME
 
 
     # Main loop #####################################
@@ -2292,167 +2279,19 @@ def data_test_flyvis(
 
                     y_list.append(to_numpy(y.clone().detach()))
 
-                    if (it>0) & (it<100) & (it % step == 0) & visualize & (not training_selected_neurons):
-                        if "latex" in style:
-                            plt.rcParams["text.usetex"] = False  # Disabled due to font issues
-                            rc("font", **{"family": "serif", "serif": ["Times New Roman", "Liberation Serif", "DejaVu Serif", "serif"]})
-
-                        mpl.rcParams["savefig.pad_inches"] = 0
+                    if (it > 0) & (it < 100) & (it % step == 0) & visualize & (not training_selected_neurons):
                         num = f"{id_fig:06}"
                         id_fig += 1
-
-                        if calcium_type != "none":
-
-                            n_rows = 16  # 8 for voltage, 8 for calcium
-                            n_cols = 9
-                            fig, axes = plt.subplots(n_rows, n_cols, figsize=(18.04, 32.46), facecolor='black')
-                            plt.subplots_adjust(hspace=1.2)
-                            axes_flat = axes.flatten()
-
-                            neuron_types = to_numpy(x[:, 6]).astype(int)
-                            all_voltages = to_numpy(x[:, 3])
-                            all_calcium = to_numpy(x[:, 7])
-
-                            for panel_idx in range(66,72):
-                                axes_flat[panel_idx].set_visible(False)
-                                axes_flat[panel_idx].set_visible(False)
-
-                            # Add row labels
-                            # fig.text(0.5, 0.95, 'Voltage', ha='center', va='center', fontsize=22, color='white')
-                            # fig.text(0.5, 0.48, 'Calcium', ha='center', va='center', fontsize=22, color='white')
-
-                            panel_idx = 0
-                            for type_idx in anatomical_order:
-                                # --- top row: voltage ---
-                                ax_v = axes_flat[panel_idx]
-                                if type_idx is None:
-                                    ax_v.scatter(to_numpy(X1[:n_input_neurons, 0]), to_numpy(X1[:n_input_neurons, 1]),
-                                                 s=64, c=to_numpy(x[:n_input_neurons, 4]), cmap="viridis",
-                                                 vmin=0, vmax=1.05, marker='h', alpha=1.0, linewidths=0,
-                                                 edgecolors='black')
-                                    ax_v.set_title('Stimuli', fontsize=18, color='white')
-                                else:
-                                    mask = neuron_types == type_idx
-                                    if np.sum(mask) > 0:
-                                        voltages = all_voltages[mask]
-                                        positions_x = to_numpy(X1[:np.sum(mask), 0])
-                                        positions_y = to_numpy(X1[:np.sum(mask), 1])
-                                        ax_v.scatter(positions_x, positions_y, s=72, c=voltages,
-                                                     cmap='viridis', vmin=-2, vmax=2, marker='h', alpha=1,
-                                                     linewidths=0, edgecolors='black')
-                                    ax_v.set_title(index_to_name.get(type_idx, f"Type_{type_idx}"), fontsize=18,
-                                                    color='white')  # increased fontsize
-
-                                ax_v.set_facecolor('black')
-                                ax_v.set_xticks([])
-                                ax_v.set_yticks([])
-                                ax_v.set_aspect('equal')
-                                for spine in ax_v.spines.values():
-                                    spine.set_visible(False)
-
-                                # --- bottom row: calcium ---
-                                ax_ca = axes_flat[panel_idx + n_cols * 8]
-                                if type_idx is None:
-                                    ax_ca.scatter(to_numpy(X1[:n_input_neurons, 0]), to_numpy(X1[:n_input_neurons, 1]),
-                                                  s=64, c=to_numpy(x[:n_input_neurons, 4]), cmap="viridis",
-                                                  vmin=0, vmax=1.05, marker='h', alpha=1.0, linewidths=0,
-                                                  edgecolors='black')
-                                    ax_ca.set_title('Stimuli', fontsize=18, color='white')
-                                else:
-                                    mask = neuron_types == type_idx
-                                    if np.sum(mask) > 0:
-                                        calcium_values = all_calcium[mask]
-                                        positions_x = to_numpy(X1[:np.sum(mask), 0])
-                                        positions_y = to_numpy(X1[:np.sum(mask), 1])
-                                        ax_ca.scatter(positions_x, positions_y, s=72, c=calcium_values,
-                                                      cmap='plasma', vmin=0, vmax=2, marker='h',
-                                                      alpha=1, linewidths=0, edgecolors='black')  # green LUT
-                                    else:
-                                        ax_ca.text(0.5, 0.5, 'No neurons', transform=ax_ca.transAxes, ha='center',
-                                                   va='center', color='red', fontsize=10)
-                                    ax_ca.set_title(index_to_name.get(type_idx, f"Type_{type_idx}"), fontsize=18,
-                                                    color='white')  # increased fontsize
-
-                                ax_ca.set_facecolor('black')
-                                ax_ca.set_xticks([])
-                                ax_ca.set_yticks([])
-                                ax_ca.set_aspect('equal')
-                                for spine in ax_ca.spines.values():
-                                    spine.set_visible(False)
-
-                                panel_idx += 1
-
-                            for i in range(panel_idx + n_cols * 8, len(axes_flat)):
-                                axes_flat[i].set_visible(False)
-
-                            plt.tight_layout()
-                            plt.subplots_adjust(top=0.92, bottom=0.05)
-                            plt.savefig(f"./{log_dir}/tmp_recons/Fig_{run}_{num}.png", dpi=80)
-                            plt.close()
-
-                        else:
-
-                            fig, axes = plt.subplots(8, 9, figsize=(18.04, 16.23), facecolor='black')
-                            plt.subplots_adjust(top=1.2, bottom=0.05, hspace=1.2)
-                            axes_flat = axes.flatten()
-
-                            panel_idx = 0
-                            for type_idx in anatomical_order:
-                                if panel_idx >= len(axes_flat):
-                                    break
-                                ax = axes_flat[panel_idx]
-
-                                if type_idx is None:
-                                    ax.scatter(to_numpy(X1[:n_input_neurons, 0]),
-                                                                  to_numpy(X1[:n_input_neurons, 1]), s=64,
-                                                                  c=to_numpy(x[:n_input_neurons, 4]), cmap="viridis",
-                                                                  vmin=0, vmax=1.05, marker='h', alpha=1.0, linewidths=0.0,
-                                                                  edgecolors='black')
-                                    ax.set_title('stimuli', fontsize=18, color='white', pad=8, y=0.95)
-                                else:
-                                    type_mask = neuron_types == type_idx
-                                    type_count = np.sum(type_mask)
-                                    type_name = index_to_name.get(type_idx, f'Type_{type_idx}')
-                                    if type_count > 0:
-                                        type_voltages = to_numpy(x[type_mask, 3])
-                                        hex_positions_x = to_numpy(X1[:type_count, 0])
-                                        hex_positions_y = to_numpy(X1[:type_count, 1])
-                                        ax.scatter(hex_positions_x, hex_positions_y, s=72, c=type_voltages,
-                                                                    cmap='viridis', vmin=-2, vmax=2, marker='h', alpha=1,
-                                                                    linewidths=0.0, edgecolors='black')
-                                        if type_name.startswith('R'):
-                                            pass
-                                        elif type_name.startswith(('L', 'Lawf')):
-                                            pass
-                                        elif type_name.startswith(('Mi', 'Tm', 'TmY')):
-                                            pass
-                                        elif type_name.startswith('T'):
-                                            pass
-                                        elif type_name.startswith('C'):
-                                            pass
-                                        else:
-                                            pass
-                                        ax.set_title(f'{type_name}', fontsize=18, color='white', pad=8, y=0.95)
-                                    else:
-                                        ax.text(0.5, 0.5, f'No {type_name}\nNeurons', transform=ax.transAxes, ha='center',
-                                                va='center', color='red', fontsize=8)
-                                        ax.set_title(f'{type_name}\n(0)', fontsize=10, color='gray', pad=8, y=0.95)
-
-                                ax.set_facecolor('black')
-                                ax.set_xticks([])
-                                ax.set_yticks([])
-                                ax.set_aspect('equal')
-                                for spine in ax.spines.values():
-                                    spine.set_visible(False)
-                                panel_idx += 1
-
-                            for i in range(panel_idx, len(axes_flat)):
-                                axes_flat[i].set_visible(False)
-
-                            plt.tight_layout()
-                            plt.subplots_adjust(top=0.95, bottom=0.05)
-                            plt.savefig(f"./{log_dir}/tmp_recons/Fig_{run}_{num}.png", dpi=80)
-                            plt.close()
+                        plot_spatial_activity_grid(
+                            positions=to_numpy(X1),
+                            voltages=to_numpy(x[:, 3]),
+                            stimulus=to_numpy(x[:n_input_neurons, 4]),
+                            neuron_types=to_numpy(x[:, 6]).astype(int),
+                            output_path=f"./{log_dir}/tmp_recons/Fig_{run}_{num}.png",
+                            calcium=to_numpy(x[:, 7]) if calcium_type != "none" else None,
+                            n_input_neurons=n_input_neurons,
+                            style=fig_style,
+                        )
 
                     it = it + 1
                     if it >= target_frames:

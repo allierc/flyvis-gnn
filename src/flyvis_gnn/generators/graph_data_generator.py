@@ -1,16 +1,20 @@
 import glob
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-import time
 import torch
-from matplotlib import rc
 # Optional imports (not available in flyvis-gnn spinoff)
 try:
     from flyvis_gnn.data_loaders import load_wormvae_data, load_zebrafish_data
 except ImportError:
     load_wormvae_data = None
     load_zebrafish_data = None
+from flyvis_gnn.figure_style import default_style, dark_style
+from flyvis_gnn.generators.plots import (
+    plot_spatial_activity_grid,
+    plot_kinograph,
+    plot_activity_traces,
+    plot_selected_neuron_traces,
+)
 from flyvis_gnn.neuron_state import NeuronState
 from flyvis_gnn.zarr_io import ZarrSimulationWriter, ZarrSimulationWriterV2
 try:
@@ -19,25 +23,10 @@ except ImportError:
     AugmentedVideoDataset = None
     CombinedVideoDataset = None
 from flyvis_gnn.generators.utils import (
-    choose_model,
-    init_neurons,
-    init_mesh,
     generate_compressed_video_mp4,
-    init_connectivity,
     get_equidistant_points,
-    plot_synaptic_frame_visual,
-    plot_synaptic_frame_modulation,
-    plot_synaptic_frame_plasticity,
-    plot_synaptic_frame_default,
-    plot_synaptic_activity_traces,
-    plot_synaptic_kinograph,
-    plot_synaptic_mlp_functions,
-    plot_eigenvalue_spectrum,
-    plot_connectivity_matrix,
-    plot_low_rank_connectivity,
 )
-from flyvis_gnn.utils import to_numpy, CustomColorMap, check_and_clear_memory, get_datavis_root_dir
-from tifffile import imread
+from flyvis_gnn.utils import to_numpy, get_datavis_root_dir
 from tqdm import tqdm, trange
 import os
 
@@ -58,9 +47,6 @@ def data_generate(
     log_file=None,
 ):
 
-    has_signal = "PDE_N" in config.graph_model.signal_model_name
-    has_fly = "fly" in config.dataset
-
     dataset_name = config.dataset
 
     print(f"\033[94mdataset_name: {dataset_name}\033[0m")
@@ -73,7 +59,7 @@ def data_generate(
 
     if config.data_folder_name != "none":
         generate_from_data(config=config, device=device, visualize=visualize, style=style, step=step)
-    elif has_fly:
+    else:
         data_generate_fly_voltage(
             config,
             visualize=visualize,
@@ -83,18 +69,6 @@ def data_generate(
             step=step,
             device=device,
             bSave=bSave,
-        )
-    elif has_signal:
-        data_generate_synaptic(
-            config,
-            visualize=visualize,
-            run_vizualized=run_vizualized,
-            style=style,
-            erase=erase,
-            step=step,
-            device=device,
-            bSave=bSave,
-            log_file=log_file,
         )
 
     plt.style.use("default")
@@ -224,6 +198,9 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     if "black" in style:
         plt.style.use("dark_background")
 
+    fig_style = dark_style if "black" in style else default_style
+    fig_style.apply_globally()
+
     simulation_config = config.simulation
     training_config = config.training
     model_config = config.graph_model
@@ -338,7 +315,10 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
         }
         stimulus_dataset = AugmentedSintel(**sintel_config)
 
-    # Initialize network
+    # Initialize the ground-truth flyvis network from a pre-trained checkpoint.
+    # This loads the biological connectome (neuron types, synaptic weights, time constants)
+    # from the flyvis library, using ensemble_id/model_id to select a specific trained model.
+    # The network is then used as the "simulator" to generate voltage traces via its PDE dynamics.
     config_net = get_default_config(overrides=[], path=f"{CONFIG_PATH}/network/network.yaml")
     config_net.connectome.extent = extent
     net = Network(**config_net)
@@ -347,6 +327,8 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     net.load_state_dict(trained_net.state_dict())
     torch.set_grad_enabled(False)
 
+    # Extract ground-truth parameters: time constants (tau), resting potentials (V_rest),
+    # and effective synaptic weights (strength * count * sign) for PDE simulation.
     params = net._param_api()
     p = {"tau_i": params.nodes.time_const, "V_i_rest": params.nodes.bias,
          "w": params.edges.syn_strength * params.edges.syn_count * params.edges.sign}
@@ -418,20 +400,17 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                  model_type=model_config.signal_model_name, n_neuron_types=n_neuron_types, device=device)
 
     if bSave:
-        # torch.save(mask, f"./graphs_data/{dataset_name}/mask.pt")
-        # torch.save(connectivity, f"./graphs_data/{dataset_name}/connectivity.pt")
         torch.save(p["w"], f"./graphs_data/{dataset_name}/weights.pt")
         torch.save(edge_index, f"graphs_data/{dataset_name}/edge_index.pt")
         torch.save(p["tau_i"], f"./graphs_data/{dataset_name}/taus.pt")
         torch.save(p["V_i_rest"], f"./graphs_data/{dataset_name}/V_i_rest.pt")
-
 
     x_coords, y_coords, u_coords, v_coords = get_photoreceptor_positions_from_net(net)
 
     node_types = np.array(net.connectome.nodes["type"])
     node_types_str = [t.decode("utf-8") if isinstance(t, bytes) else str(t) for t in node_types]
     grouped_types = np.array([group_by_direction_and_function(t) for t in node_types_str])
-    unique_types, node_types_int = np.unique(node_types, return_inverse=True)
+    _ , node_types_int = np.unique(node_types, return_inverse=True)
 
     X1 = torch.tensor(np.stack((x_coords, y_coords), axis=1), dtype=torch.float32, device=device)
 
@@ -745,179 +724,19 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
 
                     y_writer.append(to_numpy(y.clone().detach()))
 
-                    if (visualize & (run == run_vizualized) & (it>0) & (it % step == 0) & (it <= 50 * step)):
-                        if "latex" in style:
-                            plt.rcParams["text.usetex"] = True
-                            rc("font", **{"family": "serif", "serif": ["Palatino"]})
-
-                        matplotlib.rcParams["savefig.pad_inches"] = 0
+                    if (visualize & (run == run_vizualized) & (it > 0) & (it % step == 0) & (it <= 50 * step)):
                         num = f"{id_fig:06}"
                         id_fig += 1
-
-                        neuron_types = to_numpy(x.neuron_type).astype(int)
-                        index_to_name = {0: 'Am', 1: 'C2', 2: 'C3', 3: 'CT1(Lo1)', 4: 'CT1(M10)', 5: 'L1', 6: 'L2',
-                                         7: 'L3', 8: 'L4', 9: 'L5', 10: 'Lawf1', 11: 'Lawf2', 12: 'Mi1', 13: 'Mi10',
-                                         14: 'Mi11', 15: 'Mi12', 16: 'Mi13', 17: 'Mi14', 18: 'Mi15', 19: 'Mi2',
-                                         20: 'Mi3', 21: 'Mi4', 22: 'Mi9', 23: 'R1', 24: 'R2', 25: 'R3', 26: 'R4',
-                                         27: 'R5', 28: 'R6', 29: 'R7', 30: 'R8', 31: 'T1', 32: 'T2', 33: 'T2a',
-                                         34: 'T3', 35: 'T4a', 36: 'T4b', 37: 'T4c', 38: 'T4d', 39: 'T5a', 40: 'T5b',
-                                         41: 'T5c', 42: 'T5d', 43: 'Tm1', 44: 'Tm16', 45: 'Tm2', 46: 'Tm20', 47: 'Tm28',
-                                         48: 'Tm3', 49: 'Tm30', 50: 'Tm4', 51: 'Tm5Y', 52: 'Tm5a', 53: 'Tm5b',
-                                         54: 'Tm5c', 55: 'Tm9', 56: 'TmY10', 57: 'TmY13', 58: 'TmY14', 59: 'TmY15',
-                                         60: 'TmY18', 61: 'TmY3', 62: 'TmY4', 63: 'TmY5a', 64: 'TmY9'}
-
-                        anatomical_order = [None, 23, 24, 25, 26, 27, 28, 29, 30, 5, 6, 7, 8, 9, 10, 11, 12, 19, 20, 21,
-                                            22, 13, 14, 15, 16, 17, 18, 43, 45, 48, 50, 44, 46, 47, 49, 51, 52, 53, 54,
-                                            55, 61, 62, 63, 56, 57, 58, 59, 60, 64, 1, 2, 4, 3, 31, 32, 33, 34, 35, 36,
-                                            37, 38, 39, 40, 41, 42, 0]
-
-                        if calcium_type != "none":
-
-                            n_rows = 16  # 8 for voltage, 8 for calcium
-                            n_cols = 9
-                            fig, axes = plt.subplots(n_rows, n_cols, figsize=(18.04, 32.46), facecolor='white')
-                            plt.subplots_adjust(hspace=1.2)
-                            axes_flat = axes.flatten()
-
-                            neuron_types = to_numpy(x.neuron_type).astype(int)
-                            all_voltages = to_numpy(x.voltage)
-                            all_calcium = to_numpy(x.calcium)
-
-                            for panel_idx in range(66,72):
-                                axes_flat[panel_idx].set_visible(False)
-                                axes_flat[panel_idx].set_visible(False)
-
-
-                            panel_idx = 0
-                            for type_idx in anatomical_order:
-                                # --- top row: voltage ---
-                                ax_v = axes_flat[panel_idx]
-                                if type_idx is None:
-                                    ax_v.scatter(to_numpy(X1[:n_input_neurons, 0]), to_numpy(X1[:n_input_neurons, 1]),
-                                                 s=64, c=to_numpy(x.stimulus[:n_input_neurons]), cmap="viridis",
-                                                 vmin=0, vmax=1.05, marker='h', alpha=1.0, linewidths=0,
-                                                 edgecolors='black')
-                                    ax_v.set_title('Stimuli', fontsize=18)
-                                else:
-                                    mask = neuron_types == type_idx
-                                    if np.sum(mask) > 0:
-                                        voltages = all_voltages[mask]
-                                        positions_x = to_numpy(X1[:np.sum(mask), 0])
-                                        positions_y = to_numpy(X1[:np.sum(mask), 1])
-                                        ax_v.scatter(positions_x, positions_y, s=72, c=voltages,
-                                                     cmap='viridis', vmin=-2, vmax=2, marker='h', alpha=1,
-                                                     linewidths=0, edgecolors='black')
-                                    ax_v.set_title(index_to_name.get(type_idx, f"Type_{type_idx}"), fontsize=18)
-
-                                ax_v.set_facecolor('white')
-                                ax_v.set_xticks([])
-                                ax_v.set_yticks([])
-                                ax_v.set_aspect('equal')
-                                for spine in ax_v.spines.values():
-                                    spine.set_visible(False)
-
-                                # --- bottom row: calcium ---
-                                ax_ca = axes_flat[panel_idx + n_cols * 8]
-                                if type_idx is None:
-                                    ax_ca.scatter(to_numpy(X1[:n_input_neurons, 0]), to_numpy(X1[:n_input_neurons, 1]),
-                                                  s=64, c=to_numpy(x.stimulus[:n_input_neurons]), cmap="viridis",
-                                                  vmin=0, vmax=1.05, marker='h', alpha=1.0, linewidths=0,
-                                                  edgecolors='black')
-                                    ax_ca.set_title('Stimuli', fontsize=18)
-                                else:
-                                    mask = neuron_types == type_idx
-                                    if np.sum(mask) > 0:
-                                        calcium_values = all_calcium[mask]
-                                        positions_x = to_numpy(X1[:np.sum(mask), 0])
-                                        positions_y = to_numpy(X1[:np.sum(mask), 1])
-                                        ax_ca.scatter(positions_x, positions_y, s=72, c=calcium_values,
-                                                      cmap='plasma', vmin=0, vmax=2, marker='h',
-                                                      alpha=1, linewidths=0, edgecolors='black')  # green LUT
-                                    else:
-                                        ax_ca.text(0.5, 0.5, 'No neurons', transform=ax_ca.transAxes, ha='center',
-                                                   va='center', fontsize=10)
-                                    ax_ca.set_title(index_to_name.get(type_idx, f"Type_{type_idx}"), fontsize=18)
-
-                                ax_ca.set_facecolor('white')
-                                ax_ca.set_xticks([])
-                                ax_ca.set_yticks([])
-                                ax_ca.set_aspect('equal')
-                                for spine in ax_ca.spines.values():
-                                    spine.set_visible(False)
-
-                                panel_idx += 1
-
-                            for i in range(panel_idx + n_cols * 8, len(axes_flat)):
-                                axes_flat[i].set_visible(False)
-
-                            plt.tight_layout()
-                            plt.subplots_adjust(top=0.92, bottom=0.05)
-                            plt.savefig(f"graphs_data/{dataset_name}/Fig/Fig_{run}_{num}.png", dpi=80)
-                            plt.close()
-
-                        else:
-
-                            fig, axes = plt.subplots(8, 9, figsize=(18.04, 16.23), facecolor='white')
-                            plt.subplots_adjust(top=1.2, bottom=0.05, hspace=1.2)
-                            axes_flat = axes.flatten()
-
-                            panel_idx = 0
-                            for type_idx in anatomical_order:
-                                if panel_idx >= len(axes_flat):
-                                    break
-                                ax = axes_flat[panel_idx]
-
-                                if type_idx is None:
-                                    ax.scatter(to_numpy(X1[:n_input_neurons, 0]),
-                                                                  to_numpy(X1[:n_input_neurons, 1]), s=64,
-                                                                  c=to_numpy(x.stimulus[:n_input_neurons]), cmap="viridis",
-                                                                  vmin=0, vmax=1.05, marker='h', alpha=1.0, linewidths=0.0,
-                                                                  edgecolors='black')
-                                    ax.set_title('stimuli', fontsize=18, pad=8, y=0.95)
-                                else:
-                                    type_mask = neuron_types == type_idx
-                                    type_count = np.sum(type_mask)
-                                    type_name = index_to_name.get(type_idx, f'Type_{type_idx}')
-                                    if type_count > 0:
-                                        type_voltages = to_numpy(x.voltage[type_mask])
-                                        hex_positions_x = to_numpy(X1[:type_count, 0])
-                                        hex_positions_y = to_numpy(X1[:type_count, 1])
-                                        ax.scatter(hex_positions_x, hex_positions_y, s=72, c=type_voltages,
-                                                                    cmap='viridis', vmin=-2, vmax=2, marker='h', alpha=1,
-                                                                    linewidths=0.0, edgecolors='black')
-                                        if type_name.startswith('R'):
-                                            pass
-                                        elif type_name.startswith(('L', 'Lawf')):
-                                            pass
-                                        elif type_name.startswith(('Mi', 'Tm', 'TmY')):
-                                            pass
-                                        elif type_name.startswith('T'):
-                                            pass
-                                        elif type_name.startswith('C'):
-                                            pass
-                                        else:
-                                            pass
-                                        ax.set_title(f'{type_name}', fontsize=18, pad=8, y=0.95)
-                                    else:
-                                        ax.text(0.5, 0.5, f'No {type_name}\nNeurons', transform=ax.transAxes, ha='center',
-                                                va='center', fontsize=8)
-                                        ax.set_title(f'{type_name}\n(0)', fontsize=10, color='gray', pad=8, y=0.95)
-
-                                ax.set_facecolor('white')
-                                ax.set_xticks([])
-                                ax.set_yticks([])
-                                ax.set_aspect('equal')
-                                for spine in ax.spines.values():
-                                    spine.set_visible(False)
-                                panel_idx += 1
-
-                            for i in range(panel_idx, len(axes_flat)):
-                                axes_flat[i].set_visible(False)
-
-                            plt.tight_layout()
-                            plt.subplots_adjust(top=0.95, bottom=0.05)
-                            plt.savefig(f"graphs_data/{dataset_name}/Fig/Fig_{run}_{num}.png", dpi=80)
-                            plt.close()
+                        plot_spatial_activity_grid(
+                            positions=to_numpy(X1),
+                            voltages=to_numpy(x.voltage),
+                            stimulus=to_numpy(x.stimulus[:n_input_neurons]),
+                            neuron_types=to_numpy(x.neuron_type).astype(int),
+                            output_path=f"graphs_data/{dataset_name}/Fig/Fig_{run}_{num}.png",
+                            calcium=to_numpy(x.calcium) if calcium_type != "none" else None,
+                            n_input_neurons=n_input_neurons,
+                            style=fig_style,
+                        )
 
                     it = it + 1
                     if it >= target_frames:
@@ -958,107 +777,28 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     print(f'activity rank(90%)={rank_90_act}  rank(99%)={rank_99_act}')
     print(f'visual input rank(90%)={rank_90_inp}  rank(99%)={rank_99_inp}')
 
-    # Combined kinograph: activity (top) + input stimuli (bottom), full + zoom (200x200)
     print('plot kinograph ...')
-    activity_kino = activity_full.T  # (n_neurons, n_frames)
-    n_frames_kino = min(n_frames, activity_kino.shape[1])
-    activity_kino = activity_kino[:, :n_frames_kino]
-    vmax_kino = np.abs(activity_kino).max()
+    plot_kinograph(
+        activity=activity_full.T,
+        stimulus=x_ts.stimulus[:, :n_input_neurons].numpy().T,
+        output_path=f'./graphs_data/{dataset_name}/kinograph.png',
+        rank_90_act=rank_90_act,
+        rank_99_act=rank_99_act,
+        rank_90_inp=rank_90_inp,
+        rank_99_inp=rank_99_inp,
+        zoom_size=200,
+        style=fig_style,
+    )
 
-    input_stimuli = x_ts.stimulus[:, :n_input_neurons].numpy().T  # (n_input_neurons, n_frames)
-    n_frames_input = min(n_frames, input_stimuli.shape[1])
-    input_stimuli = input_stimuli[:, :n_frames_input]
-    vmax_input = np.abs(input_stimuli).max() * 1.2
-
-    zoom_frames = min(200, n_frames_kino)
-    zoom_neurons_act = min(200, n_neurons)
-    zoom_neurons_inp = min(200, n_input_neurons)
-
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10),
-                             gridspec_kw={'width_ratios': [2, 1]})
-
-    # Top-left: full activity kinograph
-    ax = axes[0, 0]
-    im = ax.imshow(activity_kino, aspect='auto', cmap='viridis', vmin=-vmax_kino, vmax=vmax_kino,
-                   origin='lower', interpolation='nearest')
-    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04).ax.tick_params(labelsize=12)
-    ax.set_ylabel('neurons', fontsize=14)
-    ax.set_xlabel('time (frames)', fontsize=14)
-    ax.set_xticks([0, n_frames_kino - 1])
-    ax.set_xticklabels([0, n_frames_kino], fontsize=12)
-    ax.set_yticks([0, n_neurons - 1])
-    ax.set_yticklabels([1, n_neurons], fontsize=12)
-    ax.set_title(f'activity ({n_neurons} neurons)', fontsize=16)
-    ax.text(0.02, 0.97, f'rank(90%)={rank_90_act}  rank(99%)={rank_99_act}',
-            fontsize=9, transform=ax.transAxes, va='top', ha='left')
-
-    # Top-right: zoomed activity (200 neurons x 200 frames)
-    ax = axes[0, 1]
-    im = ax.imshow(activity_kino[:zoom_neurons_act, :zoom_frames], aspect='auto', cmap='viridis',
-                   vmin=-vmax_kino, vmax=vmax_kino, origin='lower', interpolation='nearest')
-    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04).ax.tick_params(labelsize=12)
-    ax.set_ylabel('neurons', fontsize=14)
-    ax.set_xlabel('time (frames)', fontsize=14)
-    ax.set_xticks([0, zoom_frames - 1])
-    ax.set_xticklabels([0, zoom_frames], fontsize=12)
-    ax.set_yticks([0, zoom_neurons_act - 1])
-    ax.set_yticklabels([1, zoom_neurons_act], fontsize=12)
-    ax.set_title(f'zoom ({zoom_neurons_act} x {zoom_frames})', fontsize=16)
-
-    # Bottom-left: full input stimuli kinograph
-    ax = axes[1, 0]
-    im = ax.imshow(input_stimuli, aspect='auto', cmap='viridis', vmin=-vmax_input, vmax=vmax_input,
-                   origin='lower', interpolation='nearest')
-    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04).ax.tick_params(labelsize=12)
-    ax.set_ylabel('input neurons', fontsize=14)
-    ax.set_xlabel('time (frames)', fontsize=14)
-    ax.set_xticks([0, n_frames_input - 1])
-    ax.set_xticklabels([0, n_frames_input], fontsize=12)
-    ax.set_yticks([0, n_input_neurons - 1])
-    ax.set_yticklabels([1, n_input_neurons], fontsize=12)
-    ax.set_title(f'visual input ({n_input_neurons} input neurons)', fontsize=16)
-    ax.text(0.02, 0.97, f'rank(90%)={rank_90_inp}  rank(99%)={rank_99_inp}',
-            fontsize=9, transform=ax.transAxes, va='top', ha='left')
-
-    # Bottom-right: zoomed input stimuli (200 neurons x 200 frames)
-    ax = axes[1, 1]
-    im = ax.imshow(input_stimuli[:zoom_neurons_inp, :zoom_frames], aspect='auto', cmap='viridis',
-                   vmin=-vmax_input, vmax=vmax_input, origin='lower', interpolation='nearest')
-    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04).ax.tick_params(labelsize=12)
-    ax.set_ylabel('input neurons', fontsize=14)
-    ax.set_xlabel('time (frames)', fontsize=14)
-    ax.set_xticks([0, zoom_frames - 1])
-    ax.set_xticklabels([0, zoom_frames], fontsize=12)
-    ax.set_yticks([0, zoom_neurons_inp - 1])
-    ax.set_yticklabels([1, zoom_neurons_inp], fontsize=12)
-    ax.set_title(f'zoom ({zoom_neurons_inp} x {zoom_frames})', fontsize=16)
-
-    plt.tight_layout()
-    plt.savefig(f'./graphs_data/{dataset_name}/kinograph.png', dpi=200)
-    plt.close()
-
-    # Activity traces (sampled neurons)
     print('plot activity traces ...')
-    activity_T = activity_full.T  # (n_neurons, n_frames)
-    n_traces = min(100, n_neurons)
-    sampled_idx = np.sort(np.random.choice(n_neurons, n_traces, replace=False))
-    activity_sampled = activity_T[sampled_idx]
-    activity_offset = activity_sampled + 2 * np.arange(n_traces)[:, None]
-    plt.figure(figsize=(12, 10))
-    plt.plot(activity_offset.T, linewidth=0.5, alpha=0.7, color='k')
-    ax = plt.gca()
-    plt.xlabel('time (frames)', fontsize=14)
-    ax.spines['left'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.set_yticks([])
-    plt.xlim([0, min(n_frames, 10000)])
-    plt.ylim([activity_offset[0].min() - 2, activity_offset[-1].max() + 2])
-    ax.text(0.98, 0.98, f'{n_input_neurons} neurons', fontsize=12, transform=ax.transAxes,
-            va='top', ha='right')
-    plt.tight_layout()
-    plt.savefig(f'./graphs_data/{dataset_name}/activity_traces.png', dpi=200)
-    plt.close()
+    plot_activity_traces(
+        activity=activity_full.T,
+        output_path=f'./graphs_data/{dataset_name}/activity_traces.png',
+        n_traces=100,
+        max_frames=10000,
+        n_input_neurons=n_input_neurons,
+        style=fig_style,
+    )
 
     # SVD analysis (4-panel plot)
     print('svd analysis ...')
@@ -1135,7 +875,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
             y_noisy_writer.finalize()
             print("data + noise saved as .zarr ...")
 
-    # Neuron type index to name mapping
+    # Neuron type index to name mapping (CamelCase for legacy plot_neuron_activity_analysis)
     index_to_name = {
         0: 'Am', 1: 'C2', 2: 'C3', 3: 'CT1(Lo1)', 4: 'CT1(M10)', 5: 'L1', 6: 'L2', 7: 'L3', 8: 'L4', 9: 'L5',
         10: 'Lawf1', 11: 'Lawf2', 12: 'Mi1', 13: 'Mi10', 14: 'Mi11', 15: 'Mi12', 16: 'Mi13', 17: 'Mi14',
@@ -1146,63 +886,21 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
         52: 'Tm5a', 53: 'Tm5b', 54: 'Tm5c', 55: 'Tm9', 56: 'TmY10', 57: 'TmY13', 58: 'TmY14',
         59: 'TmY15', 60: 'TmY18', 61: 'TmY3', 62: 'TmY4', 63: 'TmY5a', 64: 'TmY9'
     }
-    [index_to_name.get(i, f'Type{i}') for i in range(n_neuron_types)]
 
     activity = x_ts.voltage.to(device).t()  # (n_neurons, n_frames)
-    torch.mean(activity, dim=1)
-    torch.std(activity, dim=1)
-
-    target_type_name_list = ['R1', 'R7', 'C2', 'Mi11', 'Tm1', 'Tm4', 'Tm30']
     type_list = x.neuron_type.unsqueeze(-1).to(device)
 
-    # Lazy import to avoid circular dependency
+    target_type_name_list = ['R1', 'R7', 'C2', 'Mi11', 'Tm1', 'Tm4', 'Tm30']
     from GNN_PlotFigure import plot_neuron_activity_analysis
     plot_neuron_activity_analysis(activity, target_type_name_list, type_list, index_to_name, n_neurons, n_frames, delta_t, f'graphs_data/{dataset_name}/')
 
     print('plot figure activity ...')
-    n_neurons = len(type_list)
-    type_list = to_numpy(type_list.squeeze())
-    activity = to_numpy(activity)
-
-    selected_types = [5, 12, 19, 23, 31, 35, 39, 43, 50, 55]
-    neuron_indices = []
-    for stype in selected_types:
-        indices = np.where(type_list == stype)[0]
-        if len(indices) == 0:
-            print(f"Type {stype} ({index_to_name[stype]}) not found in type_list")
-        neuron_indices.append(indices[0])
-
-    print(f"found {len(neuron_indices)} neurons out of {len(selected_types)}")
-    print(f"unique types in type_list: {np.unique(type_list)}")
-
-    start_frame = 63000
-    end_frame = 63500
-    true_slice = activity[neuron_indices, start_frame:end_frame]
-    step_v = 1.5
-
-    plt.style.use('default')
-    plt.figure(figsize=(12, 10))
-
-    for i in range(10):
-        baseline = np.mean(true_slice[i])
-        plt.plot(true_slice[i] - baseline + i * step_v, linewidth=1, c='green', alpha=0.75)
-
-    for i in range(10):
-        plt.text(-100, i * step_v, index_to_name[selected_types[i]],
-                fontsize=12, va='center')
-
-    plt.ylim([-step_v, 10 * step_v])
-    plt.yticks([])
-
-    plt.xticks([0, end_frame - start_frame])
-    plt.gca().set_xticklabels([start_frame, end_frame], fontsize=12)
-    plt.gca().set_xlabel('frame', fontsize=14)
-
-
-    plt.tight_layout()
-    plt.subplots_adjust(left=0.05)
-    plt.savefig(f'./graphs_data/{dataset_name}/activity', dpi=200, bbox_inches='tight')
-    plt.close()
+    plot_selected_neuron_traces(
+        activity=to_numpy(activity),
+        type_list=to_numpy(type_list.squeeze()),
+        output_path=f'./graphs_data/{dataset_name}/activity.png',
+        style=fig_style,
+    )
 
     if visualize & (run == run_vizualized):
         print('generating lossless video ...')
@@ -1224,441 +922,3 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     torch.set_grad_enabled(True)
 
 
-def data_generate_synaptic(
-    config,
-    visualize=True,
-    run_vizualized=0,
-    style="color",
-    erase=False,
-    step=5,
-    alpha=0.2,
-    ratio=1,
-    scenario="none",
-    device=None,
-    bSave=True,
-    log_file=None,
-):
-    import torch_geometric as pyg
-    import torch_geometric.data as data
-
-    simulation_config = config.simulation
-    training_config = config.training
-    model_config = config.graph_model
-
-    torch.random.fork_rng(devices=device)
-    torch.random.manual_seed(simulation_config.seed)
-    np.random.seed(simulation_config.seed)  # Ensure numpy random state is also seeded for reproducibility
-
-    print(
-        "generating data ..."
-    )
-
-    n_neuron_types = simulation_config.n_neuron_types
-    n_neurons = simulation_config.n_neurons
-
-    delta_t = simulation_config.delta_t
-    n_frames = simulation_config.n_frames
-    has_particle_dropout = training_config.particle_dropout > 0
-
-    dataset_name = config.dataset
-    noise_model_level = simulation_config.noise_model_level
-    measurement_noise_level = training_config.measurement_noise_level
-
-    CustomColorMap(config=config)
-    plt.style.use('default')
-    mc = 'k'
-
-
-    external_input_type = getattr(simulation_config, 'external_input_type', '')
-    n_input_neurons = simulation_config.n_input_neurons
-    n_input_neurons_per_axis = int(np.sqrt(n_input_neurons))
-    has_visual_input = "visual" in external_input_type
-    has_modulation = "modulation" in external_input_type
-
-    folder = f"./graphs_data/{dataset_name}/"
-
-    if config.data_folder_name != "none":
-        print("generating from data ...")
-        generate_from_data(
-            config=config, device=device, visualize=visualize, step=step
-        )
-        return
-    if erase:
-        files = glob.glob(f"{folder}/*")
-        for f in files:
-            if (
-                (not ("X1.pt" in f))
-                & (not ("Signal" in f))
-                & (not ("Viz" in f))
-                & (not ("Exc" in f))
-                & (f[-3:] != "Fig")
-                & (f[-14:] != "generated_data")
-                & (f != "p.pt")
-                & (f != "cycle_length.pt")
-                & (f != "model_config.json")
-                & (f != "generation_code.py")
-            ):
-                os.remove(f)
-    os.makedirs(folder, exist_ok=True)
-    os.makedirs(f"./graphs_data/{dataset_name}/Fig/", exist_ok=True)
-    files = glob.glob(f"./graphs_data/{dataset_name}/Fig/*")
-    for f in files:
-        os.remove(f)
-
-    if has_particle_dropout:
-        draw = np.random.permutation(np.arange(n_neurons))
-        cut = int(n_neurons * (1 - training_config.particle_dropout))
-        particle_dropout_mask = draw[0:cut]
-        inv_particle_dropout_mask = draw[cut:]
-        x_removed_list = []
-    else:
-        particle_dropout_mask = np.arange(n_neurons)
-    if has_modulation or has_visual_input:
-        im = imread(f"graphs_data/{simulation_config.node_value_map}")
-    has_permutation = getattr(simulation_config, 'permutation', False)
-    if has_permutation:
-        permutation_indices = torch.randperm(n_neurons)
-        inverse_permutation_indices = torch.argsort(permutation_indices)
-        torch.save(
-            permutation_indices, f"./graphs_data/{dataset_name}/permutation_indices.pt"
-        )
-        torch.save(
-            inverse_permutation_indices,
-            f"./graphs_data/{dataset_name}/inverse_permutation_indices.pt",
-        )
-
-
-    # external input parameters
-    external_input_type = getattr(simulation_config, 'external_input_type', 'none')
-    signal_input_type = getattr(simulation_config, 'signal_input_type', 'oscillatory')
-    has_signal_input = (external_input_type == 'signal')
-    has_oscillations = has_signal_input and (signal_input_type == 'oscillatory')
-    has_triggered = has_signal_input and (signal_input_type == 'triggered')
-    oscillation_amplitude = simulation_config.oscillation_max_amplitude
-    oscillation_frequency = torch.tensor(simulation_config.oscillation_frequency, dtype=torch.float32, device=device)
-    max_frame = n_frames + 1
-
-    # initialize triggered oscillation parameters (if needed)
-    if has_triggered:
-        triggered_n_impulses = simulation_config.triggered_n_impulses
-        triggered_n_input = simulation_config.triggered_n_input_neurons
-        triggered_strength = simulation_config.triggered_impulse_strength
-        triggered_duration = simulation_config.triggered_duration_frames
-        amplitude_range = simulation_config.triggered_amplitude_range
-        frequency_range = simulation_config.triggered_frequency_range
-
-        # generate per-neuron random amplitude
-        e_global = oscillation_amplitude * (torch.rand((n_neurons, 1), device=device) * 2 - 1)
-
-        # generate multiple impulse events spread throughout simulation
-        buffer = triggered_duration
-        available_frames = max_frame - 2 * buffer
-        spacing = available_frames // max(1, triggered_n_impulses)
-
-        trigger_frames = []
-        trigger_amplitudes = []
-        trigger_frequencies = []
-        trigger_neurons = []
-        trigger_e = []
-
-        for i in range(triggered_n_impulses):
-            base_frame = buffer + i * spacing
-            jitter = torch.randint(-spacing//4, spacing//4 + 1, (1,), device=device).item() if spacing > 4 else 0
-            trigger_frame = max(buffer, min(max_frame - buffer, base_frame + jitter))
-            trigger_frames.append(trigger_frame)
-
-            amp_mult = amplitude_range[0] + torch.rand(1, device=device).item() * (amplitude_range[1] - amplitude_range[0])
-            trigger_amplitudes.append(amp_mult)
-
-            freq_mult = frequency_range[0] + torch.rand(1, device=device).item() * (frequency_range[1] - frequency_range[0])
-            trigger_frequencies.append(freq_mult)
-
-            input_neurons = torch.randperm(n_neurons, device=device)[:triggered_n_input]
-            trigger_neurons.append(input_neurons)
-
-            e = oscillation_amplitude * amp_mult * (torch.rand((n_neurons, 1), device=device) * 2 - 1)
-            trigger_e.append(e)
-    elif has_oscillations:
-        # Per-neuron random amplitude for oscillatory input
-        e_global = oscillation_amplitude * (torch.rand((n_neurons, 1), device=device) * 2 - 1)
-
-    # open logfile for analysis results (use provided or create local)
-    local_log_file = log_file is None
-    if local_log_file:
-        log_file = open(f"{folder}/analysis.log", 'w')
-
-    for run in range(config.training.n_runs):
-
-        id_fig = 0
-
-        X = torch.zeros((n_neurons, n_frames + 1), device=device)
-
-        x_list = []
-        y_list = []
-
-        # initialize particle and graph states
-        X1, V1, T1, H1, A1, N1 = init_neurons(
-            config=config, scenario=scenario, ratio=ratio, device=device
-        )
-
-        if simulation_config.shuffle_neuron_types:
-            if run == 0:
-                index = torch.randperm(n_neurons)
-                T1 = T1[index]
-                first_T1 = T1.clone().detach()
-            else:
-                T1 = first_T1.clone().detach()
-
-        if run == 0:
-            edge_index, connectivity, mask, low_rank_factors = init_connectivity(
-                simulation_config.connectivity_file,
-                simulation_config.connectivity_type,
-                simulation_config.connectivity_filling_factor,
-                T1,
-                n_neurons,
-                n_neuron_types,
-                dataset_name,
-                device,
-                connectivity_rank=simulation_config.connectivity_rank,
-                Dale_law=simulation_config.Dale_law,
-                Dale_law_factor=simulation_config.Dale_law_factor,
-            )
-            torch.save(connectivity, f"./graphs_data/{dataset_name}/connectivity.pt")
-            if 'low_rank' in simulation_config.connectivity_type:
-                U, V = low_rank_factors
-                torch.save(torch.tensor(U, dtype=torch.float32), f"./graphs_data/{dataset_name}/connectivity_low_rank_U.pt")
-                torch.save(torch.tensor(V, dtype=torch.float32), f"./graphs_data/{dataset_name}/connectivity_low_rank_V.pt")
-
-            # Plot eigenvalue spectrum and connectivity matrix
-            plot_eigenvalue_spectrum(connectivity, dataset_name, mc=mc, log_file=log_file)
-            plot_connectivity_matrix(connectivity, f"./graphs_data/{dataset_name}/connectivity_matrix.png",
-                                     vmin_vmax_method='percentile', show_title=False)
-            if 'low_rank' in simulation_config.connectivity_type and low_rank_factors is not None:
-                U, V = low_rank_factors
-                plot_low_rank_connectivity(connectivity, U, V,
-                                           f"./graphs_data/{dataset_name}/connectivity_low_rank_WUV.png")
-
-        if has_modulation:
-            if run == 0:
-                X1_mesh, V1_mesh, T1_mesh, H1_mesh, A1_mesh, N1_mesh, mesh_data = (
-                    init_mesh(config, device=device)
-                )
-                X1 = X1_mesh
-        elif has_visual_input:
-            if run == 0:
-                X1_mesh, V1_mesh, T1_mesh, H1_mesh, A1_mesh, N1_mesh, mesh_data = (
-                    init_mesh(config, device=device)
-                )
-                pos_x, pos_y = get_equidistant_points(n_points=n_input_neurons)
-                X1 = (
-                    torch.tensor(
-                        np.stack((pos_x, pos_y), axis=1), dtype=torch.float32, device=device
-                    )
-                    / 2
-                )
-                X1[:, 1] = X1[:, 1] + 1.5
-                X1[:, 0] = X1[:, 0] + 0.5
-                X1 = torch.cat((X1_mesh, X1[0 : n_neurons - n_input_neurons]), 0)
-
-        model, bc_pos, bc_dpos = choose_model(config=config, W=connectivity, device=device)
-
-        x = torch.zeros((n_neurons, 8), dtype=torch.float32, device=device)
-        x[:, 0] = torch.arange(n_neurons, dtype=torch.float32, device=device)  # index
-        x[:, 1:3] = X1.clone().detach()  # positions
-        x[:, 3] = H1[:, 0].clone().detach()  # signal state u
-        x[:, 4] = 0  # external input (set per frame)
-        x[:, 5] = 1  # plasticity p (init to 1 for PDE_N6/N7)
-        x[:, 6] = T1.squeeze().clone().detach()  # neuron_type
-        x[:, 7] = 0  # calcium
-
-        check_and_clear_memory(
-            device=device,
-            iteration_number=0,
-            every_n_iterations=1,
-            memory_percentage_threshold=0.6,
-        )
-
-        time.sleep(0.5)
-        for it in trange(simulation_config.start_frame, n_frames + 1, ncols=150):
-            with torch.no_grad():
-
-                # compute external input for this frame
-                external_input = torch.zeros((n_neurons, 1), device=device)
-
-                if (has_modulation) & (it >= 0):
-                    im_ = im[int(it / n_frames * 256)].squeeze()
-                    im_ = np.rot90(im_, 3)
-                    im_ = np.reshape(im_, (n_input_neurons_per_axis * n_input_neurons_per_axis))
-                    if has_permutation:
-                        im_ = im_[permutation_indices]
-                    external_input[:, 0] = torch.tensor(im_, dtype=torch.float32, device=device)
-                elif (has_visual_input) & (it >= 0):
-                    im_ = im[int(it / n_frames * 256)].squeeze()
-                    im_ = np.rot90(im_, 3)
-                    im_ = np.reshape(im_, (n_input_neurons_per_axis * n_input_neurons_per_axis))
-                    external_input[:n_input_neurons, 0] = torch.tensor(im_, dtype=torch.float32, device=device)
-                    external_input[n_input_neurons:n_neurons, 0] = 1
-                    # Save reconstructed image from x[:,4] for the first frame
-                    if it == 0 and run == 0:
-                        img_reconstructed = to_numpy(external_input[:n_input_neurons, 0].reshape(n_input_neurons_per_axis, n_input_neurons_per_axis))
-                        val_min = np.min(img_reconstructed)
-                        val_max = np.max(img_reconstructed)
-                        val_std = np.std(img_reconstructed)
-                        img_reconstructed = np.rot90(img_reconstructed, k=1)
-                        plt.figure(figsize=(8, 8))
-                        plt.imshow(img_reconstructed, cmap='gray')
-                        plt.suptitle(f'min={val_min:.2f} max={val_max:.2f} std={val_std:.2f}',
-                                     fontsize=10, fontweight='normal')
-                        plt.axis('off')
-                        plt.savefig(f"{folder}/external_input_frame0.png", dpi=150)
-                        plt.close()
-                elif has_oscillations:
-                    # oscillatory external input (frequency in cycles per time unit)
-                    t = it * delta_t
-                    external_input = e_global * torch.cos((2*np.pi)*oscillation_frequency*t)
-                elif has_triggered:
-                    # triggered oscillation input
-                    for i in range(triggered_n_impulses):
-                        trig_frame = trigger_frames[i]
-                        # add impulse at trigger frame
-                        if it == trig_frame:
-                            impulse = torch.zeros((n_neurons, 1), device=device)
-                            impulse[trigger_neurons[i]] = triggered_strength * trigger_amplitudes[i]
-                            external_input = external_input + impulse
-                        # add oscillatory response after trigger
-                        if trig_frame <= it < trig_frame + triggered_duration:
-                            t_since_trigger = it - trig_frame
-                            freq_mult = trigger_frequencies[i]
-                            osc = trigger_e[i] * torch.sin((2*np.pi)*oscillation_frequency*freq_mult*t_since_trigger / triggered_duration)
-                            external_input = external_input + osc
-
-                # update x tensor for this frame
-                x[:, 4] = external_input.squeeze()  # external input
-
-                X[:, it] = x[:, 3].clone().detach()  # store signal state
-                dataset = data.Data(x=x, pos=x[:, 1:3], edge_index=edge_index)
-
-                # model prediction (PDE_N4 uses external_input_mode from config)
-                if "PDE_N3" in model_config.signal_model_name:
-                    y = model(dataset, has_field=False, alpha=it / n_frames, frame=it)
-                elif "PDE_N6" in model_config.signal_model_name:
-                    (y, p_out) = model(dataset, has_field=False, frame=it)
-                elif "PDE_N7" in model_config.signal_model_name:
-                    (y, p_out) = model(dataset, has_field=False, frame=it)
-                else:
-                    y = model(dataset, frame=it)
-
-            # append list
-            if (it >= 0) & bSave:
-                x_list.append(to_numpy(x))
-                y_list.append(to_numpy(y))
-
-            # field update - update x tensor directly
-            if (config.graph_model.signal_model_name == "PDE_N6") | (config.graph_model.signal_model_name == "PDE_N7"):
-                # Signal update
-                du = y.squeeze()
-                x[:, 3] = x[:, 3] + du * delta_t
-                if noise_model_level > 0:
-                    x[:, 3] = x[:, 3] + torch.randn(n_neurons, device=device) * noise_model_level
-                # Plasticity update
-                dp = p_out.squeeze()
-                x[:, 5] = torch.relu(x[:, 5] + dp * delta_t)
-            else:
-                du = y.squeeze()
-                x[:, 3] = x[:, 3] + du * delta_t
-                if noise_model_level > 0:
-                    x[:, 3] = x[:, 3] + torch.randn(n_neurons, device=device) * noise_model_level
-
-            # output plots
-            if visualize & (run == run_vizualized) & (it % step == 0) & (it >= 0):
-                if "latex" in style:
-                    plt.rcParams["text.usetex"] = True
-                    rc("font", **{"family": "serif", "serif": ["Palatino"]})
-                matplotlib.rcParams["savefig.pad_inches"] = 0
-                num = f"{id_fig:06}"
-                id_fig += 1
-
-                if has_visual_input:
-                    plot_synaptic_frame_visual(x[:, 1:3], x[:, 4:5], x[:, 3:4], dataset_name, run, num)
-                elif has_modulation:
-                    plot_synaptic_frame_modulation(x[:, 1:3], x[:, 4:5], x[:, 3:4], dataset_name, run, num)
-                else:
-                    if ("PDE_N6" in model_config.signal_model_name) | (
-                        "PDE_N7" in model_config.signal_model_name
-                    ):
-                        plot_synaptic_frame_plasticity(x[:, 1:3], x, dataset_name, run, num)
-                    else:
-                        plot_synaptic_frame_default(x[:, 1:3], x, dataset_name, run, num)
-
-        print(f"generated {len(x_list)} frames total")
-
-        if visualize & (run == run_vizualized):
-            print('generating lossless video ...')
-
-            output_name = dataset_name.split('signal_')[1] if 'signal_' in dataset_name else 'no_id'
-            src = f"./graphs_data/{dataset_name}/Fig/Fig_0_000000.png"
-            dst = f"./graphs_data/{dataset_name}/input_{output_name}.png"
-            with open(src, "rb") as fsrc, open(dst, "wb") as fdst:
-                fdst.write(fsrc.read())
-
-            generate_compressed_video_mp4(output_dir=f"./graphs_data/{dataset_name}", run=run,
-                                          output_name=output_name, framerate=20)
-
-            files = glob.glob(f'./graphs_data/{dataset_name}/Fig/*')
-            for f in files:
-                os.remove(f)
-
-            print('Ising analysis ...')
-            x_list = np.array(x_list)
-            y_list = np.array(y_list)
-
-        if bSave:
-            x_list = np.array(x_list)
-            y_list = np.array(y_list)
-
-        if measurement_noise_level > 0:
-            np.save(f"graphs_data/{dataset_name}/raw_x_list_{run}.npy", x_list)
-            np.save(f"graphs_data/{dataset_name}/raw_y_list_{run}.npy", y_list)
-            for k in range(x_list.shape[0]):
-                x_list[k, :, 3] = x_list[k, :, 3] + np.random.normal(
-                    0, measurement_noise_level, x_list.shape[1]
-                )
-            for k in range(1, x_list.shape[0] - 1):
-                y_list[k] = (x_list[k + 1, :, 3:4] - x_list[k, :, 3:4]) / delta_t
-
-            np.save(f"graphs_data/{dataset_name}/x_list_{run}.npy", x_list)
-            np.save(f"graphs_data/{dataset_name}/y_list_{run}.npy", y_list)
-        else:
-            np.save(f"graphs_data/{dataset_name}/x_list_{run}.npy", x_list)
-            np.save(f"graphs_data/{dataset_name}/y_list_{run}.npy", y_list)
-            if has_particle_dropout:
-                torch.save(
-                    x_removed_list,
-                    f"graphs_data/{dataset_name}/x_removed_list_{run}.pt",
-                )
-                np.save(
-                    f"graphs_data/{dataset_name}/particle_dropout_mask.npy",
-                    particle_dropout_mask,
-                )
-                np.save(
-                    f"graphs_data/{dataset_name}/inv_particle_dropout_mask.npy",
-                    inv_particle_dropout_mask,
-                )
-
-        print("data saved ...")
-
-
-        if run == run_vizualized:
-            plot_synaptic_activity_traces(x_list, n_neurons, n_frames, dataset_name, model=model)
-            plot_synaptic_kinograph(x_list, n_neurons, n_frames, dataset_name)
-            plot_synaptic_mlp_functions(model, x_list, n_neurons, dataset_name, config.plotting.colormap, device,
-                                        signal_model_name=config.graph_model.signal_model_name)
-
-            # SVD analysis of activity
-            print('svd analysis ...')
-            from flyvis_gnn.models.utils import analyze_data_svd
-            analyze_data_svd(x_list, folder, config=config, style=None, save_in_subfolder=False, log_file=log_file)
-
-    # close logfile only if we created it locally
-    if local_log_file:
-        log_file.close()
