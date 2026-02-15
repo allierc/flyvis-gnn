@@ -6,8 +6,6 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.ticker import FormatStrFormatter
 from matplotlib.animation import FFMpegWriter
-from torch_geometric.loader import DataLoader
-import torch_geometric.data as data
 import imageio.v2 as imageio
 from matplotlib import rc
 from scipy.optimize import curve_fit
@@ -2840,6 +2838,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                         x[:, 4:5] = model_f(time=k / n_frames) ** 2
                 else:
                     x[:, 4:5] = torch.ones_like(x[:, 0:1])
+                import torch_geometric.data as data
                 dataset = data.Data(x=x, edge_index=edge_index)
                 data_id = torch.zeros(x.shape[0], dtype=torch.long, device=device)
                 pred, in_features_ = model(data=dataset, data_id=data_id, return_all=True)
@@ -6299,6 +6298,7 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
 
                     if not (torch.isnan(y).any()):
 
+                        import torch_geometric.data as data
                         dataset = data.Data(x=x, edge_index=edges)
                         dataset_batch.append(dataset)
 
@@ -6320,6 +6320,7 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
                         mask_index += edges.shape[1]
 
             with torch.no_grad():
+                from torch_geometric.loader import DataLoader
                 batch_loader = DataLoader(dataset_batch, batch_size=len(k_list), shuffle=False)
                 for batch in batch_loader:
                     pred, in_features, msg = model(batch, data_id=data_id, mask=mask_batch, return_all=True)

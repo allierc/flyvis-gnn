@@ -9,7 +9,6 @@ import numpy as np
 import torch
 from matplotlib.ticker import FormatStrFormatter
 from skimage.metrics import structural_similarity as ssim
-from torch_geometric.data import Data
 from torchvision.transforms import CenterCrop
 import gc
 import subprocess
@@ -600,7 +599,7 @@ def create_log_dir(config=[], erase=True):
     return log_dir, logger
 
 
-def bundle_fields(data: Data, *names: str) -> torch.Tensor:
+def bundle_fields(data, *names: str) -> torch.Tensor:
     tensors = []
     for name in names:
         tensor = data[name]

@@ -4,25 +4,24 @@ provides:
 - ZarrSimulationWriter: incremental writer that appends frames during generation
 - ZarrSimulationWriterV2: split metadata/timeseries writer for efficient storage
 - detect_format: check if .npy or .zarr exists at path
-- load_simulation_data: auto-detect format and load accordingly
+- load_simulation_data: auto-detect format and load as NeuronTimeSeries
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import tensorstore as ts
 
+if TYPE_CHECKING:
+    from flyvis_gnn.neuron_state import NeuronState, NeuronTimeSeries
 
-# flyvis format constants (for V2 writer compatibility)
-# static columns: INDEX=0, XPOS=1, YPOS=2, GROUP_TYPE=5, TYPE=6
-# dynamic columns: VOLTAGE=3, STIMULUS=4, CALCIUM=7, FLUORESCENCE=8
-STATIC_COLS = [0, 1, 2, 5, 6]
-DYNAMIC_COLS = [3, 4, 7, 8]
-N_STATIC = len(STATIC_COLS)
-N_DYNAMIC = len(DYNAMIC_COLS)
+# V2 writer internals: static and dynamic column layout
+_STATIC_COLS = [0, 1, 2, 5, 6]   # INDEX, XPOS, YPOS, GROUP_TYPE, TYPE
+_DYNAMIC_COLS = [3, 4, 7, 8]     # VOLTAGE, STIMULUS, CALCIUM, FLUORESCENCE
+_N_DYNAMIC = len(_DYNAMIC_COLS)
 
 
 class ZarrSimulationWriter:
@@ -242,7 +241,7 @@ class ZarrSimulationWriterV2:
             shutil.rmtree(self.metadata_path)
 
         # extract static columns: [INDEX, XPOS, YPOS, GROUP_TYPE, TYPE]
-        self._metadata = frame[:, STATIC_COLS].astype(self.dtype)  # (N, 5)
+        self._metadata = frame[:, _STATIC_COLS].astype(self.dtype)  # (N, 5)
 
         # save metadata as zarr (small, no need for chunking)
         spec = {
@@ -286,7 +285,7 @@ class ZarrSimulationWriterV2:
             },
             'metadata': {
                 'dtype': '<f4' if self.dtype == np.float32 else '<f8',
-                'shape': [initial_time_capacity, self.n_neurons, N_DYNAMIC],
+                'shape': [initial_time_capacity, self.n_neurons, _N_DYNAMIC],
                 'chunks': [self.time_chunks, self.n_neurons, 1],  # column-chunked
                 'compressor': {
                     'id': 'blosc',
@@ -303,7 +302,7 @@ class ZarrSimulationWriterV2:
         self._ts_initialized = True
 
     def append(self, frame: np.ndarray):
-        """append a single frame.
+        """append a single frame from packed (N, 9) array.
 
         args:
             frame: array of shape (n_neurons, n_features) with all 9 columns
@@ -319,12 +318,78 @@ class ZarrSimulationWriterV2:
             self._save_metadata(frame)
 
         # extract dynamic columns: [VOLTAGE, STIMULUS, CALCIUM, FLUORESCENCE]
-        dynamic_data = frame[:, DYNAMIC_COLS].astype(self.dtype)
+        dynamic_data = frame[:, _DYNAMIC_COLS].astype(self.dtype)
         self._buffer.append(dynamic_data)
 
         # flush when buffer reaches chunk size
         if len(self._buffer) >= self.time_chunks:
             self._flush_buffer()
+
+    def append_state(self, state: NeuronState):
+        """append a single frame from NeuronState dataclass.
+
+        On first call, saves static metadata (index, pos, group_type, neuron_type).
+        On every call, buffers dynamic fields (voltage, stimulus, calcium, fluorescence).
+        """
+        from flyvis_gnn.neuron_state import NeuronState as _NS
+        from flyvis_gnn.utils import to_numpy
+
+        if not self._metadata_saved:
+            # build metadata: (N, 5) = [index, xpos, ypos, group_type, neuron_type]
+            meta = np.column_stack([
+                to_numpy(state.index.float()),
+                to_numpy(state.pos),
+                to_numpy(state.group_type.float()),
+                to_numpy(state.neuron_type.float()),
+            ]).astype(self.dtype)
+            self._save_metadata_array(meta)
+
+        # build dynamic: (N, 4) = [voltage, stimulus, calcium, fluorescence]
+        dynamic = np.column_stack([
+            to_numpy(state.voltage),
+            to_numpy(state.stimulus),
+            to_numpy(state.calcium),
+            to_numpy(state.fluorescence),
+        ]).astype(self.dtype)
+        self._buffer.append(dynamic)
+
+        if len(self._buffer) >= self.time_chunks:
+            self._flush_buffer()
+
+    def _save_metadata_array(self, metadata: np.ndarray):
+        """save pre-built metadata array (N, 5)."""
+        self.path.mkdir(parents=True, exist_ok=True)
+
+        if self.metadata_path.exists():
+            import shutil
+            shutil.rmtree(self.metadata_path)
+
+        self._metadata = metadata
+
+        spec = {
+            'driver': 'zarr',
+            'kvstore': {
+                'driver': 'file',
+                'path': str(self.metadata_path),
+            },
+            'metadata': {
+                'dtype': '<f4' if self.dtype == np.float32 else '<f8',
+                'shape': list(self._metadata.shape),
+                'chunks': list(self._metadata.shape),
+                'compressor': {
+                    'id': 'blosc',
+                    'cname': 'zstd',
+                    'clevel': 3,
+                    'shuffle': 2,
+                },
+            },
+            'create': True,
+            'delete_existing': True,
+        }
+
+        store = ts.open(spec).result()
+        store.write(self._metadata).result()
+        self._metadata_saved = True
 
     def _flush_buffer(self):
         """write buffered timeseries data."""
@@ -343,7 +408,7 @@ class ZarrSimulationWriterV2:
         if needed_size > current_shape[0]:
             new_size = max(needed_size, current_shape[0] * 2)
             self._ts_store = self._ts_store.resize(
-                exclusive_max=[new_size, self.n_neurons, N_DYNAMIC]
+                exclusive_max=[new_size, self.n_neurons, _N_DYNAMIC]
             ).result()
 
         # write
@@ -358,7 +423,7 @@ class ZarrSimulationWriterV2:
 
         if self._ts_store is not None and self._total_frames > 0:
             self._ts_store = self._ts_store.resize(
-                exclusive_max=[self._total_frames, self.n_neurons, N_DYNAMIC]
+                exclusive_max=[self._total_frames, self.n_neurons, _N_DYNAMIC]
             ).result()
 
         return self._total_frames
@@ -454,8 +519,24 @@ def _load_zarr_v2(path: Path) -> np.ndarray:
     return full
 
 
-def load_simulation_data(path: str | Path) -> np.ndarray:
-    """load simulation data from zarr or npy format.
+def load_simulation_data(path: str | Path) -> NeuronTimeSeries:
+    """load simulation data as NeuronTimeSeries from zarr or npy format.
+
+    args:
+        path: base path (with or without extension)
+
+    returns:
+        NeuronTimeSeries with named fields
+
+    raises:
+        FileNotFoundError: if no data found at path
+    """
+    from flyvis_gnn.neuron_state import NeuronTimeSeries
+    return NeuronTimeSeries.load(path)
+
+
+def load_simulation_data_raw(path: str | Path) -> np.ndarray:
+    """load simulation data as raw (T, N, 9) numpy array (legacy).
 
     args:
         path: base path (with or without extension)

@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import os
 import torch
-import torch_geometric.data as data
 
 from flyvis_gnn.models.Siren_Network import Siren, Siren_Network
 
@@ -1162,7 +1161,8 @@ def sample_synaptic_data_and_predict(model, x_list, edges, n_runs, n_frames, tim
         t = torch.tensor([k / n_frames], dtype=torch.float32, device=device)
         x[:, 4] = model_f[run](t) ** 2
 
-    # Create dataset
+    # Create dataset (local import — generic signal models still use PyG)
+    import torch_geometric.data as data
     dataset = data.Data(x=x, edge_index=edges)
     data_id = torch.ones((x.shape[0], 1), dtype=torch.int, device=device) * run
     k_batch = torch.ones((x.shape[0], 1), dtype=torch.int, device=device) * k
@@ -1205,7 +1205,8 @@ def analyze_odor_responses_by_neuron(model, x_list, edges, n_runs, n_frames, tim
             )
 
             if not (torch.isnan(result['x']).any()):
-                # Get baseline response (no excitation)
+                # Get baseline response (no excitation — generic signal models still use PyG)
+                import torch_geometric.data as data
                 x_baseline = result['x'].clone()
                 x_baseline[:, 10:13] = 0  # no excitation
                 dataset_baseline = data.Data(x=x_baseline, edge_index=edges)

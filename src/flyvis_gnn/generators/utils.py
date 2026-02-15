@@ -16,7 +16,6 @@ from scipy import stats
 from scipy.spatial import Delaunay
 from time import sleep
 from tifffile import imread
-from torch_geometric.utils import get_mesh_laplacian, dense_to_sparse
 from tqdm import trange
 import seaborn as sns
 
@@ -291,6 +290,7 @@ def init_mesh(config, device):
     face = face.to(device, torch.long)
 
     pos_3d = torch.cat((x_mesh[:, 1:3], torch.ones((x_mesh.shape[0], 1), device=device)), dim=1)
+    from torch_geometric.utils import get_mesh_laplacian
     edge_index_mesh, edge_weight_mesh = get_mesh_laplacian(pos=pos_3d, face=face, normalization="None")
     edge_weight_mesh = edge_weight_mesh.to(dtype=torch.float32)
     mesh_data = {'mesh_pos': pos_3d, 'face': face, 'edge_index': edge_index_mesh, 'edge_weight': edge_weight_mesh,
@@ -426,6 +426,7 @@ def init_connectivity(connectivity_file, connectivity_type, connectivity_filling
 
     else:
         adj_matrix = torch.ones((n_neurons)) - torch.eye(n_neurons)
+        from torch_geometric.utils import dense_to_sparse
         edge_index, edge_attr = dense_to_sparse(adj_matrix)
         mask = (adj_matrix != 0).float()
 

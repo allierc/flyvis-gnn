@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import time
 import torch
-import torch_geometric.data as data
 from matplotlib import rc
 # Optional imports (not available in flyvis-gnn spinoff)
 try:
@@ -12,6 +11,7 @@ try:
 except ImportError:
     load_wormvae_data = None
     load_zebrafish_data = None
+from flyvis_gnn.neuron_state import NeuronState
 from flyvis_gnn.zarr_io import ZarrSimulationWriter, ZarrSimulationWriterV2
 try:
     from flyvis_gnn.generators.davis import AugmentedVideoDataset, CombinedVideoDataset
@@ -45,7 +45,6 @@ import os
 # import h5py as h5
 # import zarr
 # import xarray as xr
-import torch_geometric as pyg
 
 # import taichi as ti
 
@@ -455,17 +454,19 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     frame = sequences[0][None, None]
     net.stimulus.add_input(frame)
 
-    # init vector x
+    # init neuron state x
 
-    x = torch.zeros(n_neurons, 9, dtype=torch.float32, device=device)
-    x[:, 1:3] = X1
-    x[:, 0] = torch.arange(n_neurons, dtype=torch.float32)
-    x[:, 3] = initial_state                                                                         # voltage
-    x[:, 4] = net.stimulus().squeeze()                                                              # visual input
-    x[:, 5] = torch.tensor(grouped_types, dtype=torch.float32, device=device)                       # neuron type (grouped)
-    x[:, 6] = torch.tensor(node_types_int, dtype=torch.float32, device=device)                      # neuron type (integer)
-    x[:, 7] = torch.rand(n_neurons, dtype=torch.float32, device=device)                             # calcium concentration
-    x[:, 8] = calcium_alpha * x[:, 7] + calcium_beta                                                # fluorescence activity
+    _init_calcium = torch.rand(n_neurons, dtype=torch.float32, device=device)
+    x = NeuronState(
+        index=torch.arange(n_neurons, dtype=torch.long, device=device),
+        pos=X1,
+        voltage=initial_state,
+        stimulus=net.stimulus().squeeze(),
+        group_type=torch.tensor(grouped_types, dtype=torch.long, device=device),
+        neuron_type=torch.tensor(node_types_int, dtype=torch.long, device=device),
+        calcium=_init_calcium,
+        fluorescence=calcium_alpha * _init_calcium + calcium_beta,
+    )
 
     # Mixed sequence setup
     if "mixed" in visual_input_type:
@@ -535,10 +536,10 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
         for pass_num in range(num_passes_needed):
             for data_idx, data in enumerate(tqdm(stimulus_dataset, desc="Processing stimulus data")):
                 if simulation_config.simulation_initial_state:
-                    x[:, 3] = initial_state
+                    x.voltage[:] = initial_state
                     if only_noise_visual_input > 0:
-                        x[:n_input_neurons, 4:5] = torch.clamp(torch.relu(
-                            0.5 + torch.rand((n_input_neurons, 1), dtype=torch.float32,
+                        x.stimulus[:n_input_neurons] = torch.clamp(torch.relu(
+                            0.5 + torch.rand(n_input_neurons, dtype=torch.float32,
                                              device=device) * only_noise_visual_input / 2), 0, 1)
 
                 sequences = data["lum"]
@@ -595,22 +596,22 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                     if "flash" in visual_input_type:
                         # Generate repeating flash stimulus
                         current_flash_frame = frame_id % (flash_cycle_frames * 2)  # Create on/off cycle
-                        x[:, 4] = 0
+                        x.stimulus[:] = 0
                         if current_flash_frame < flash_cycle_frames:
-                            x[:n_input_neurons, 4] = flash_intensity
+                            x.stimulus[:n_input_neurons] = flash_intensity
                     elif "mixed" in visual_input_type:
                         current_type = mixed_types[mixed_current_type]
 
                         if current_type == "blank":
-                            x[:, 4] = 0
+                            x.stimulus[:] = 0
                         elif current_type == "noise":
-                            x[:n_input_neurons, 4:5] = torch.relu(
-                                0.5 + torch.rand((n_input_neurons, 1), dtype=torch.float32, device=device) * 0.5)
+                            x.stimulus[:n_input_neurons] = torch.relu(
+                                0.5 + torch.rand(n_input_neurons, dtype=torch.float32, device=device) * 0.5)
                         else:
                             actual_frame_id = (start_frame + frame_id) % sequences.shape[0]
                             frame = sequences[actual_frame_id][None, None]
                             net.stimulus.add_input(frame)
-                            x[:, 4] = net.stimulus().squeeze()
+                            x.stimulus[:] = net.stimulus().squeeze()
                             if current_type == "sintel":
                                 sintel_frame_idx += 1
                             elif current_type == "davis":
@@ -630,15 +631,15 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                             tile_codes_np = np.stack([np.roll(base, ph) for ph in phases], axis=0)  # (n_columns, 255), ±1
 
                             # 3) Convert to torch on the right device/dtype; keep as ±1 (no [0,1] mapping here)
-                            tile_codes_torch = torch.from_numpy(tile_codes_np).to(x.device,
-                                                                                  dtype=x.dtype)  # (n_columns, 255), ±1
-                            tile_labels = torch.from_numpy(tile_labels_np).to(x.device,
+                            tile_codes_torch = torch.from_numpy(tile_codes_np).to(device,
+                                                                                  dtype=torch.float32)  # (n_columns, 255), ±1
+                            tile_labels = torch.from_numpy(tile_labels_np).to(device,
                                                                               dtype=torch.long)  # (n_input_neurons,)
                             tile_period = tile_codes_torch.shape[1]
                             tile_idx = 0
 
                         # 4) Baseline for all neurons (mean luminance), then write per-column values to PRs
-                        x[:, 4] = 0.5
+                        x.stimulus[:] = 0.5
                         col_vals_pm1 = tile_codes_torch[:, tile_idx % tile_period]  # (n_columns,), ±1 before knobs
 
                         # Apply the two simple knobs per frame on ±1 codes
@@ -651,7 +652,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
 
                         # Map to [0,1] with your contrast convention and broadcast via labels
                         col_vals_01 = 0.5 + (tile_contrast * 0.5) * col_vals_pm1
-                        x[:n_input_neurons, 4] = col_vals_01[tile_labels]
+                        x.stimulus[:n_input_neurons] = col_vals_01[tile_labels]
 
                         tile_idx += 1
                     elif "tile_blue_noise" in visual_input_type:
@@ -668,21 +669,21 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                                 adj = [set(np.where((D[i] > 0) & (D[i] <= radius))[0].tolist()) for i in
                                        range(len(col_centers))]
 
-                            tile_labels = torch.from_numpy(tile_labels_np).to(x.device, dtype=torch.long)
+                            tile_labels = torch.from_numpy(tile_labels_np).to(device, dtype=torch.long)
                             tile_period = 257
                             tile_idx = 0
 
                             # Pre-generate ±1 codes (keep ±1; no [0,1] mapping here)
-                            tile_codes_torch = torch.empty((n_columns, tile_period), dtype=x.dtype, device=x.device)
+                            tile_codes_torch = torch.empty((n_columns, tile_period), dtype=torch.float32, device=device)
                             rng = np.random.RandomState(tile_seed)
                             for t in range(tile_period):
                                 mask = greedy_blue_mask(adj, n_columns, target_density=0.5, rng=rng)  # boolean mask
                                 vals = np.where(mask, 1.0, -1.0).astype(np.float32)  # ±1
                                 # NOTE: do not apply flip prob here; we do it uniformly via the helper per frame below
-                                tile_codes_torch[:, t] = torch.from_numpy(vals).to(x.device, dtype=x.dtype)
+                                tile_codes_torch[:, t] = torch.from_numpy(vals).to(device, dtype=torch.float32)
 
                         # Baseline luminance
-                        x[:, 4] = 0.5
+                        x.stimulus[:] = 0.5
                         col_vals_pm1 = tile_codes_torch[:, tile_idx % tile_period]  # (n_columns,), ±1 before knobs
 
                         # Apply the two simple knobs per frame on ±1 codes
@@ -695,7 +696,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
 
                         # Map to [0,1] with contrast and broadcast via labels
                         col_vals_01 = 0.5 + (tile_contrast * 0.5) * col_vals_pm1
-                        x[:n_input_neurons, 4] = col_vals_01[tile_labels]
+                        x.stimulus[:n_input_neurons] = col_vals_01[tile_labels]
 
                         tile_idx += 1
                     else:
@@ -703,52 +704,50 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                         net.stimulus.add_input(frame)
                         if (only_noise_visual_input > 0):
                             if (visual_input_type == "") | (it == 0) | ("50/50" in visual_input_type):
-                                x[:n_input_neurons, 4:5] = torch.relu(
-                                    0.5 + torch.rand((n_input_neurons, 1), dtype=torch.float32,
+                                x.stimulus[:n_input_neurons] = torch.relu(
+                                    0.5 + torch.rand(n_input_neurons, dtype=torch.float32,
                                                      device=device) * only_noise_visual_input / 2)
                         else:
                             if 'blank' in visual_input_type:
                                 if (data_idx % simulation_config.blank_freq > 0):
-                                    x[:, 4] = net.stimulus().squeeze()
+                                    x.stimulus[:] = net.stimulus().squeeze()
                                 else:
-                                    x[:, 4] = 0
+                                    x.stimulus[:] = 0
                             else:
-                                x[:, 4] = net.stimulus().squeeze()
+                                x.stimulus[:] = net.stimulus().squeeze()
                             if noise_visual_input > 0:
-                                x[:n_input_neurons, 4:5] = x[:n_input_neurons, 4:5] + torch.randn((n_input_neurons, 1),
+                                x.stimulus[:n_input_neurons] = x.stimulus[:n_input_neurons] + torch.randn(n_input_neurons,
                                                                                                   dtype=torch.float32,
                                                                                                   device=device) * noise_visual_input
 
-                    dataset = pyg.data.Data(x=x, pos=x[:, 1:3], edge_index=edge_index)
-
-                    y = pde(dataset, has_field=False)
+                    y = pde(x, edge_index, has_field=False)
 
                     # save previous calcium for derivative computation (before appending current frame)
-                    prev_calcium = x[:, 7:8].clone()
+                    prev_calcium = x.calcium.clone()
 
-                    x_writer.append(to_numpy(x.clone().detach()))
+                    x_writer.append_state(x)
 
+                    dv = y.squeeze()
                     if noise_model_level > 0:
-                        x[:, 3:4] = x[:, 3:4] + delta_t * y + torch.randn((n_neurons, 1), dtype=torch.float32, device=device) * noise_model_level
+                        x.voltage = x.voltage + delta_t * dv + torch.randn(n_neurons, dtype=torch.float32, device=device) * noise_model_level
                     else:
-                        x[:, 3:4] = x[:, 3:4] + delta_t * y
+                        x.voltage = x.voltage + delta_t * dv
 
                     if calcium_type == "leaky":
                         # Voltage-driven activation
                         if calcium_activation == "softplus":
-                            s = torch.nn.functional.softplus(x[:, 3:4])
+                            s = torch.nn.functional.softplus(x.voltage)
                         elif calcium_activation == "relu":
-                            s = torch.nn.functional.relu(x[:, 3:4])
+                            s = torch.nn.functional.relu(x.voltage)
                         elif calcium_activation == "tanh":
-                            s = 1 + torch.tanh(x[:, 3:4])
+                            s = 1 + torch.tanh(x.voltage)
                         elif calcium_activation == "identity":
-                            s = x[:, 3:4].clone()
+                            s = x.voltage.clone()
 
-                        x[:, 7:8] = x[:, 7:8] + (delta_t / calcium_tau) * (-x[:, 7:8] + s)              # calcium ODE to be checked
-                        # x[:, 7:8] = torch.clamp(x[:, 7:8], min=0.0)
-                        x[:, 8:9] = calcium_alpha * x[:, 7:8] + calcium_beta
+                        x.calcium = x.calcium + (delta_t / calcium_tau) * (-x.calcium + s)
+                        x.fluorescence = calcium_alpha * x.calcium + calcium_beta
 
-                        y = (x[:, 7:8] - prev_calcium) / delta_t
+                        y = ((x.calcium - prev_calcium) / delta_t).unsqueeze(-1)
 
                     y_writer.append(to_numpy(y.clone().detach()))
 
@@ -761,7 +760,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                         num = f"{id_fig:06}"
                         id_fig += 1
 
-                        neuron_types = to_numpy(x[:, 6]).astype(int)
+                        neuron_types = to_numpy(x.neuron_type).astype(int)
                         index_to_name = {0: 'Am', 1: 'C2', 2: 'C3', 3: 'CT1(Lo1)', 4: 'CT1(M10)', 5: 'L1', 6: 'L2',
                                          7: 'L3', 8: 'L4', 9: 'L5', 10: 'Lawf1', 11: 'Lawf2', 12: 'Mi1', 13: 'Mi10',
                                          14: 'Mi11', 15: 'Mi12', 16: 'Mi13', 17: 'Mi14', 18: 'Mi15', 19: 'Mi2',
@@ -786,9 +785,9 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                             plt.subplots_adjust(hspace=1.2)
                             axes_flat = axes.flatten()
 
-                            neuron_types = to_numpy(x[:, 6]).astype(int)
-                            all_voltages = to_numpy(x[:, 3])
-                            all_calcium = to_numpy(x[:, 7])
+                            neuron_types = to_numpy(x.neuron_type).astype(int)
+                            all_voltages = to_numpy(x.voltage)
+                            all_calcium = to_numpy(x.calcium)
 
                             for panel_idx in range(66,72):
                                 axes_flat[panel_idx].set_visible(False)
@@ -804,7 +803,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                                 ax_v = axes_flat[panel_idx]
                                 if type_idx is None:
                                     ax_v.scatter(to_numpy(X1[:n_input_neurons, 0]), to_numpy(X1[:n_input_neurons, 1]),
-                                                 s=64, c=to_numpy(x[:n_input_neurons, 4]), cmap="viridis",
+                                                 s=64, c=to_numpy(x.stimulus[:n_input_neurons]), cmap="viridis",
                                                  vmin=0, vmax=1.05, marker='h', alpha=1.0, linewidths=0,
                                                  edgecolors='black')
                                     ax_v.set_title('Stimuli', fontsize=18)
@@ -830,7 +829,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                                 ax_ca = axes_flat[panel_idx + n_cols * 8]
                                 if type_idx is None:
                                     ax_ca.scatter(to_numpy(X1[:n_input_neurons, 0]), to_numpy(X1[:n_input_neurons, 1]),
-                                                  s=64, c=to_numpy(x[:n_input_neurons, 4]), cmap="viridis",
+                                                  s=64, c=to_numpy(x.stimulus[:n_input_neurons]), cmap="viridis",
                                                   vmin=0, vmax=1.05, marker='h', alpha=1.0, linewidths=0,
                                                   edgecolors='black')
                                     ax_ca.set_title('Stimuli', fontsize=18)
@@ -880,7 +879,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                                 if type_idx is None:
                                     ax.scatter(to_numpy(X1[:n_input_neurons, 0]),
                                                                   to_numpy(X1[:n_input_neurons, 1]), s=64,
-                                                                  c=to_numpy(x[:n_input_neurons, 4]), cmap="viridis",
+                                                                  c=to_numpy(x.stimulus[:n_input_neurons]), cmap="viridis",
                                                                   vmin=0, vmax=1.05, marker='h', alpha=1.0, linewidths=0.0,
                                                                   edgecolors='black')
                                     ax.set_title('stimuli', fontsize=18, pad=8, y=0.95)
@@ -889,7 +888,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                                     type_count = np.sum(type_mask)
                                     type_name = index_to_name.get(type_idx, f'Type_{type_idx}')
                                     if type_count > 0:
-                                        type_voltages = to_numpy(x[type_mask, 3])
+                                        type_voltages = to_numpy(x.voltage[type_mask])
                                         hex_positions_x = to_numpy(X1[:type_count, 0])
                                         hex_positions_y = to_numpy(X1[:type_count, 1])
                                         ax.scatter(hex_positions_x, hex_positions_y, s=72, c=type_voltages,
@@ -945,21 +944,21 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     print(f"generated {n_frames_written} frames total (saved as .zarr)")
 
     # --- Always run diagnostics after data generation ---
-    from flyvis_gnn.zarr_io import load_simulation_data
-    x_list = load_simulation_data(f"graphs_data/{dataset_name}/x_list_{run}")
-    y_list = load_simulation_data(f"graphs_data/{dataset_name}/y_list_{run}")
+    from flyvis_gnn.zarr_io import load_simulation_data, load_simulation_data_raw
+    x_ts = load_simulation_data(f"graphs_data/{dataset_name}/x_list_{run}")
+    y_list = load_simulation_data_raw(f"graphs_data/{dataset_name}/y_list_{run}")
 
     # Compute ranks (used in kinographs and traces)
     print('computing effective rank ...')
     from sklearn.utils.extmath import randomized_svd
-    activity_full = x_list[:, :, 3]  # (n_frames, n_neurons)
+    activity_full = x_ts.voltage.numpy()  # (n_frames, n_neurons)
     n_comp = min(50, min(activity_full.shape) - 1)
     _, S_act, _ = randomized_svd(activity_full, n_components=n_comp, random_state=0)
     cumvar_act = np.cumsum(S_act**2) / np.sum(S_act**2)
     rank_90_act = int(np.searchsorted(cumvar_act, 0.90) + 1)
     rank_99_act = int(np.searchsorted(cumvar_act, 0.99) + 1)
 
-    input_for_svd = x_list[:, :n_input_neurons, 4]
+    input_for_svd = x_ts.stimulus[:, :n_input_neurons].numpy()
     n_comp_input = min(50, min(input_for_svd.shape) - 1)
     _, S_inp, _ = randomized_svd(input_for_svd, n_components=n_comp_input, random_state=0)
     cumvar_inp = np.cumsum(S_inp**2) / np.sum(S_inp**2)
@@ -971,12 +970,12 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
 
     # Combined kinograph: activity (top) + input stimuli (bottom), full + zoom (200x200)
     print('plot kinograph ...')
-    activity_kino = x_list[:, :, 3].T  # (n_neurons, n_frames)
+    activity_kino = activity_full.T  # (n_neurons, n_frames)
     n_frames_kino = min(n_frames, activity_kino.shape[1])
     activity_kino = activity_kino[:, :n_frames_kino]
     vmax_kino = np.abs(activity_kino).max()
 
-    input_stimuli = x_list[:, :n_input_neurons, 4].T  # (n_input_neurons, n_frames)
+    input_stimuli = x_ts.stimulus[:, :n_input_neurons].numpy().T  # (n_input_neurons, n_frames)
     n_frames_input = min(n_frames, input_stimuli.shape[1])
     input_stimuli = input_stimuli[:, :n_frames_input]
     vmax_input = np.abs(input_stimuli).max() * 1.2
@@ -1075,7 +1074,8 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     print('svd analysis ...')
     from flyvis_gnn.models.utils import analyze_data_svd
     folder = f'./graphs_data/{dataset_name}'
-    svd_results = analyze_data_svd(x_list, folder, config=config, is_flyvis=True,
+    x_list_packed = x_ts.to_packed()  # (T, N, 9) numpy for legacy functions
+    svd_results = analyze_data_svd(x_list_packed, folder, config=config, is_flyvis=True,
                                    save_in_subfolder=False)
 
     # Save ranks to log file
@@ -1119,11 +1119,11 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                 shutil.copytree(f"graphs_data/{dataset_name}/x_list_{run}.zarr", raw_x_path)
                 shutil.copytree(f"graphs_data/{dataset_name}/y_list_{run}.zarr", raw_y_path)
 
-            # apply measurement noise to in-memory data
-            for k in range(x_list.shape[0]):
-                x_list[k, :, 3] = x_list[k, :, 3] + np.random.normal(0, measurement_noise_level, x_list.shape[1])
-            for k in range(1, x_list.shape[0] - 1):
-                y_list[k] = (x_list[k + 1, :, 3:4] - x_list[k, :, 3:4]) / delta_t
+            # apply measurement noise to in-memory packed data
+            for k in range(x_list_packed.shape[0]):
+                x_list_packed[k, :, 3] = x_list_packed[k, :, 3] + np.random.normal(0, measurement_noise_level, x_list_packed.shape[1])
+            for k in range(1, x_list_packed.shape[0] - 1):
+                y_list[k] = (x_list_packed[k + 1, :, 3:4] - x_list_packed[k, :, 3:4]) / delta_t
 
             # overwrite the .zarr files with noisy data (V2 format)
             x_noisy_writer = ZarrSimulationWriterV2(
@@ -1137,7 +1137,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                 n_features=1,
                 chunks=(2000, n_neurons, 1),
             )
-            for frame in x_list:
+            for frame in x_list_packed:
                 x_noisy_writer.append(frame)
             for frame in y_list:
                 y_noisy_writer.append(frame)
@@ -1158,13 +1158,12 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     }
     [index_to_name.get(i, f'Type{i}') for i in range(n_neuron_types)]
 
-    activity = torch.tensor(x_list[:, :, 3:4], device=device)
-    activity = activity.squeeze().t()
+    activity = x_ts.voltage.to(device).t()  # (n_neurons, n_frames)
     torch.mean(activity, dim=1)
     torch.std(activity, dim=1)
 
     target_type_name_list = ['R1', 'R7', 'C2', 'Mi11', 'Tm1', 'Tm4', 'Tm30']
-    type_list = torch.tensor(x[:, 6:7], device=device)
+    type_list = x.neuron_type.unsqueeze(-1).to(device)
 
     # Lazy import to avoid circular dependency
     from GNN_PlotFigure import plot_neuron_activity_analysis
@@ -1249,6 +1248,9 @@ def data_generate_synaptic(
     bSave=True,
     log_file=None,
 ):
+    import torch_geometric as pyg
+    import torch_geometric.data as data
+
     simulation_config = config.simulation
     training_config = config.training
     model_config = config.graph_model

@@ -9,7 +9,7 @@ Uses torchdiffeq's adjoint method for memory-efficient training:
 import torch
 import torch.nn as nn
 from torchdiffeq import odeint, odeint_adjoint
-from torch_geometric.loader import DataLoader
+from flyvis_gnn.neuron_state import NeuronState
 
 # Debug flag - set to True to enable debug prints
 DEBUG_ODE = True
@@ -19,17 +19,16 @@ class GNNODEFunc_FlyVis(nn.Module):
     """
     Wraps GNN model as ODE vector field: dv/dt = f(t, v).
 
-    Column layout (as in Signal_Propagation_FlyVis):
-        - Column 3: neural activity (v)
-        - Column 4: visual input (excitation)
+    Uses packed (B*N, 9) tensor as template, converts to NeuronState at model call.
     """
 
-    def __init__(self, model, data_template, data_id, neurons_per_sample, batch_size,
+    def __init__(self, model, x_template, edge_index, data_id, neurons_per_sample, batch_size,
                  has_visual_field=False, x_list=None,
                  run=0, device=None, k_batch=None, state_clamp=10.0, stab_lambda=0.0):
         super().__init__()
         self.model = model
-        self.data_template = data_template
+        self.x_template = x_template      # (B*N, 9) packed tensor
+        self.edge_index = edge_index       # (2, B*E) batched edge index
         self.data_id = data_id
         self.neurons_per_sample = neurons_per_sample
         self.batch_size = batch_size
@@ -47,10 +46,8 @@ class GNNODEFunc_FlyVis(nn.Module):
 
     def forward(self, t, v):
         """Compute dv/dt = GNN(v). Called by ODE solver at each integration step."""
-        data = self.data_template.clone()
+        x_new = self.x_template.clone()
         v_reshaped = v.view(-1, 1)
-
-        x_new = data.x.clone()
         x_new[:, 3:4] = v_reshaped
 
         # k_offset: discrete time step offset from continuous time t
@@ -63,7 +60,8 @@ class GNNODEFunc_FlyVis(nn.Module):
                 end_idx = (b + 1) * self.neurons_per_sample
                 k_current = int(self.k_batch[b].item()) + k_offset
 
-                visual_input = self.model.forward_visual(x_new[start_idx:end_idx], k_current)
+                state_b = NeuronState.from_numpy(x_new[start_idx:end_idx])
+                visual_input = self.model.forward_visual(state_b, k_current)
                 n_input = getattr(self.model, 'n_input_neurons', self.neurons_per_sample)
                 x_new[start_idx:start_idx + n_input, 4:5] = visual_input
                 x_new[start_idx + n_input:end_idx, 4:5] = 0
@@ -83,10 +81,10 @@ class GNNODEFunc_FlyVis(nn.Module):
                     )
                     x_new[start_idx:end_idx, 4:5] = x_next[:, 4:5]
 
-        data.x = x_new
-
+        state = NeuronState.from_numpy(x_new)
         pred = self.model(
-            data,
+            state,
+            self.edge_index,
             data_id=self.data_id,
             return_all=False
         )
@@ -96,7 +94,7 @@ class GNNODEFunc_FlyVis(nn.Module):
         return dv
 
 
-def integrate_neural_ode_FlyVis(model, v0, data_template, data_id, time_steps, delta_t,
+def integrate_neural_ode_FlyVis(model, v0, x_template, edge_index, data_id, time_steps, delta_t,
                          neurons_per_sample, batch_size, has_visual_field=False,
                          x_list=None, run=0, device=None, k_batch=None,
                          ode_method='dopri5', rtol=1e-4, atol=1e-5,
@@ -104,16 +102,25 @@ def integrate_neural_ode_FlyVis(model, v0, data_template, data_id, time_steps, d
     """
     Integrate GNN dynamics using Neural ODE.
 
-    New parameters (ODE-specific):
-        ode_method : str - solver ('dopri5', 'rk4', 'euler', etc.)
-        rtol, atol : float - tolerances for adaptive solvers
-        adjoint : bool - use adjoint method for O(1) memory
-        state_clamp : float - clamp state to [-state_clamp, state_clamp] during integration
-        stab_lambda : float - damping coefficient for stability
+    args:
+        model: Signal_Propagation_FlyVis model
+        v0: initial voltage state (B*N,)
+        x_template: packed (B*N, 9) tensor used as template for ODE steps
+        edge_index: (2, B*E) batched edge index
+        data_id: dataset ID tensor
+        time_steps: number of integration steps
+        delta_t: time step size
+        neurons_per_sample: number of neurons per sample
+        batch_size: number of samples in batch
+        ode_method: solver ('dopri5', 'rk4', 'euler', etc.)
+        rtol, atol: tolerances for adaptive solvers
+        adjoint: use adjoint method for O(1) memory
+        state_clamp: clamp state to [-state_clamp, state_clamp]
+        stab_lambda: damping coefficient for stability
 
-    Returns:
-        v_final : final state (N,)
-        v_trajectory : states at all time points (time_steps+1, N)
+    returns:
+        v_final: final state (B*N,)
+        v_trajectory: states at all time points (time_steps+1, B*N)
     """
 
     # adjoint: O(1) memory, standard: faster but O(L) memory
@@ -121,7 +128,8 @@ def integrate_neural_ode_FlyVis(model, v0, data_template, data_id, time_steps, d
 
     ode_func = GNNODEFunc_FlyVis(
         model=model,
-        data_template=data_template,
+        x_template=x_template,
+        edge_index=edge_index,
         data_id=data_id,
         neurons_per_sample=neurons_per_sample,
         batch_size=batch_size,
@@ -141,7 +149,7 @@ def integrate_neural_ode_FlyVis(model, v0, data_template, data_id, time_steps, d
         device=device, dtype=v0.dtype
     )
 
-    # v_trajectory shape: (time_steps+1, N)
+    # v_trajectory shape: (time_steps+1, B*N)
     v_trajectory = solver(
         ode_func,
         v0.flatten(),
@@ -159,7 +167,7 @@ def integrate_neural_ode_FlyVis(model, v0, data_template, data_id, time_steps, d
     return v_final, v_trajectory
 
 
-def neural_ode_loss_FlyVis(model, dataset_batch, x_list, run, k_batch,
+def neural_ode_loss_FlyVis(model, dataset_batch, edge_index, x_list, run, k_batch,
                            time_step, batch_size, n_neurons, ids_batch,
                            delta_t, device,
                            data_id=None, has_visual_field=False,
@@ -168,14 +176,21 @@ def neural_ode_loss_FlyVis(model, dataset_batch, x_list, run, k_batch,
                            iteration=0, state_clamp=10.0, stab_lambda=0.0):
     """
     Compute loss using Neural ODE integration.
-    Replaces explicit autoregressive rollout in data_train_flyvis.
+
+    args:
+        dataset_batch: list of (N, 9) packed tensors (one per frame in batch)
+        edge_index: (2, E) edge index for a single frame (will be batched internally)
     """
 
-    batch_loader = DataLoader(dataset_batch, batch_size=batch_size, shuffle=False)
-    data_template = next(iter(batch_loader))
+    # Batch frames: concatenate tensors and offset edge indices
+    x_template = torch.cat(dataset_batch, dim=0)  # (B*N, 9)
+    n_per_frame = dataset_batch[0].shape[0]
+    batched_edges = torch.cat(
+        [edge_index + i * n_per_frame for i in range(len(dataset_batch))], dim=1
+    )
 
-    v0 = data_template.x[:, 3].flatten()
-    neurons_per_sample = dataset_batch[0].x.shape[0]
+    v0 = x_template[:, 3].flatten()
+    neurons_per_sample = n_per_frame
 
     # Extract per-sample k values (one per batch sample)
     k_per_sample = torch.tensor([
@@ -189,14 +204,15 @@ def neural_ode_loss_FlyVis(model, dataset_batch, x_list, run, k_batch,
         print(f"neurons_per_sample={neurons_per_sample}, n_neurons={n_neurons}")
         print(f"v0 shape={v0.shape}, v0 mean={v0.mean().item():.4f}, std={v0.std().item():.4f}")
         print(f"k_per_sample={k_per_sample.tolist()}")
-        print(f"data_template.x shape={data_template.x.shape}")
-        print(f"data_template.edge_index shape={data_template.edge_index.shape}")
+        print(f"x_template shape={x_template.shape}")
+        print(f"batched_edges shape={batched_edges.shape}")
         print(f"ode_method={ode_method}, adjoint={adjoint}")
 
     v_final, v_trajectory = integrate_neural_ode_FlyVis(
         model=model,
         v0=v0,
-        data_template=data_template,
+        x_template=x_template,
+        edge_index=batched_edges,
         data_id=data_id,
         time_steps=time_step,
         delta_t=delta_t,
@@ -229,39 +245,12 @@ def neural_ode_loss_FlyVis(model, dataset_batch, x_list, run, k_batch,
     return loss, pred_x
 
 
-def debug_verify_forward_pass(model, data_template, data_id, device):
-    """
-    Debug function to verify the forward pass produces valid outputs.
-    Run this once at start of training to sanity-check model behavior.
-    """
-    print("\n=== Forward Pass Verification ===")
-
-    with torch.no_grad():
-        pred = model(data_template, data_id=data_id, return_all=False)
-
-    print(f"Input v (col 3): mean={data_template.x[:, 3].mean().item():.6f}, "
-          f"std={data_template.x[:, 3].std().item():.6f}")
-    print(f"Input excitation (col 4): mean={data_template.x[:, 4].mean().item():.6f}, "
-          f"std={data_template.x[:, 4].std().item():.6f}")
-    print(f"Output pred (dv/dt): mean={pred.mean().item():.6f}, std={pred.std().item():.6f}")
-
-    if hasattr(model, 'W'):
-        print(f"W: shape={model.W.shape}, mean={model.W.mean().item():.6f}, "
-              f"std={model.W.std().item():.6f}, min={model.W.min().item():.6f}, "
-              f"max={model.W.max().item():.6f}")
-
-    print(f"edge_index: shape={data_template.edge_index.shape}")
-    print("=== End Forward Pass Verification ===\n")
-
-
 def debug_check_gradients(model, loss, iteration):
     """
     Debug function to check gradient flow after loss.backward().
-    Call this after loss.backward() to verify gradients are flowing properly.
     """
     print(f"\n=== Gradient Check (iter {iteration}) ===")
 
-    # Check W gradients (the key parameter we're training)
     if hasattr(model, 'W'):
         if model.W.grad is not None:
             w_grad = model.W.grad
@@ -271,7 +260,6 @@ def debug_check_gradients(model, loss, iteration):
         else:
             print("W.grad is None - NO GRADIENT FLOWING TO W!")
 
-    # Check phi_edge network gradients
     if hasattr(model, 'phi_edge'):
         phi_grads = []
         for name, param in model.phi_edge.named_parameters():
@@ -282,7 +270,6 @@ def debug_check_gradients(model, loss, iteration):
         else:
             print("phi_edge: No gradients!")
 
-    # Check embedding gradients
     if hasattr(model, 'embedding'):
         if model.embedding.weight.grad is not None:
             emb_grad = model.embedding.weight.grad
@@ -293,103 +280,3 @@ def debug_check_gradients(model, loss, iteration):
 
     print(f"loss value: {loss.item():.6f}")
     print("=== End Gradient Check ===\n")
-
-
-def debug_compare_ode_vs_recurrent(model, dataset_batch, x_list, run, k_batch,
-                                    time_step, batch_size, n_neurons, ids_batch,
-                                    delta_t, device, data_id, x_batch):
-    """
-    Debug function to compare ODE integration vs manual Euler steps.
-    Call this to verify ODE wrapper produces same results as recurrent.
-    """
-    print("\n" + "="*60)
-    print("DEBUG: Comparing ODE vs Recurrent (Euler) integration")
-    print("="*60)
-
-    batch_loader = DataLoader(dataset_batch, batch_size=batch_size, shuffle=False)
-    data_template = next(iter(batch_loader))
-    neurons_per_sample = dataset_batch[0].x.shape[0]
-
-    # Get k values
-    k_per_sample = torch.tensor([
-        k_batch[b * neurons_per_sample, 0].item()
-        for b in range(batch_size)
-    ], device=device)
-
-    v0 = data_template.x[:, 3].flatten()
-
-    print(f"Initial v0: mean={v0.mean().item():.6f}, std={v0.std().item():.6f}")
-    print(f"time_step={time_step}, delta_t={delta_t}")
-
-    # --- Manual Euler integration (like recurrent training) ---
-    print("\n--- Manual Euler Integration ---")
-    pred_x_euler = x_batch[:, 0:1].clone()
-
-    for step in range(time_step):
-        # Create data with current state
-        dataset_batch_step = []
-        for b in range(batch_size):
-            start_idx = b * neurons_per_sample
-            end_idx = (b + 1) * neurons_per_sample
-            dataset_batch[b].x[:, 3:4] = pred_x_euler[start_idx:end_idx].reshape(-1, 1)
-
-            # Update visual input
-            k_current = int(k_per_sample[b].item()) + step
-            if k_current < len(x_list[run]):
-                x_next = torch.tensor(x_list[run][k_current], dtype=torch.float32, device=device)
-                dataset_batch[b].x[:, 4:5] = x_next[:, 4:5]
-
-            dataset_batch_step.append(dataset_batch[b])
-
-        batch_loader_step = DataLoader(dataset_batch_step, batch_size=batch_size, shuffle=False)
-        for batch in batch_loader_step:
-            with torch.no_grad():
-                pred = model(batch, data_id=data_id, return_all=False)
-
-        pred_x_euler = pred_x_euler + delta_t * pred
-        print(f"  Step {step}: pred mean={pred.mean().item():.6f}, pred_x mean={pred_x_euler.mean().item():.6f}")
-
-    # --- ODE integration ---
-    print("\n--- ODE Integration ---")
-    with torch.no_grad():
-        v_final_ode, v_trajectory = integrate_neural_ode_FlyVis(
-            model=model,
-            v0=v0,
-            data_template=data_template,
-            data_id=data_id,
-            time_steps=time_step,
-            delta_t=delta_t,
-            neurons_per_sample=neurons_per_sample,
-            batch_size=batch_size,
-            has_visual_field=False,
-            x_list=x_list,
-            run=run,
-            device=device,
-            k_batch=k_per_sample,
-            ode_method='euler',
-            rtol=1e-4,
-            atol=1e-5,
-            adjoint=False,
-            noise_level=0.0
-        )
-
-    for t_idx in range(v_trajectory.shape[0]):
-        print(f"  t={t_idx}: v mean={v_trajectory[t_idx].mean().item():.6f}")
-
-    pred_x_ode = v_final_ode.view(-1, 1)
-
-    # --- Compare ---
-    print("\n--- Comparison ---")
-    print(f"Euler final: mean={pred_x_euler[ids_batch].mean().item():.6f}, std={pred_x_euler[ids_batch].std().item():.6f}")
-    print(f"ODE final:   mean={pred_x_ode[ids_batch].mean().item():.6f}, std={pred_x_ode[ids_batch].std().item():.6f}")
-
-    diff = (pred_x_euler[ids_batch] - pred_x_ode[ids_batch]).abs()
-    print(f"Difference:  mean={diff.mean().item():.6f}, max={diff.max().item():.6f}")
-
-    # Check W gradients
-    if hasattr(model, 'W') and model.W.grad is not None:
-        print(f"\nW grad: mean={model.W.grad.mean().item():.6f}, std={model.W.grad.std().item():.6f}")
-
-    print("="*60 + "\n")
-
-    return pred_x_euler, pred_x_ode

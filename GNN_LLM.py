@@ -398,7 +398,7 @@ if __name__ == "__main__":
                                 print("\033[93msubmitting training to cluster....\033[0m")
 
                             # Build the python command
-                            train_cmd = f"python train_signal_subprocess.py --config '{config_path}' --device cuda"
+                            train_cmd = f"python train_flyvis_subprocess.py --config '{config_path}' --device cuda"
                             train_cmd += f" --log_file '{analysis_log_path}'"
                             train_cmd += f" --config_file '{config.config_file}'"
                             train_cmd += f" --error_log '{error_details_path}'"
@@ -417,7 +417,7 @@ if __name__ == "__main__":
                             cluster_analysis_log = analysis_log_path.replace(root_dir, cluster_root_dir)
                             cluster_error_log = error_details_path.replace(root_dir, cluster_root_dir)
 
-                            cluster_train_cmd = f"python train_signal_subprocess.py --config '{cluster_config_path}' --device cuda"
+                            cluster_train_cmd = f"python train_flyvis_subprocess.py --config '{cluster_config_path}' --device cuda"
                             cluster_train_cmd += f" --log_file '{cluster_analysis_log}'"
                             cluster_train_cmd += f" --config_file '{config.config_file}'"
                             cluster_train_cmd += f" --error_log '{cluster_error_log}'"
@@ -457,7 +457,7 @@ if __name__ == "__main__":
                             # Run training locally in subprocess (code was modified)
                             print("\033[93mcode modified by Claude - running training in subprocess...\033[0m")
 
-                            train_script = os.path.join(root_dir, 'train_signal_subprocess.py')
+                            train_script = os.path.join(root_dir, 'train_flyvis_subprocess.py')
                             train_cmd = [
                                 sys.executable,  # Use same Python interpreter
                                 '-u',  # Force unbuffered output for real-time streaming

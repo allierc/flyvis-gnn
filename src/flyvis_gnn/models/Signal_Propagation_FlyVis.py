@@ -1,28 +1,21 @@
 import math
 import torch
 import torch.nn as nn
-import torch_geometric as pyg
 from flyvis_gnn.models.MLP import MLP
 import numpy as np
 from flyvis_gnn.models.Siren_Network import Siren
+from flyvis_gnn.neuron_state import NeuronState
 
-class Signal_Propagation_FlyVis(pyg.nn.MessagePassing):
-    """Interaction Network as proposed in this paper:
-    https://proceedings.neurips.cc/paper/2016/hash/3147da8ab4a0437c15ef51a5cc7f2dc4-Abstract.html"""
 
-    """
-    Model learning the first derivative of a scalar field on a mesh.
-    The node embedding is defined by a table self.a
-    Note the Laplacian coeeficients are in data.edge_attr
+class Signal_Propagation_FlyVis(nn.Module):
+    """GNN for FlyVis neural signal dynamics with per-edge W.
 
-    Inputs
-    ----------
-    data : a torch_geometric.data object
+    Equations:
+        msg_j = W[edge] * lin_edge(v_j, a_j)^2   (PDE_N9_A, lin_edge_positive=True)
+        msg_j = W[edge] * lin_edge(v_i, v_j, a_i, a_j)^2   (PDE_N9_B)
+        du/dt = lin_phi(v, a, sum(msg), excitation)
 
-    Returns
-    -------
-    pred : float
-        the first derivative of a scalar field on a mesh (dimension 3).
+    Uses explicit scatter_add for message passing (no PyG dependency).
     """
 
     PARAMS_DOC = {
@@ -32,7 +25,7 @@ class Signal_Propagation_FlyVis(pyg.nn.MessagePassing):
         "key_differences_from_SignalPropagation": {
             "W_shape": "1D per-edge vector W[n_edges + n_extra_null_edges, 1] instead of dense N×N matrix",
             "visual_input": "Supports visual field input (DAVIS/calcium) via excitation channel",
-            "calcium": "Can use calcium concentration (x[:,7]) instead of voltage (x[:,3]) as observable",
+            "calcium": "Can use calcium concentration instead of voltage as observable",
             "lin_edge_positive": "When True, lin_edge output is squared to enforce positive edge messages",
         },
         "equations": {
@@ -98,14 +91,14 @@ class Signal_Propagation_FlyVis(pyg.nn.MessagePassing):
         },
     }
 
-    def __init__(
-        self, aggr_type='add', config=None, device=None ):
-        super(Signal_Propagation_FlyVis, self).__init__(aggr=aggr_type)
+    def __init__(self, aggr_type='add', config=None, device=None):
+        super().__init__()
 
         simulation_config = config.simulation
         model_config = config.graph_model
 
         self.device = device
+        self.aggr_type = aggr_type
         self.model = model_config.signal_model_name
         self.dimension = simulation_config.dimension
         self.embedding_dim = model_config.embedding_dim
@@ -173,7 +166,6 @@ class Signal_Propagation_FlyVis(pyg.nn.MessagePassing):
             W_init = torch.randn(n_w, device=self.device, dtype=torch.float32)
         self.W = nn.Parameter(W_init[:, None], requires_grad=True)
 
-
         if 'visual' in model_config.field_type:
 
             if 'instantNGP' in model_config.field_type:
@@ -191,41 +183,76 @@ class Signal_Propagation_FlyVis(pyg.nn.MessagePassing):
                 self.NNR_f_xy_period = model_config.nnr_f_xy_period / (2*np.pi)
                 self.NNR_f_T_period = model_config.nnr_f_T_period / (2*np.pi)
 
-    def forward_visual(self, x=[], k = []):
-
+    def forward_visual(self, state: NeuronState, k):
+        """Reconstruct visual field from neuron positions and time step k."""
         if 'instantNGP' in self.field_type:
             # to be implemented
             pass
         else:
-            kk = torch.full((x.size(0), 1), float(k), device=self.device, dtype=torch.float32)
-            in_features = torch.cat((x[:,1:1+self.dimension] / self.NNR_f_xy_period, kk / self.NNR_f_T_period), dim=1)
+            kk = torch.full((state.n_neurons, 1), float(k), device=self.device, dtype=torch.float32)
+            in_features = torch.cat((state.pos[:, :self.dimension] / self.NNR_f_xy_period, kk / self.NNR_f_T_period), dim=1)
             reconstructed_field = self.NNR_f(in_features[:self.n_input_neurons]) ** 2
 
         return reconstructed_field
 
-    def forward(self, data=[], data_id=[], k=[], return_all=False, **kwargs):
-        self.return_all = return_all
-        x, edge_index = data.x, data.edge_index
+    def _compute_messages(self, v, embedding, edge_index):
+        """Compute per-edge messages and aggregate via scatter_add.
 
+        args:
+            v: (N, 1) observable (voltage or calcium)
+            embedding: (N, embedding_dim) node embeddings
+            edge_index: (2, E) source/destination indices
+
+        returns:
+            msg: (N, 1) aggregated messages per node
+        """
+        src, dst = edge_index
+
+        # compute edge-to-W indices (supports batched edge_index)
+        n_edges_batch = edge_index.shape[1]
+        edge_W_idx = torch.arange(n_edges_batch, device=self.device) % (self.n_edges + self.n_extra_null_edges)
+
+        # build per-edge features
+        if self.model == 'PDE_N9_B':
+            in_features = torch.cat([v[dst], v[src], embedding[dst], embedding[src]], dim=1)
+        else:
+            in_features = torch.cat([v[src], embedding[src]], dim=1)
+
+        # edge function
+        lin_edge_out = self.lin_edge(in_features)
+        if self.lin_edge_positive:
+            lin_edge_out = lin_edge_out ** 2
+
+        # weight by per-edge W
+        edge_msg = self.W[edge_W_idx] * lin_edge_out  # (E, 1)
+
+        # aggregate: scatter_add messages to destination nodes
+        msg = torch.zeros(v.shape[0], edge_msg.shape[1], device=self.device, dtype=v.dtype)
+        msg.scatter_add_(0, dst.unsqueeze(1).expand_as(edge_msg), edge_msg)
+
+        return msg
+
+    def forward(self, state: NeuronState, edge_index: torch.Tensor, data_id=[], k=[], return_all=False, **kwargs):
+        """Forward pass: compute du/dt from neuron state and connectivity.
+
+        args:
+            state: NeuronState with voltage, stimulus, index fields
+            edge_index: (2, E) tensor of (src, dst) edge indices
+            data_id: dataset ID tensor
+            k: time step (for visual field reconstruction)
+            return_all: if True, return (pred, in_features, msg)
+
+        returns:
+            pred: (N, 1) predicted du/dt
+        """
         self.data_id = data_id.squeeze().long().clone().detach()
 
-        # Compute edge-to-W indices directly from edge count (no mask needed)
-        n_edges_batch = edge_index.shape[1]
-        self.edge_W_idx = torch.arange(n_edges_batch, device=self.device) % (self.n_edges + self.n_extra_null_edges)
-
-        if self.calcium_type != "none":
-            v = data.x[:, 7:8]      # voltage is replaced by calcium concentration (observable)
-        else:
-            v = data.x[:, 3:4]
-
-        excitation = data.x[:, 4:5]
-
-        particle_id = x[:, 0].long()
+        v = state.observable(self.calcium_type)
+        excitation = state.stimulus.unsqueeze(-1)
+        particle_id = state.index.long()
         embedding = self.a[particle_id].squeeze()
 
-        msg = self.propagate(
-            edge_index, v=v, embedding=embedding, data_id=self.data_id[:, None]
-        )
+        msg = self._compute_messages(v, embedding, edge_index)
 
         in_features = torch.cat([v, embedding, msg, excitation], dim=1)
         pred = self.lin_phi(in_features)
@@ -234,18 +261,3 @@ class Signal_Propagation_FlyVis(pyg.nn.MessagePassing):
             return pred, in_features, msg
         else:
             return pred
-
-    def message(self, edge_index_i, edge_index_j, v_i, v_j, embedding_i, embedding_j, data_id_i):
-        if (self.model == 'PDE_N9_B'):
-            in_features = torch.cat([v_i, v_j, embedding_i, embedding_j], dim=1)
-        else:
-            in_features = torch.cat([v_j, embedding_j], dim=1)
-
-        lin_edge = self.lin_edge(in_features)
-        if self.lin_edge_positive:
-            lin_edge = lin_edge**2
-
-        return self.W[self.edge_W_idx] * lin_edge
-
-    def update(self, aggr_out):
-        return aggr_out

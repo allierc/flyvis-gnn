@@ -106,17 +106,38 @@ try:
     from flyvis_gnn.models.HashEncoding_Network import HashEncodingMLP
 except ImportError:
     HashEncodingMLP = None
-from flyvis_gnn.zarr_io import load_simulation_data
+from flyvis_gnn.zarr_io import load_simulation_data_raw
+from flyvis_gnn.neuron_state import NeuronState
 
 from flyvis_gnn.sparsify import EmbeddingCluster, sparsify_cluster, clustering_evaluation
 from flyvis_gnn.fitting_models import linear_model
 
 from scipy.optimize import curve_fit
 
-from torch_geometric.data import Data as pyg_Data
-from torch_geometric.loader import DataLoader
-import torch_geometric as pyg
 import seaborn as sns
+
+
+def _batch_frames(x_tensors: list, edge_index: torch.Tensor):
+    """Batch multiple (N, 9) packed frame tensors into a single NeuronState + batched edge_index.
+
+    Replaces PyG DataLoader batching: concatenates node features from multiple frames
+    and offsets edge_index per frame so each frame's subgraph is disjoint.
+
+    args:
+        x_tensors: list of (N, 9) tensors (one per frame)
+        edge_index: (2, E) edge index for one frame
+
+    returns:
+        state: NeuronState with (B*N,) fields
+        batched_edges: (2, B*E) offset edge index
+    """
+    n_neurons = x_tensors[0].shape[0]
+    stacked = torch.cat(x_tensors, dim=0)  # (B*N, 9)
+    state = NeuronState.from_numpy(stacked)
+    batched_edges = torch.cat(
+        [edge_index + i * n_neurons for i in range(len(x_tensors))], dim=1
+    )
+    return state, batched_edges
 # denoise_data import not needed - removed star import
 import imageio
 imread = imageio.imread
@@ -238,8 +259,8 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     y_list = []
     for run in trange(0,n_runs, ncols=50):
         # load with format-aware loader (supports both .npy and .zarr)
-        x = load_simulation_data(f'graphs_data/{dataset_name}/x_list_{run}')
-        y = load_simulation_data(f'graphs_data/{dataset_name}/y_list_{run}')
+        x = load_simulation_data_raw(f'graphs_data/{dataset_name}/x_list_{run}')
+        y = load_simulation_data_raw(f'graphs_data/{dataset_name}/y_list_{run}')
 
         if training_selected_neurons:
             selected_neuron_ids = np.array(train_config.selected_neuron_ids).astype(int)
@@ -472,8 +493,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
                     if not (torch.isnan(y).any()):
 
-                        dataset = pyg_Data(x=x, edge_index=edges)
-                        dataset_batch.append(dataset)
+                        dataset_batch.append(x.clone())
 
                         if len(dataset_batch) == 1:
                             data_id = torch.ones((x.shape[0], 1), dtype=torch.int, device=device) * run
@@ -506,24 +526,21 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
 
                 elif 'MLP_ODE' in signal_model_name:
-                    batch_loader = DataLoader(dataset_batch, batch_size=batch_size, shuffle=False)
-                    for batch in batch_loader:
-                        pred = model(batch.x, data_id=data_id, return_all=False)
+                    batch_x = torch.cat(dataset_batch, dim=0)
+                    pred = model(batch_x, data_id=data_id, return_all=False)
 
                     loss = loss + (pred[ids_batch] - y_batch[ids_batch]).norm(2)
 
                 elif 'MLP' in signal_model_name:
-                    batch_loader = DataLoader(dataset_batch, batch_size=batch_size, shuffle=False)
-                    for batch in batch_loader:
-                        pred = model(batch.x, data_id=data_id, return_all=False)
+                    batch_x = torch.cat(dataset_batch, dim=0)
+                    pred = model(batch_x, data_id=data_id, return_all=False)
 
                     loss = loss + (pred[ids_batch] - y_batch[ids_batch]).norm(2)
 
                 else: # GNN branch
 
-                    batch_loader = DataLoader(dataset_batch, batch_size=batch_size, shuffle=False)
-                    for batch in batch_loader:
-                        pred, in_features, msg = model(batch, data_id=data_id, return_all=True)
+                    batched_state, batched_edges = _batch_frames(dataset_batch, edges)
+                    pred, in_features, msg = model(batched_state, batched_edges, data_id=data_id, return_all=True)
 
                     update_regul = regularizer.compute_update_regul(model, in_features, ids_batch, device)
                     loss = loss + update_regul
@@ -536,6 +553,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                         ode_loss, pred_x = neural_ode_loss_FlyVis(
                             model=model,
                             dataset_batch=dataset_batch,
+                            edge_index=edges,
                             x_list=x_list,
                             run=run,
                             k_batch=k_batch,
@@ -566,29 +584,26 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
                         if time_step > 1:
                             for step in range(time_step - 1):
-                                dataset_batch_new = []
-                                neurons_per_sample = dataset_batch[0].x.shape[0]
+                                neurons_per_sample = dataset_batch[0].shape[0]
 
                                 for b in range(batch_size):
                                     start_idx = b * neurons_per_sample
                                     end_idx = (b + 1) * neurons_per_sample
-                                    dataset_batch[b].x[:, 3:4] = pred_x[start_idx:end_idx].reshape(-1, 1)
+                                    dataset_batch[b][:, 3:4] = pred_x[start_idx:end_idx].reshape(-1, 1)
 
                                     k_current = k_batch[start_idx, 0].item() + step + 1
 
                                     if has_visual_field:
-                                        visual_input_next = model.forward_visual(dataset_batch[b].x, k_current)
-                                        dataset_batch[b].x[:model.n_input_neurons, 4:5] = visual_input_next
-                                        dataset_batch[b].x[model.n_input_neurons:, 4:5] = 0
+                                        state_b = NeuronState.from_numpy(dataset_batch[b])
+                                        visual_input_next = model.forward_visual(state_b, k_current)
+                                        dataset_batch[b][:model.n_input_neurons, 4:5] = visual_input_next
+                                        dataset_batch[b][model.n_input_neurons:, 4:5] = 0
                                     else:
                                         x_next = torch.tensor(x_list[run][k_current], dtype=torch.float32, device=device)
-                                        dataset_batch[b].x[:, 4:5] = x_next[:, 4:5]
+                                        dataset_batch[b][:, 4:5] = x_next[:, 4:5]
 
-                                    dataset_batch_new.append(dataset_batch[b])
-
-                                batch_loader = DataLoader(dataset_batch_new, batch_size=batch_size, shuffle=False)
-                                for batch in batch_loader:
-                                    pred, in_features, msg = model(batch, data_id=data_id, return_all=True)
+                                batched_state, batched_edges = _batch_frames(dataset_batch, edges)
+                                pred, in_features, msg = model(batched_state, batched_edges, data_id=data_id, return_all=True)
 
                                 pred_x = pred_x + delta_t * pred + noise_recurrent_level * torch.randn_like(pred)
 
@@ -2155,15 +2170,13 @@ def data_test_flyvis(
                                                                                                   device=device) * noise_visual_input
 
                     x_generated[:,4] = x[:,4]
-                    dataset = pyg.data.Data(x=x_generated, pos=x_generated[:, 1:3], edge_index=edge_index)
-                    y_generated = pde(dataset, has_field=False)
+                    y_generated = pde(NeuronState.from_numpy(x_generated), edge_index, has_field=False)
 
                     x_generated_modified[:,4] = x[:,4]
-                    dataset_modified = pyg.data.Data(x=x_generated_modified, pos=x_generated_modified[:, 1:3], edge_index=edge_index)
-                    y_generated_modified = pde_modified(dataset_modified, has_field=False)
+                    y_generated_modified = pde_modified(NeuronState.from_numpy(x_generated_modified), edge_index, has_field=False)
 
                     if 'visual' in field_type:
-                        visual_input = model.forward_visual(x, it)
+                        visual_input = model.forward_visual(NeuronState.from_numpy(x), it)
                         x[:model.n_input_neurons, 4:5] = visual_input
                         x[model.n_input_neurons:, 4:5] = 0
 
@@ -2193,13 +2206,13 @@ def data_test_flyvis(
                         elif 'MLP' in signal_model_name:
                             y = model(x, data_id=None, return_all=False)
                         elif neural_ODE_training:
-                            dataset = pyg.data.Data(x=x, pos=x, edge_index=edge_index)
                             data_id = torch.zeros((x.shape[0], 1), dtype=torch.int, device=device)
                             v0 = x[:, 3].flatten()
                             v_final, _ = integrate_neural_ode_FlyVis(
                                 model=model,
                                 v0=v0,
-                                data_template=dataset,
+                                x_template=x,
+                                edge_index=edge_index,
                                 data_id=data_id,
                                 time_steps=1,
                                 delta_t=delta_t,
@@ -2218,9 +2231,8 @@ def data_test_flyvis(
                             )
                             y = (v_final.view(-1, 1) - x[:, 3:4]) / delta_t
                         else:
-                            dataset = pyg.data.Data(x=x, pos=x, edge_index=edge_index)
                             data_id = torch.zeros((x.shape[0], 1), dtype=torch.int, device=device)
-                            y = model(dataset, data_id=data_id, return_all=False)
+                            y = model(NeuronState.from_numpy(x), edge_index, data_id=data_id, return_all=False)
 
                     # Save states
                     x_generated_list.append(to_numpy(x_generated.clone().detach()))
