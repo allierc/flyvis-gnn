@@ -19,7 +19,7 @@ class GNNODEFunc_FlyVis(nn.Module):
     """
     Wraps GNN model as ODE vector field: dv/dt = f(t, v).
 
-    Uses packed (B*N, 9) tensor as template, converts to NeuronState at model call.
+    Uses NeuronState as template; voltage is updated by the ODE solver each step.
     """
 
     def __init__(self, model, x_template, edge_index, data_id, neurons_per_sample, batch_size,
@@ -27,7 +27,7 @@ class GNNODEFunc_FlyVis(nn.Module):
                  run=0, device=None, k_batch=None, state_clamp=10.0, stab_lambda=0.0):
         super().__init__()
         self.model = model
-        self.x_template = x_template      # (B*N, 9) packed tensor
+        self.x_template = x_template      # NeuronState (batched, B*N neurons)
         self.edge_index = edge_index       # (2, B*E) batched edge index
         self.data_id = data_id
         self.neurons_per_sample = neurons_per_sample
@@ -46,9 +46,8 @@ class GNNODEFunc_FlyVis(nn.Module):
 
     def forward(self, t, v):
         """Compute dv/dt = GNN(v). Called by ODE solver at each integration step."""
-        x_new = self.x_template.clone()
-        v_reshaped = v.view(-1, 1)
-        x_new[:, 3:4] = v_reshaped
+        state = self.x_template.clone()
+        state.voltage = v.view(-1)
 
         # k_offset: discrete time step offset from continuous time t
         k_offset = int((t / self.delta_t).item()) if t.numel() == 1 else 0
@@ -60,11 +59,11 @@ class GNNODEFunc_FlyVis(nn.Module):
                 end_idx = (b + 1) * self.neurons_per_sample
                 k_current = int(self.k_batch[b].item()) + k_offset
 
-                state_b = NeuronState.from_numpy(x_new[start_idx:end_idx])
+                state_b = state.subset(range(start_idx, end_idx))
                 visual_input = self.model.forward_visual(state_b, k_current)
                 n_input = getattr(self.model, 'n_input_neurons', self.neurons_per_sample)
-                x_new[start_idx:start_idx + n_input, 4:5] = visual_input
-                x_new[start_idx + n_input:end_idx, 4:5] = 0
+                state.stimulus[start_idx:start_idx + n_input] = visual_input.squeeze(-1)
+                state.stimulus[start_idx + n_input:end_idx] = 0
 
         elif self.x_list is not None:
             # Update visual input for each batch sample from x_list
@@ -78,12 +77,11 @@ class GNNODEFunc_FlyVis(nn.Module):
                 n_frames = x_ts.n_frames if isinstance(x_ts, NeuronTimeSeries) else len(x_ts)
                 if k_current < n_frames:
                     if isinstance(x_ts, NeuronTimeSeries):
-                        x_new[start_idx:end_idx, 4] = x_ts.stimulus[k_current].float().to(self.device)
+                        state.stimulus[start_idx:end_idx] = x_ts.stimulus[k_current].float().to(self.device)
                     else:
                         x_next = torch.tensor(x_ts[k_current], dtype=torch.float32, device=self.device)
-                        x_new[start_idx:end_idx, 4:5] = x_next[:, 4:5]
+                        state.stimulus[start_idx:end_idx] = x_next[:, 4]
 
-        state = NeuronState.from_numpy(x_new)
         pred = self.model(
             state,
             self.edge_index,
@@ -107,7 +105,7 @@ def integrate_neural_ode_FlyVis(model, v0, x_template, edge_index, data_id, time
     args:
         model: Signal_Propagation_FlyVis model
         v0: initial voltage state (B*N,)
-        x_template: packed (B*N, 9) tensor used as template for ODE steps
+        x_template: NeuronState used as template for ODE steps (batched, B*N neurons)
         edge_index: (2, B*E) batched edge index
         data_id: dataset ID tensor
         time_steps: number of integration steps
@@ -180,18 +178,27 @@ def neural_ode_loss_FlyVis(model, dataset_batch, edge_index, x_list, run, k_batc
     Compute loss using Neural ODE integration.
 
     args:
-        dataset_batch: list of (N, 9) packed tensors (one per frame in batch)
+        dataset_batch: list of NeuronState (one per frame in batch)
         edge_index: (2, E) edge index for a single frame (will be batched internally)
     """
 
-    # Batch frames: concatenate tensors and offset edge indices
-    x_template = torch.cat(dataset_batch, dim=0)  # (B*N, 9)
-    n_per_frame = dataset_batch[0].shape[0]
+    # Batch frames: concatenate NeuronState fields and offset edge indices
+    n_per_frame = dataset_batch[0].n_neurons
+    x_template = NeuronState(
+        index=torch.cat([s.index for s in dataset_batch]),
+        pos=torch.cat([s.pos for s in dataset_batch]),
+        group_type=torch.cat([s.group_type for s in dataset_batch]),
+        neuron_type=torch.cat([s.neuron_type for s in dataset_batch]),
+        voltage=torch.cat([s.voltage for s in dataset_batch]),
+        stimulus=torch.cat([s.stimulus for s in dataset_batch]),
+        calcium=torch.cat([s.calcium for s in dataset_batch]),
+        fluorescence=torch.cat([s.fluorescence for s in dataset_batch]),
+    )
     batched_edges = torch.cat(
         [edge_index + i * n_per_frame for i in range(len(dataset_batch))], dim=1
     )
 
-    v0 = x_template[:, 3].flatten()
+    v0 = x_template.voltage.flatten()
     neurons_per_sample = n_per_frame
 
     # Extract per-sample k values (one per batch sample)
@@ -206,7 +213,7 @@ def neural_ode_loss_FlyVis(model, dataset_batch, edge_index, x_list, run, k_batc
         print(f"neurons_per_sample={neurons_per_sample}, n_neurons={n_neurons}")
         print(f"v0 shape={v0.shape}, v0 mean={v0.mean().item():.4f}, std={v0.std().item():.4f}")
         print(f"k_per_sample={k_per_sample.tolist()}")
-        print(f"x_template shape={x_template.shape}")
+        print(f"x_template n_neurons={x_template.n_neurons}")
         print(f"batched_edges shape={batched_edges.shape}")
         print(f"ode_method={ode_method}, adjoint={adjoint}")
 

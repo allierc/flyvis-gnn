@@ -96,6 +96,59 @@ class NeuronState:
             fluorescence=self.fluorescence.to(device),
         )
 
+    def clone(self) -> NeuronState:
+        """Deep clone all tensors."""
+        return NeuronState(
+            index=self.index.clone(),
+            pos=self.pos.clone(),
+            group_type=self.group_type.clone(),
+            neuron_type=self.neuron_type.clone(),
+            voltage=self.voltage.clone(),
+            stimulus=self.stimulus.clone(),
+            calcium=self.calcium.clone(),
+            fluorescence=self.fluorescence.clone(),
+        )
+
+    def detach(self) -> NeuronState:
+        """Detach all tensors from computation graph."""
+        return NeuronState(
+            index=self.index.detach(),
+            pos=self.pos.detach(),
+            group_type=self.group_type.detach(),
+            neuron_type=self.neuron_type.detach(),
+            voltage=self.voltage.detach(),
+            stimulus=self.stimulus.detach(),
+            calcium=self.calcium.detach(),
+            fluorescence=self.fluorescence.detach(),
+        )
+
+    def subset(self, ids) -> NeuronState:
+        """Select a subset of neurons by index."""
+        return NeuronState(
+            index=self.index[ids],
+            pos=self.pos[ids],
+            group_type=self.group_type[ids],
+            neuron_type=self.neuron_type[ids],
+            voltage=self.voltage[ids],
+            stimulus=self.stimulus[ids],
+            calcium=self.calcium[ids],
+            fluorescence=self.fluorescence[ids],
+        )
+
+    @classmethod
+    def zeros(cls, n_neurons: int, device: torch.device = None) -> NeuronState:
+        """Create zero-initialized NeuronState."""
+        return cls(
+            index=torch.arange(n_neurons, dtype=torch.long, device=device),
+            pos=torch.zeros(n_neurons, 2, dtype=torch.float32, device=device),
+            group_type=torch.zeros(n_neurons, dtype=torch.long, device=device),
+            neuron_type=torch.zeros(n_neurons, dtype=torch.long, device=device),
+            voltage=torch.zeros(n_neurons, dtype=torch.float32, device=device),
+            stimulus=torch.zeros(n_neurons, dtype=torch.float32, device=device),
+            calcium=torch.zeros(n_neurons, dtype=torch.float32, device=device),
+            fluorescence=torch.zeros(n_neurons, dtype=torch.float32, device=device),
+        )
+
 
 @dataclass
 class NeuronTimeSeries:

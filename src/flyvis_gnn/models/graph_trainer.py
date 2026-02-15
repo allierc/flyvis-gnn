@@ -202,7 +202,6 @@ def data_train(config=None, erase=False, best_model=None, style=None, device=Non
     print("training completed.")
 
 
-
 def data_train_flyvis(config, erase, best_model, device, log_file=None):
     simulation_config = config.simulation
     train_config = config.training
@@ -210,7 +209,6 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
     signal_model_name = model_config.signal_model_name
 
-    dimension = simulation_config.dimension
     n_epochs = train_config.n_epochs
     n_neurons = simulation_config.n_neurons
     n_input_neurons = simulation_config.n_input_neurons
@@ -464,8 +462,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
                 if time_window > 0:
                     x_temporal = x_list[run].voltage[k - time_window + 1: k + 1].T.float().to(device)
-                    x_packed = torch.cat((x.to_packed(), x_temporal), dim=1)
-                    x = x_packed  # temporal model uses packed tensor with extra columns
+                    # x stays as NeuronState; x_temporal passed separately to temporal model
 
                 if has_visual_field:
                     visual_input = model.forward_visual(x, k)
@@ -475,7 +472,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                 loss = torch.zeros(1, device=device)
                 regularizer.reset_iteration()
 
-                x_packed = x.to_packed() if isinstance(x, NeuronState) else x
+                x_packed = x.to_packed()
                 if not (torch.isnan(x_packed).any()):
                     regul_loss = regularizer.compute(
                         model=model,
@@ -504,10 +501,10 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
                         state_batch.append(x)
 
-                        n = x.n_neurons if isinstance(x, NeuronState) else x.shape[0]
+                        n = x.n_neurons
                         if len(state_batch) == 1:
                             data_id = torch.ones((n, 1), dtype=torch.int, device=device) * run
-                            v_batch = x.voltage.unsqueeze(-1) if isinstance(x, NeuronState) else x[:, 3:4]
+                            v_batch = x.voltage.unsqueeze(-1)
                             y_batch = y
                             ids_batch = ids
                             k_batch = torch.ones((n, 1), dtype=torch.int, device=device) * k
@@ -515,7 +512,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                                 visual_input_batch = visual_input
                         else:
                             data_id = torch.cat((data_id, torch.ones((n, 1), dtype=torch.int, device=device) * run), dim=0)
-                            v_batch = torch.cat((v_batch, x.voltage.unsqueeze(-1) if isinstance(x, NeuronState) else x[:, 3:4]), dim=0)
+                            v_batch = torch.cat((v_batch, x.voltage.unsqueeze(-1)), dim=0)
                             y_batch = torch.cat((y_batch, y), dim=0)
                             ids_batch = np.concatenate((ids_batch, ids + ids_index), axis=0)
                             k_batch = torch.cat((k_batch, torch.ones((n, 1), dtype=torch.int, device=device) * k), dim=0)
@@ -536,22 +533,22 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
 
                 elif 'MLP_ODE' in signal_model_name:
-                    batched_state, _ = _batch_frames(state_batch, edges) if isinstance(state_batch[0], NeuronState) else (torch.cat(state_batch, dim=0), None)
-                    batched_x = batched_state.to_packed() if isinstance(batched_state, NeuronState) else batched_state
+                    batched_state, _ = _batch_frames(state_batch, edges)
+                    batched_x = batched_state.to_packed()
                     pred = model(batched_x, data_id=data_id, return_all=False)
 
                     loss = loss + (pred[ids_batch] - y_batch[ids_batch]).norm(2)
 
                 elif 'MLP' in signal_model_name:
-                    batched_state, _ = _batch_frames(state_batch, edges) if isinstance(state_batch[0], NeuronState) else (torch.cat(state_batch, dim=0), None)
-                    batched_x = batched_state.to_packed() if isinstance(batched_state, NeuronState) else batched_state
+                    batched_state, _ = _batch_frames(state_batch, edges)
+                    batched_x = batched_state.to_packed()
                     pred = model(batched_x, data_id=data_id, return_all=False)
 
                     loss = loss + (pred[ids_batch] - y_batch[ids_batch]).norm(2)
 
                 else: # GNN branch
 
-                    batched_state, batched_edges = _batch_frames(state_batch, edges) if isinstance(state_batch[0], NeuronState) else _batch_frames(state_batch, edges)
+                    batched_state, batched_edges = _batch_frames(state_batch, edges)
                     pred, in_features, msg = model(batched_state, batched_edges, data_id=data_id, return_all=True)
 
                     update_regul = regularizer.compute_update_regul(model, in_features, ids_batch, device)
@@ -562,10 +559,9 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
                         ode_state_clamp = getattr(train_config, 'ode_state_clamp', 10.0)
                         ode_stab_lambda = getattr(train_config, 'ode_stab_lambda', 0.0)
-                        packed_batch = [s.to_packed() if isinstance(s, NeuronState) else s for s in state_batch]
                         ode_loss, pred_x = neural_ode_loss_FlyVis(
                             model=model,
-                            dataset_batch=packed_batch,
+                            dataset_batch=state_batch,
                             edge_index=edges,
                             x_list=x_list,
                             run=run,
@@ -597,35 +593,25 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
                         if time_step > 1:
                             for step in range(time_step - 1):
-                                neurons_per_sample = state_batch[0].n_neurons if isinstance(state_batch[0], NeuronState) else state_batch[0].shape[0]
+                                neurons_per_sample = state_batch[0].n_neurons
 
                                 for b in range(batch_size):
                                     start_idx = b * neurons_per_sample
                                     end_idx = (b + 1) * neurons_per_sample
 
-                                    if isinstance(state_batch[b], NeuronState):
-                                        state_batch[b].voltage = pred_x[start_idx:end_idx].squeeze()
-                                    else:
-                                        state_batch[b][:, 3:4] = pred_x[start_idx:end_idx].reshape(-1, 1)
+                                    state_batch[b].voltage = pred_x[start_idx:end_idx].squeeze()
 
                                     k_current = k_batch[start_idx, 0].item() + step + 1
 
                                     if has_visual_field:
                                         visual_input_next = model.forward_visual(state_batch[b], k_current)
-                                        if isinstance(state_batch[b], NeuronState):
-                                            state_batch[b].stimulus[:model.n_input_neurons] = visual_input_next.squeeze(-1)
-                                            state_batch[b].stimulus[model.n_input_neurons:] = 0
-                                        else:
-                                            state_batch[b][:model.n_input_neurons, 4:5] = visual_input_next
-                                            state_batch[b][model.n_input_neurons:, 4:5] = 0
+                                        state_batch[b].stimulus[:model.n_input_neurons] = visual_input_next.squeeze(-1)
+                                        state_batch[b].stimulus[model.n_input_neurons:] = 0
                                     else:
                                         x_next = x_list[run].frame(k_current).to(device)
-                                        if isinstance(state_batch[b], NeuronState):
-                                            state_batch[b].stimulus = x_next.stimulus
-                                        else:
-                                            state_batch[b][:, 4:5] = x_next.to_packed()[:, 4:5]
+                                        state_batch[b].stimulus = x_next.stimulus
 
-                                batched_state, batched_edges = _batch_frames(state_batch, edges) if isinstance(state_batch[0], NeuronState) else _batch_frames(state_batch, edges)
+                                batched_state, batched_edges = _batch_frames(state_batch, edges)
                                 pred, in_features, msg = model(batched_state, batched_edges, data_id=data_id, return_all=True)
 
                                 pred_x = pred_x + delta_t * pred + noise_recurrent_level * torch.randn_like(pred)
@@ -1857,29 +1843,23 @@ def data_test_flyvis(
     frame = sequences[0][None, None]
     net.stimulus.add_input(frame)
 
-    x = torch.zeros(n_neurons, 9, dtype=torch.float32, device=device)
-    x[:, 1:3] = X1
-    x[:, 0] = torch.arange(n_neurons, dtype=torch.float32, device=device)
-    x[:, 3] = initial_state
-    x[:, 4] = net.stimulus().squeeze()
-    x[:, 5] = torch.tensor(grouped_types, dtype=torch.float32, device=device)
-    x[:, 6] = torch.tensor(node_types_int, dtype=torch.float32, device=device)
-    x[:, 7] = torch.rand(n_neurons, dtype=torch.float32, device=device)
-    x[:, 8] = calcium_alpha * x[:, 7] + calcium_beta
+    calcium_init = torch.rand(n_neurons, dtype=torch.float32, device=device)
+    x = NeuronState(
+        index=torch.arange(n_neurons, dtype=torch.long, device=device),
+        pos=X1,
+        group_type=torch.tensor(grouped_types, dtype=torch.long, device=device),
+        neuron_type=torch.tensor(node_types_int, dtype=torch.long, device=device),
+        voltage=initial_state,
+        stimulus=net.stimulus().squeeze(),
+        calcium=calcium_init,
+        fluorescence=calcium_alpha * calcium_init + calcium_beta,
+    )
 
     if training_selected_neurons:
-        selected_neuron_ids =  training_config.selected_neuron_ids
-        x_selected = torch.zeros(len(selected_neuron_ids), 9, dtype=torch.float32, device=device)
+        selected_neuron_ids = training_config.selected_neuron_ids
         selected_neuron_ids = np.array(selected_neuron_ids).astype(int)
         print(f'testing single neuron id {selected_neuron_ids} ...')
-        x_selected[:, 1:3] = X1[selected_neuron_ids,:]
-        x_selected[:, 0] = torch.arange(1, dtype=torch.float32, device=device)
-        x_selected[:, 3] = initial_state[selected_neuron_ids]
-        x_selected[:, 4] = net.stimulus().squeeze()[selected_neuron_ids]
-        x_selected[:, 5] = torch.tensor(grouped_types[selected_neuron_ids], dtype=torch.float32, device=device)
-        x_selected[:, 6] = torch.tensor(node_types_int[selected_neuron_ids], dtype=torch.float32, device=device)
-        x_selected[:, 7] = torch.rand(1, dtype=torch.float32, device=device)
-        x_selected[:, 8] = calcium_alpha * x_selected[0, 7] + calcium_beta
+        x_selected = x.subset(selected_neuron_ids)
 
     # Mixed sequence setup
     if "mixed" in visual_input_type:
@@ -2035,22 +2015,22 @@ def data_test_flyvis(
                     if "flash" in visual_input_type:
                         # Generate repeating flash stimulus
                         current_flash_frame = frame_id % (flash_cycle_frames * 2)  # Create on/off cycle
-                        x[:, 4] = 0
+                        x.stimulus[:] = 0
                         if current_flash_frame < flash_cycle_frames:
-                            x[:n_input_neurons, 4] = flash_intensity
+                            x.stimulus[:n_input_neurons] = flash_intensity
                     elif "mixed" in visual_input_type:
                         current_type = mixed_types[mixed_current_type]
 
                         if current_type == "blank":
-                            x[:, 4] = 0
+                            x.stimulus[:] = 0
                         elif current_type == "noise":
-                            x[:n_input_neurons, 4:5] = torch.relu(
-                                0.5 + torch.rand((n_input_neurons, 1), dtype=torch.float32, device=device) * 0.5)
+                            x.stimulus[:n_input_neurons] = torch.relu(
+                                0.5 + torch.rand(n_input_neurons, dtype=torch.float32, device=device) * 0.5)
                         else:
                             actual_frame_id = (start_frame + frame_id) % sequences.shape[0]
                             frame = sequences[actual_frame_id][None, None]
                             net.stimulus.add_input(frame)
-                            x[:, 4] = net.stimulus().squeeze()
+                            x.stimulus = net.stimulus().squeeze()
                             if current_type == "sintel":
                                 sintel_frame_idx += 1
                             elif current_type == "davis":
@@ -2071,14 +2051,14 @@ def data_test_flyvis(
 
                             # 3) Convert to torch on the right device/dtype; keep as ±1 (no [0,1] mapping here)
                             tile_codes_torch = torch.from_numpy(tile_codes_np).to(x.device,
-                                                                                  dtype=x.dtype)  # (n_columns, 255), ±1
+                                                                                  dtype=torch.float32)  # (n_columns, 255), ±1
                             tile_labels = torch.from_numpy(tile_labels_np).to(x.device,
                                                                               dtype=torch.long)  # (n_input_neurons,)
                             tile_period = tile_codes_torch.shape[1]
                             tile_idx = 0
 
                         # 4) Baseline for all neurons (mean luminance), then write per-column values to PRs
-                        x[:, 4] = 0.5
+                        x.stimulus[:] = 0.5
                         col_vals_pm1 = tile_codes_torch[:, tile_idx % tile_period]  # (n_columns,), ±1 before knobs
                         # Apply the two simple knobs per frame on ±1 codes
                         col_vals_pm1 = apply_pairwise_knobs_torch(
@@ -2089,7 +2069,7 @@ def data_test_flyvis(
                         )
                         # Map to [0,1] with your contrast convention and broadcast via labels
                         col_vals_01 = 0.5 + (tile_contrast * 0.5) * col_vals_pm1
-                        x[:n_input_neurons, 4] = col_vals_01[tile_labels]
+                        x.stimulus[:n_input_neurons] = col_vals_01[tile_labels]
 
                         tile_idx += 1
                     elif "tile_blue_noise" in visual_input_type:
@@ -2111,16 +2091,16 @@ def data_test_flyvis(
                             tile_idx = 0
 
                             # Pre-generate ±1 codes (keep ±1; no [0,1] mapping here)
-                            tile_codes_torch = torch.empty((n_columns, tile_period), dtype=x.dtype, device=x.device)
+                            tile_codes_torch = torch.empty((n_columns, tile_period), dtype=torch.float32, device=x.device)
                             rng = np.random.RandomState(tile_seed)
                             for t in range(tile_period):
                                 mask = greedy_blue_mask(adj, n_columns, target_density=0.5, rng=rng)  # boolean mask
                                 vals = np.where(mask, 1.0, -1.0).astype(np.float32)  # ±1
                                 # NOTE: do not apply flip prob here; we do it uniformly via the helper per frame below
-                                tile_codes_torch[:, t] = torch.from_numpy(vals).to(x.device, dtype=x.dtype)
+                                tile_codes_torch[:, t] = torch.from_numpy(vals).to(x.device, dtype=torch.float32)
 
                         # Baseline luminance
-                        x[:, 4] = 0.5
+                        x.stimulus[:] = 0.5
                         col_vals_pm1 = tile_codes_torch[:, tile_idx % tile_period]  # (n_columns,), ±1 before knobs
 
                         # Apply the two simple knobs per frame on ±1 codes
@@ -2133,7 +2113,7 @@ def data_test_flyvis(
 
                         # Map to [0,1] with contrast and broadcast via labels
                         col_vals_01 = 0.5 + (tile_contrast * 0.5) * col_vals_pm1
-                        x[:n_input_neurons, 4] = col_vals_01[tile_labels]
+                        x.stimulus[:n_input_neurons] = col_vals_01[tile_labels]
 
                         tile_idx += 1
                     else:
@@ -2141,61 +2121,61 @@ def data_test_flyvis(
                         net.stimulus.add_input(frame)
                         if (only_noise_visual_input > 0):
                             if (visual_input_type == "") | (it == 0) | ("50/50" in visual_input_type):
-                                x[:n_input_neurons, 4:5] = torch.relu(
-                                    0.5 + torch.rand((n_input_neurons, 1), dtype=torch.float32,
+                                x.stimulus[:n_input_neurons] = torch.relu(
+                                    0.5 + torch.rand(n_input_neurons, dtype=torch.float32,
                                                      device=device) * only_noise_visual_input / 2)
                         else:
                             if 'blank' in visual_input_type:
                                 if (data_idx % simulation_config.blank_freq > 0):
-                                    x[:, 4] = net.stimulus().squeeze()
+                                    x.stimulus = net.stimulus().squeeze()
                                 else:
-                                    x[:, 4] = 0
+                                    x.stimulus[:] = 0
                             else:
-                                x[:, 4] = net.stimulus().squeeze()
+                                x.stimulus = net.stimulus().squeeze()
                             if noise_visual_input > 0:
-                                x[:n_input_neurons, 4:5] = x[:n_input_neurons, 4:5] + torch.randn((n_input_neurons, 1),
+                                x.stimulus[:n_input_neurons] = x.stimulus[:n_input_neurons] + torch.randn(n_input_neurons,
                                                                                                   dtype=torch.float32,
                                                                                                   device=device) * noise_visual_input
 
-                    x_generated[:, 4] = x[:, 4]
-                    y_generated = pde(NeuronState.from_numpy(x_generated), edge_index, has_field=False)
+                    x_generated.stimulus = x.stimulus.clone()
+                    y_generated = pde(x_generated, edge_index, has_field=False)
 
-                    x_generated_modified[:, 4] = x[:, 4]
-                    y_generated_modified = pde_modified(NeuronState.from_numpy(x_generated_modified), edge_index, has_field=False)
+                    x_generated_modified.stimulus = x.stimulus.clone()
+                    y_generated_modified = pde_modified(x_generated_modified, edge_index, has_field=False)
 
                     if 'visual' in field_type:
-                        visual_input = model.forward_visual(NeuronState.from_numpy(x), it)
-                        x[:model.n_input_neurons, 4:5] = visual_input
-                        x[model.n_input_neurons:, 4:5] = 0
+                        visual_input = model.forward_visual(x, it)
+                        x.stimulus[:model.n_input_neurons] = visual_input.squeeze(-1)
+                        x.stimulus[model.n_input_neurons:] = 0
 
                     # Prediction step
                     if training_selected_neurons:
-                        x_selected[:,4] = x[:,4][selected_neuron_ids].clone().detach()
+                        x_selected.stimulus = x.stimulus[selected_neuron_ids].clone().detach()
                         if 'RNN' in signal_model_name:
-                            y, h_state = model(x_selected, h=h_state, return_all=True)
+                            y, h_state = model(x_selected.to_packed(), h=h_state, return_all=True)
                         elif 'LSTM' in signal_model_name:
-                            y, h_state, c_state = model(x_selected, h=h_state, c=c_state, return_all=True)
+                            y, h_state, c_state = model(x_selected.to_packed(), h=h_state, c=c_state, return_all=True)
                         elif 'MLP_ODE' in signal_model_name:
-                            v = x_selected[:, 3:4]
-                            I = x_selected[:, 4:5]
+                            v = x_selected.voltage.unsqueeze(-1)
+                            I = x_selected.stimulus.unsqueeze(-1)
                             y = model.rollout_step(v, I, dt=delta_t, method='rk4') - v  # Return as delta
                         elif 'MLP' in signal_model_name:
-                            y = model(x_selected, data_id=None, return_all=False)
+                            y = model(x_selected.to_packed(), data_id=None, return_all=False)
 
                     else:
                         if 'RNN' in signal_model_name:
-                            y, h_state = model(x, h=h_state, return_all=True)
+                            y, h_state = model(x.to_packed(), h=h_state, return_all=True)
                         elif 'LSTM' in signal_model_name:
-                            y, h_state, c_state = model(x, h=h_state, c=c_state, return_all=True)
+                            y, h_state, c_state = model(x.to_packed(), h=h_state, c=c_state, return_all=True)
                         elif 'MLP_ODE' in signal_model_name:
-                            v = x[:, 3:4]
-                            I = x[:n_input_neurons, 4:5]
+                            v = x.voltage.unsqueeze(-1)
+                            I = x.stimulus[:n_input_neurons].unsqueeze(-1)
                             y = model.rollout_step(v, I, dt=delta_t, method='rk4') - v  # Return as delta
                         elif 'MLP' in signal_model_name:
-                            y = model(x, data_id=None, return_all=False)
+                            y = model(x.to_packed(), data_id=None, return_all=False)
                         elif neural_ODE_training:
-                            data_id = torch.zeros((x.shape[0], 1), dtype=torch.int, device=device)
-                            v0 = x[:, 3].flatten()
+                            data_id = torch.zeros((x.n_neurons, 1), dtype=torch.int, device=device)
+                            v0 = x.voltage.flatten()
                             v_final, _ = integrate_neural_ode_FlyVis(
                                 model=model,
                                 v0=v0,
@@ -2217,65 +2197,65 @@ def data_test_flyvis(
                                 adjoint=False,
                                 noise_level=0.0
                             )
-                            y = (v_final.view(-1, 1) - x[:, 3:4]) / delta_t
+                            y = (v_final.view(-1, 1) - x.voltage.unsqueeze(-1)) / delta_t
                         else:
-                            data_id = torch.zeros((x.shape[0], 1), dtype=torch.int, device=device)
-                            y = model(NeuronState.from_numpy(x), edge_index, data_id=data_id, return_all=False)
+                            data_id = torch.zeros((x.n_neurons, 1), dtype=torch.int, device=device)
+                            y = model(x, edge_index, data_id=data_id, return_all=False)
 
-                    # Save states
-                    x_generated_list.append(to_numpy(x_generated.clone().detach()))
-                    x_generated_modified_list.append(to_numpy(x_generated_modified.clone().detach()))
+                    # Save states (pack to legacy (N, 9) numpy for downstream analysis)
+                    x_generated_list.append(to_numpy(x_generated.to_packed().clone().detach()))
+                    x_generated_modified_list.append(to_numpy(x_generated_modified.to_packed().clone().detach()))
 
                     if training_selected_neurons:
-                        x_list.append(to_numpy(x_selected.clone().detach()))
+                        x_list.append(to_numpy(x_selected.to_packed().clone().detach()))
                     else:
-                        x_list.append(to_numpy(x.clone().detach()))
+                        x_list.append(to_numpy(x.to_packed().clone().detach()))
 
                     # Integration step
                     # Optionally disable process noise at test time, even if model was trained with noise
                     effective_noise_level = 0.0 if rollout_without_noise else noise_model_level
                     if effective_noise_level > 0:
-                        x_generated[:, 3:4] = x_generated[:, 3:4] + delta_t * y_generated + torch.randn(
-                            (n_neurons, 1), dtype=torch.float32, device=device
+                        x_generated.voltage = x_generated.voltage + delta_t * y_generated.squeeze(-1) + torch.randn(
+                            n_neurons, dtype=torch.float32, device=device
                         ) * effective_noise_level
-                        x_generated_modified[:, 3:4] = x_generated_modified[:, 3:4] + delta_t * y_generated_modified + torch.randn(
-                            (n_neurons, 1), dtype=torch.float32, device=device
+                        x_generated_modified.voltage = x_generated_modified.voltage + delta_t * y_generated_modified.squeeze(-1) + torch.randn(
+                            n_neurons, dtype=torch.float32, device=device
                         ) * effective_noise_level
                     else:
-                        x_generated[:, 3:4] = x_generated[:, 3:4] + delta_t * y_generated
-                        x_generated_modified[:, 3:4] = x_generated_modified[:, 3:4] + delta_t * y_generated_modified
+                        x_generated.voltage = x_generated.voltage + delta_t * y_generated.squeeze(-1)
+                        x_generated_modified.voltage = x_generated_modified.voltage + delta_t * y_generated_modified.squeeze(-1)
 
                     if training_selected_neurons:
                         if 'MLP_ODE' in signal_model_name:
-                            x_selected[:, 3:4] = x_selected[:, 3:4] + y  # y already contains full update
+                            x_selected.voltage = x_selected.voltage + y.squeeze(-1)  # y already contains full update
                         else:
-                            x_selected[:, 3:4] = x_selected[:, 3:4] + delta_t * y
+                            x_selected.voltage = x_selected.voltage + delta_t * y.squeeze(-1)
                         if (it <= warm_up_length) and ('RNN' in signal_model_name or 'LSTM' in signal_model_name):
-                            x_selected[:, 3:4] = x_generated[selected_neuron_ids, 3:4].clone()
+                            x_selected.voltage = x_generated.voltage[selected_neuron_ids].clone()
                     else:
                         if 'MLP_ODE' in signal_model_name:
-                            x[:, 3:4] = x[:, 3:4] + y  # y already contains full update
+                            x.voltage = x.voltage + y.squeeze(-1)  # y already contains full update
                         else:
-                            x[:, 3:4] = x[:, 3:4] + delta_t * y
+                            x.voltage = x.voltage + delta_t * y.squeeze(-1)
                         if (it <= warm_up_length) and ('RNN' in signal_model_name):
-                            x[:, 3:4] = x_generated[:, 3:4].clone()
+                            x.voltage = x_generated.voltage.clone()
 
                     if calcium_type == "leaky":
                         # Voltage-driven activation
                         if calcium_activation == "softplus":
-                            u = torch.nn.functional.softplus(x[:, 3:4])
+                            u = torch.nn.functional.softplus(x.voltage)
                         elif calcium_activation == "relu":
-                            u = torch.nn.functional.relu(x[:, 3:4])
+                            u = torch.nn.functional.relu(x.voltage)
                         elif calcium_activation == "tanh":
-                            u = torch.tanh(x[:, 3:4])
+                            u = torch.tanh(x.voltage)
                         elif calcium_activation == "identity":
-                            u = x[:, 3:4].clone()
+                            u = x.voltage.clone()
 
-                        x[:, 7:8] = x[:, 7:8] + (delta_t / calcium_tau) * (-x[:, 7:8] + u)
-                        x[:, 7:8] = torch.clamp(x[:, 7:8], min=0.0)
-                        x[:, 8:9] = calcium_alpha * x[:, 7:8] + calcium_beta
+                        x.calcium = x.calcium + (delta_t / calcium_tau) * (-x.calcium + u)
+                        x.calcium = torch.clamp(x.calcium, min=0.0)
+                        x.fluorescence = calcium_alpha * x.calcium + calcium_beta
 
-                        y = (x[:, 7:8] - torch.tensor(x_list[-1][:, 7:8], dtype=torch.float32,device=device)) / delta_t
+                        y = (x.calcium - torch.tensor(x_list[-1][:, 7], dtype=torch.float32, device=device)).unsqueeze(-1) / delta_t
 
                     y_list.append(to_numpy(y.clone().detach()))
 
@@ -2283,12 +2263,12 @@ def data_test_flyvis(
                         num = f"{id_fig:06}"
                         id_fig += 1
                         plot_spatial_activity_grid(
-                            positions=to_numpy(X1),
-                            voltages=to_numpy(x[:, 3]),
-                            stimulus=to_numpy(x[:n_input_neurons, 4]),
-                            neuron_types=to_numpy(x[:, 6]).astype(int),
+                            positions=to_numpy(x.pos),
+                            voltages=to_numpy(x.voltage),
+                            stimulus=to_numpy(x.stimulus[:n_input_neurons]),
+                            neuron_types=to_numpy(x.neuron_type).astype(int),
                             output_path=f"./{log_dir}/tmp_recons/Fig_{run}_{num}.png",
-                            calcium=to_numpy(x[:, 7]) if calcium_type != "none" else None,
+                            calcium=to_numpy(x.calcium) if calcium_type != "none" else None,
                             n_input_neurons=n_input_neurons,
                             style=fig_style,
                         )
@@ -2415,7 +2395,7 @@ def data_test_flyvis(
                         label='prediction' if plot_idx == 0 else None)
 
             for plot_idx, i in enumerate(neuron_plot_indices):
-                type_idx = int(to_numpy(x[selected_neuron_ids[i], 6]).item())
+                type_idx = int(to_numpy(x.neuron_type[selected_neuron_ids[i]]).item())
                 ax.text(-50, plot_idx * step_v, f'{index_to_name[type_idx]}', fontsize=name_fontsize, va='bottom', ha='right', color='black')
 
             ax.set_ylim([-step_v, len(neuron_plot_indices) * (step_v + 0.25 + 0.15 * (len(neuron_plot_indices)//50))])
