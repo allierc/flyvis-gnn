@@ -1670,15 +1670,14 @@ def data_test_flyvis(
     run = 0
 
     extent = 8
-    # Suppress noisy flyvis logging
-    import logging
-    for _logger_name in ['flyvis', 'flyvis.datasets', 'flyvis.network', 'flyvis.utils']:
-        logging.getLogger(_logger_name).setLevel(logging.WARNING)
-
     from flyvis.datasets.sintel import AugmentedSintel
     import flyvis
     from flyvis import NetworkView, Network
     from flyvis.utils.config_utils import get_default_config, CONFIG_PATH
+
+    # flyvis.__init__ sets root logger to INFO via basicConfig — restore to WARNING
+    import logging
+    logging.getLogger().setLevel(logging.WARNING)
     from flyvis_gnn.generators.PDE_N9 import PDE_N9, get_photoreceptor_positions_from_net, \
         group_by_direction_and_function
     # Initialize datasets
