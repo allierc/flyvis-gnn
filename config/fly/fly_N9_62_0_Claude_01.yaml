@@ -57,7 +57,7 @@ training:
   coeff_update_u_diff: 0
   coeff_update_msg_diff: 0
   coeff_edge_norm: 975
-  coeff_edge_weight_L1: 0.7
+  coeff_edge_weight_L1: 0.75
   coeff_phi_weight_L1: 0.8
   coeff_phi_weight_L1_rate: 0.5
   coeff_edge_weight_L2: 0

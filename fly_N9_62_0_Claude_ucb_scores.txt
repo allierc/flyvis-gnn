@@ -1,0 +1,26 @@
+=== UCB Scores (Simulation block 5, iters 121-144, N=24, c=1.414) ===
+
+Node 141: UCB=4.366, parent=136, visits=1, R2=0.902, Pearson=0.996, Cluster=0.720, tau_R2=0.861, V_rest_R2=0.064, Mutation=edge_weight_L1: 0.5 on N136 (edge_diff=625, W_L1=4E-5)
+Node 135: UCB=4.362, parent=133, visits=1, R2=0.898, Pearson=0.992, Cluster=0.738, tau_R2=0.655, V_rest_R2=0.379, Mutation=edge_norm: 975 -> 980 on N122's balanced path (edge_diff=620, edge_weight_L1=0.8)
+Node 137: UCB=4.349, parent=133, visits=1, R2=0.885, Pearson=0.996, Cluster=0.776, tau_R2=0.707, V_rest_R2=0.436, Mutation=phi_L1: 0.8 -> 1.0 on N133's breakthrough config (edge_diff=620, edge_weight_L1=0.7)
+Node 128: UCB=4.347, parent=125, visits=1, R2=0.883, Pearson=0.994, Cluster=0.756, tau_R2=0.782, V_rest_R2=0.328, Mutation=edge_weight_L1: 0.8 -> 0.9 on N118's conn path (edge_diff=600). Testing principle: "edge_diff=600 REQUIRES edge_weight_L1=0.8"
+Node 123: UCB=4.344, parent=124, visits=1, R2=0.880, Pearson=0.995, Cluster=0.729, tau_R2=0.771, V_rest_R2=0.147, Mutation=phi_L1: 1.0 -> 0.8 on N120's config (edge_diff=600, edge_weight_L1=0.8)
+Node 122: UCB=4.337, parent=124, visits=1, R2=0.873, Pearson=0.997, Cluster=0.755, tau_R2=0.838, V_rest_R2=0.384, Mutation=edge_diff: 625 -> 620 on V_rest path (edge_weight_L1=0.7)
+Node 144: UCB=4.333, parent=125, visits=1, R2=0.869, Pearson=0.996, Cluster=0.749, tau_R2=0.745, V_rest_R2=0.316, Mutation=W_L1: 5E-5 -> 4E-5 on N125 (edge_diff=625, edge_weight_L1=0.5). Testing principle: "W_L1=4E-5 ONLY works with edge_diff=625"
+Node 143: UCB=4.324, parent=133, visits=1, R2=0.860, Pearson=0.998, Cluster=0.824, tau_R2=0.859, V_rest_R2=0.255, Mutation=edge_weight_L1: 0.7 -> 0.65 on N133 (edge_diff=620)
+Node 130: UCB=4.320, parent=127, visits=1, R2=0.856, Pearson=0.996, Cluster=0.771, tau_R2=0.813, V_rest_R2=0.350, Mutation=phi_L1: 0.8 -> 1.0 on N125's conn path (edge_weight_L1=0.5, edge_diff=625)
+Node 140: UCB=4.317, parent=136, visits=1, R2=0.854, Pearson=0.996, Cluster=0.790, tau_R2=0.554, V_rest_R2=0.331, Mutation=edge_weight_L1: 0.5 -> 0.7 on N125's conn path (edge_diff=625). Testing principle: "edge_weight_L1=0.5 is optimal for conn with edge_diff=625"
+Node 134: UCB=4.310, parent=133, visits=1, R2=0.846, Pearson=0.996, Cluster=0.754, tau_R2=0.806, V_rest_R2=0.336, Mutation=phi_L1: 0.8 -> 0.9 on N132 (edge_diff=625, edge_weight_L1=0.55)
+Node 139: UCB=4.283, parent=136, visits=1, R2=0.820, Pearson=0.990, Cluster=0.757, tau_R2=0.870, V_rest_R2=0.300, Mutation=edge_diff: 625 -> 620 on N136's config (W_L1=4E-5, edge_weight_L1=0.6)
+Node 142: UCB=4.272, parent=133, visits=1, R2=0.808, Pearson=0.996, Cluster=0.797, tau_R2=0.539, V_rest_R2=0.068, Mutation=edge_weight_L1: 0.7 -> 0.75 on N133 (edge_diff=620)
+Node 129: UCB=4.261, parent=125, visits=1, R2=0.797, Pearson=0.996, Cluster=0.781, tau_R2=0.677, V_rest_R2=0.008, Mutation=edge_weight_L1: 0.5 -> 0.4 on N125's conn path (edge_diff=625)
+Node 138: UCB=4.258, parent=136, visits=1, R2=0.795, Pearson=0.996, Cluster=0.792, tau_R2=0.761, V_rest_R2=0.321, Mutation=W_L1: 5E-5 -> 4E-5 on N133's breakthrough config (edge_diff=620, edge_weight_L1=0.7)
+Node 121: UCB=4.254, parent=root, visits=1, R2=0.790, Pearson=0.996, Cluster=0.745, tau_R2=0.817, V_rest_R2=0.429, Mutation=edge_weight_L1: 0.8 -> 0.7 on N118's conn path (edge_diff=600)
+Node 126: UCB=4.218, parent=125, visits=1, R2=0.754, Pearson=0.995, Cluster=0.716, tau_R2=0.875, V_rest_R2=0.402, Mutation=edge_diff: 625 -> 620 on N124's V_rest path (edge_weight_L1=0.6)
+Node 131: UCB=4.162, parent=132, visits=1, R2=0.698, Pearson=0.994, Cluster=0.730, tau_R2=0.847, V_rest_R2=0.321, Mutation=edge_weight_L1: 0.6 -> 0.5 on N127's cluster path (edge_diff=620)
+Node 132: UCB=3.202, parent=127, visits=2, R2=0.893, Pearson=0.996, Cluster=0.778, tau_R2=0.773, V_rest_R2=0.282, Mutation=edge_weight_L1: 0.6 -> 0.55 on N124's V_rest path (edge_diff=625). Testing principle: "edge_weight_L1 has discrete optima (0.5 for conn, 0.6 for V_rest)"
+Node 136: UCB=2.064, parent=133, visits=5, R2=0.909, Pearson=0.995, Cluster=0.724, tau_R2=0.796, V_rest_R2=0.383, Mutation=W_L1: 5E-5 -> 4E-5 on N124's V_rest path (edge_diff=625, edge_weight_L1=0.6). Testing principle: "W_L1=5E-5 optimal for conn/tau paths"
+Node 133: UCB=1.445, parent=127, visits=11, R2=0.868, Pearson=0.997, Cluster=0.789, tau_R2=0.922, V_rest_R2=0.484, Mutation=edge_weight_L1: 0.6 -> 0.7 on N127's cluster path (edge_diff=620)
+Node 127: UCB=1.327, parent=125, visits=15, R2=0.894, Pearson=0.997, Cluster=0.778, tau_R2=0.802, V_rest_R2=0.318, Mutation=edge_weight_L1: 0.7 -> 0.6 on N122's balanced config (edge_diff=620)
+Node 125: UCB=1.259, parent=124, visits=20, R2=0.929, Pearson=0.996, Cluster=0.764, tau_R2=0.755, V_rest_R2=0.461, Mutation=edge_weight_L1: 0.6 -> 0.5 on N124's V_rest path (edge_diff=625)
+Node 124: UCB=1.175, parent=root, visits=23, R2=0.886, Pearson=0.996, Cluster=0.765, tau_R2=0.878, V_rest_R2=0.463, Mutation=edge_weight_L1: 0.7 -> 0.6 on N105's balanced path (edge_diff=625). Testing principle: "edge_weight_L1=0.7 maximizes V_rest (N119: 0.441)"

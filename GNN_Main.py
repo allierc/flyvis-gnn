@@ -64,8 +64,8 @@ if __name__ == "__main__":
                 best_model = None
     else:
         best_model = ''
-        task = task = 'generate'
-        config_list = CONFIG_LISTS['flyvis_top5_bottom5']
+        task = task = 'test'
+        config_list = ['fly_N9_44_6_opt']
 
     for config_file_ in config_list:
         print(" ")
@@ -112,7 +112,7 @@ if __name__ == "__main__":
             )
 
         if "test" in task:
-            config.simulation.noise_model_level = 0.0
+            # config.simulation.noise_model_level = 0.0
 
             # if 'fly' in config_file_:
             #     config.simulation.visual_input_type = 'optical_flow'
@@ -124,13 +124,14 @@ if __name__ == "__main__":
                 verbose=False,
                 best_model='best',
                 run=0,
-                test_mode="",   # test_ablation_50
+                test_mode="test_ablation_50",   # test_ablation_50
                 sample_embedding=False,
                 step=1000,
                 n_rollout_frames=10000,
                 device=device,
                 particle_of_interest=0,
                 new_params=None,
+                rollout_without_noise=False,
             )
 
         if 'plot' in task:

@@ -1,4 +1,4 @@
-training_time_min: 38.5
+training_time_min: 37.4
 n_epochs: 1
 data_augmentation_loop: 20
 recurrent_training: False
@@ -11,7 +11,11 @@ coeff_edge_norm: 1.0
 coeff_edge_weight_L1: 0.3
 coeff_phi_weight_L1: 0.5
 coeff_phi_weight_L2: 0.001
-coeff_W_L1: 5e-05
-test_R2: -2440.5601
-test_pearson: 0.4087
-final_loss: 2.1678e+03
+coeff_W_L1: 3e-05
+test_R2: -2573.5358
+test_pearson: 0.4109
+final_loss: 2.1929e+03
+connectivity_R2: 0.9689
+tau_R2: 0.8528
+V_rest_R2: 0.4447
+cluster_accuracy: 0.8225

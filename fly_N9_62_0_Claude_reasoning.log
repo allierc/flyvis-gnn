@@ -913,3 +913,196 @@ All 4 configs are set up correctly for Block 6, iterations 121-124:
 | 02 | 123 | 120 | explore | edge_diff=600, edge_weight_L1=0.8, phi_L1=0.8 | Compare phi_L1=0.8 vs 1.0 on N120's path |
 | 03 | 124 | 105 | principle-test | edge_diff=625, edge_weight_L1=0.6 | Test if lower edge_weight_L1 pushes V_rest higher |
 
+
+============================================================
+=== Batch 121-124 ===
+============================================================
+**Batch 121-124 Analysis Complete**
+
+## Results Summary
+
+| Iter | Node | Parent | Strategy | conn_R2 | tau_R2 | V_rest_R2 | cluster | Key Finding |
+|------|------|--------|----------|---------|--------|-----------|---------|-------------|
+| 121 | 121 | 118 | exploit | 0.790 | 0.817 | 0.429 | 0.745 | edge_weight_L1=0.7 on edge_diff=600 HURTS conn |
+| 122 | 122 | 119 | exploit | 0.873 | 0.838 | 0.384 | 0.755 | edge_diff=620 + edge_weight_L1=0.7 = good balance |
+| 123 | 123 | 120 | explore | 0.880 | 0.771 | 0.147 | 0.729 | phi_L1=0.8 collapsed V_rest |
+| **124** | **124** | **105** | **principle-test** | **0.886** | **0.878** | **0.463** | **0.765** | **V_REST RECORD!** edge_weight_L1=0.6 beats 0.7 |
+
+## Key Findings
+
+1. **N124 is the NEW V_REST CHAMPION** (0.463 > 0.441) with excellent tau (0.878) and good conn (0.886)
+2. **edge_weight_L1=0.6 > 0.7 for V_rest** - principle updated
+3. **edge_diff=600 REQUIRES edge_weight_L1=0.8** - N121 shows 0.7 collapses conn
+4. **edge_diff=620 + edge_weight_L1=0.7** gives good balance (N122)
+
+## Next Batch (125-128) Config
+
+| Slot | Node | Parent | Strategy | Config Change |
+|------|------|--------|----------|---------------|
+| 00 | 125 | 124 | exploit | edge_weight_L1=0.5 - test if lower is even better for V_rest |
+| 01 | 126 | 124 | exploit | edge_diff=620 - can we boost tau while keeping high V_rest? |
+| 02 | 127 | 122 | explore | edge_weight_L1=0.6 on edge_diff=620 - apply winning 0.6 to balanced config |
+| 03 | 128 | 118 | principle-test | edge_weight_L1=0.9 on edge_diff=600 - test if 0.9 works as well as 0.8 |
+
+
+============================================================
+=== Batch 125-128 ===
+============================================================
+## Summary: Batch 125-128 Analysis Complete
+
+### Results Analysis
+
+| Iter | Parent | Strategy | Key Config | conn_R2 | tau_R2 | V_rest_R2 | cluster | Status |
+|------|--------|----------|------------|---------|--------|-----------|---------|--------|
+| **125** | 124 | exploit | edge_weight_L1=0.5, edge_diff=625 | **0.929** | 0.755 | 0.461 | 0.764 | **CONN RECORD!** |
+| 126 | 124 | exploit | edge_diff=620, edge_weight_L1=0.6 | 0.754 | 0.875 | 0.402 | 0.716 | partial |
+| 127 | 122 | explore | edge_diff=620, edge_weight_L1=0.6 | 0.894 | 0.802 | 0.318 | **0.778** | partial |
+| 128 | 118 | principle-test | edge_diff=600, edge_weight_L1=0.9 | 0.883 | 0.782 | 0.328 | 0.756 | partial |
+
+### Key Discoveries
+
+1. **N125 - NEW OVERALL CONNECTIVITY RECORD (0.929!)**: edge_weight_L1=0.5 on edge_diff=625 surpasses N118's previous best (0.911). Also maintains excellent V_rest=0.461.
+
+2. **N126 confirms edge_diff=625 is REQUIRED** for the V_rest optimization path - switching to edge_diff=620 with edge_weight_L1=0.6 collapses conn from 0.886 to 0.754.
+
+3. **N127 achieves BEST CLUSTER (0.778)**: edge_weight_L1=0.6 on edge_diff=620 path gives excellent cluster accuracy with good conn=0.894.
+
+4. **N128 confirms principle**: edge_diff=600 requires edge_weight_L1=0.8 EXACTLY - going higher to 0.9 hurts conn (0.883 vs 0.911).
+
+### Next Batch (129-132) Setup
+
+| Slot | Iter | Parent | Strategy | Config Change | Rationale |
+|------|------|--------|----------|---------------|-----------|
+| 00 | 129 | 125 | exploit | edge_weight_L1=0.4 | Push conn even higher? |
+| 01 | 130 | 125 | exploit | phi_L1=1.0, edge_weight_L1=0.5 | Can phi_L1=1.0 boost tau while maintaining high conn? |
+| 02 | 131 | 127 | explore | edge_weight_L1=0.5 on edge_diff=620 | Apply winning edge_weight_L1 to cluster path |
+| 03 | 132 | 124 | principle-test | edge_weight_L1=0.55 | Test midpoint - discrete optima or continuous? |
+
+
+============================================================
+=== Batch 129-132 ===
+============================================================
+Batch 129-132 analysis complete. Here's the summary:
+
+## Batch 33 Results (Iterations 129-132)
+
+| Iter | conn_R2 | tau_R2 | V_rest_R2 | cluster | time_min | Key Finding |
+|------|---------|--------|-----------|---------|----------|-------------|
+| 129 | 0.797 | 0.677 | 0.008 | 0.781 | **96.7** | edge_weight_L1=0.4 **FAILS** - training time doubled, V_rest collapsed |
+| 130 | 0.856 | 0.813 | 0.350 | 0.771 | 59.5 | phi_L1=1.0 improves tau but hurts conn (0.929→0.856) |
+| 131 | 0.698 | 0.847 | 0.321 | 0.730 | 59.1 | edge_weight_L1=0.5 + edge_diff=620 **FAILS** - conn collapses |
+| 132 | 0.893 | 0.773 | 0.282 | 0.778 | 59.3 | edge_weight_L1=0.55 shows no interpolation benefit |
+
+**Key Principles Confirmed:**
+1. **edge_weight_L1=0.5 is the LOWER BOUND** - 0.4 fails completely
+2. **edge_weight_L1=0.5 REQUIRES edge_diff=625** - does NOT work with 620
+3. **edge_weight_L1 has DISCRETE optima (0.5, 0.6, 0.7, 0.8)** - intermediate values give worse results
+4. **phi_L1=1.0 trades conn for tau** - not beneficial for maximizing connectivity
+
+**Next Batch Setup (133-136):**
+| Slot | Node | Parent | Strategy | Config Change |
+|------|------|--------|----------|---------------|
+| 00 | 133 | N127 | exploit | edge_weight_L1=0.7 on cluster path (edge_diff=620) |
+| 01 | 134 | N132 | exploit | phi_L1=0.9 on edge_diff=625 path |
+| 02 | 135 | N122 | explore | edge_norm=980 boundary test on edge_diff=620 |
+| 03 | 136 | N124 | principle-test | W_L1=4E-5 (test if lower W_L1 helps V_rest path) |
+
+
+============================================================
+=== Batch 133-136 ===
+============================================================
+## Summary: Batch 34 Analysis (Iterations 133-136)
+
+### Key Results
+
+| Iter | Node | Parent | conn_R2 | tau_R2 | V_rest_R2 | cluster | Key Finding |
+| ---- | ---- | ------ | ------- | ------ | --------- | ------- | ----------- |
+| **133** | 133 | 127 | 0.868 | **0.922** | **0.484** | **0.789** | **BREAKTHROUGH!** tau & V_rest & cluster NEW RECORDS! |
+| 134 | 134 | 132 | 0.846 | 0.806 | 0.336 | 0.754 | phi_L1=0.9 + edge_weight_L1=0.55 mediocre |
+| 135 | 135 | 122 | 0.898 | 0.655 | 0.379 | 0.738 | edge_norm=980 HURTS tau (0.838→0.655) |
+| 136 | 136 | 124 | 0.909 | 0.796 | 0.383 | 0.724 | W_L1=4E-5 boosts conn, hurts V_rest |
+
+### Major Discoveries
+
+1. **N133 BREAKTHROUGH**: edge_weight_L1=0.7 + edge_diff=620 achieves **tau_R2=0.922** (NEW RECORD!), **V_rest_R2=0.484** (NEW RECORD!), and **cluster=0.789** (best) - all from parent N127's cluster path
+
+2. **edge_norm=975 is STRICT**: N135 confirms edge_norm=980 with edge_diff=620 collapses tau (0.838→0.655)
+
+3. **W_L1 trade-off confirmed**: N136 shows W_L1=4E-5 can boost conn (0.886→0.909) but at cost of V_rest (0.463→0.383) and cluster (0.765→0.724)
+
+### Next Batch Setup (Iterations 137-140)
+
+| Slot | Iter | Parent | Strategy | Config Change | Rationale |
+| ---- | ---- | ------ | -------- | ------------- | --------- |
+| 00 | 137 | N133 | exploit | phi_L1: 0.8→1.0 | Test if phi_L1=1.0 can further boost tau on breakthrough config |
+| 01 | 138 | N133 | exploit | W_L1: 5E-5→4E-5 | Test if lower W_L1 can boost conn while maintaining tau/V_rest |
+| 02 | 139 | N136 | explore | edge_diff: 625→620 | Test edge_diff=620 combined with W_L1=4E-5 |
+| 03 | 140 | N125 | principle-test | edge_weight_L1: 0.5→0.7 | Test if 0.7 works with edge_diff=625 (conn path) |
+
+
+============================================================
+=== Batch 137-140 ===
+============================================================
+**Summary of batch 137-140 analysis:**
+
+| Iter | Node | Parent | Strategy | conn_R2 | tau_R2 | V_rest_R2 | cluster | Key Finding |
+|------|------|--------|----------|---------|--------|-----------|---------|-------------|
+| 137 | 137 | 133 | exploit | 0.886 | 0.707 | 0.437 | 0.777 | phi_L1=1.0 HURTS tau severely (0.922→0.707) |
+| 138 | 138 | 133 | exploit | 0.795 | 0.762 | 0.321 | 0.792 | W_L1=4E-5 on edge_diff=620 HURTS ALL metrics |
+| 139 | 139 | 136 | explore | 0.820 | 0.870 | 0.300 | 0.757 | edge_diff=620 + W_L1=4E-5 unstable (neg test_R2) |
+| 140 | 140 | 125 | principle-test | 0.854 | 0.555 | 0.331 | 0.790 | edge_weight_L1=0.7 on edge_diff=625 FAILS |
+
+**New principles confirmed:**
+1. **phi_L1=0.8 REQUIRED for N133's tau path** - phi_L1=1.0 drops tau from 0.922 to 0.707
+2. **W_L1=5E-5 REQUIRED for edge_diff=620** - W_L1=4E-5 hurts ALL metrics
+3. **edge_weight_L1/edge_diff coupling is STRICT**: 0.5↔625, 0.7↔620
+4. **W_L1=4E-5 ONLY works with edge_diff=625** (not 620)
+
+**Next batch (141-144) setup:**
+
+| Slot | Iter | Parent | Strategy | Key Change | Rationale |
+|------|------|--------|----------|------------|-----------|
+| 00 | 141 | 136 | exploit | edge_weight_L1=0.5, edge_diff=625, W_L1=4E-5 | UCB=4.071 highest; test if 0.5+4E-5 pushes conn higher |
+| 01 | 142 | 133 | exploit | edge_weight_L1=0.75, edge_diff=620, W_L1=5E-5 | Test if 0.75 improves N133's tau/V_rest records |
+| 02 | 143 | 133 | explore | edge_weight_L1=0.65, edge_diff=620, W_L1=5E-5 | Test intermediate value (0.65) between 0.6 and 0.7 |
+| 03 | 144 | 125 | principle-test | edge_weight_L1=0.5, edge_diff=625, W_L1=4E-5 | Testing: "W_L1=4E-5 works with edge_diff=625" |
+
+
+============================================================
+=== Batch 141-144 ===
+============================================================
+The experiment is now complete. The final batch (iterations 141-144) has been analyzed and documented. Here is the summary:
+
+---
+
+## EXPERIMENT COMPLETE: fly_N9_62_0 (144 iterations, 6 blocks)
+
+### Final Batch Results (Iterations 141-144)
+
+| Iter | Strategy | Key Config | conn_R2 | tau_R2 | V_rest_R2 | cluster | Observation |
+| ---- | -------- | ---------- | ------- | ------ | --------- | ------- | ----------- |
+| **141** | exploit | edge_diff=625, edge_weight_L1=0.5, W_L1=4E-5 | 0.902 | 0.861 | 0.064 | 0.720 | W_L1=4E-5 collapses V_rest |
+| **142** | exploit | edge_diff=620, edge_weight_L1=0.75 | 0.808 | 0.539 | 0.068 | 0.797 | 0.75 SEVERELY hurts tau (0.7 is upper bound) |
+| **143** | explore | edge_diff=620, edge_weight_L1=0.65 | 0.860 | 0.859 | 0.255 | **0.824** | **NEW CLUSTER RECORD!** |
+| **144** | principle-test | edge_diff=625, edge_weight_L1=0.5, W_L1=4E-5 | 0.869 | 0.745 | 0.316 | 0.749 | W_L1=4E-5 introduces high variability |
+
+### Final Optimal Configurations
+
+| Target | Node | edge_diff | edge_weight_L1 | conn_R2 | tau_R2 | V_rest_R2 | cluster |
+| ------ | ---- | --------- | -------------- | ------- | ------ | --------- | ------- |
+| **Connectivity** | **N125** | 625 | 0.5 | **0.929** | 0.755 | 0.461 | 0.764 |
+| **Tau+V_rest** | **N133** | 620 | 0.7 | 0.868 | **0.922** | **0.484** | 0.789 |
+| **Cluster** | **N143** | 620 | 0.65 | 0.860 | 0.859 | 0.255 | **0.824** |
+| **Balanced** | **N124** | 625 | 0.6 | 0.886 | 0.878 | 0.463 | 0.765 |
+
+### Improvement vs Baseline
+
+| Metric | Baseline | Best | Improvement |
+| ------ | -------- | ---- | ----------- |
+| connectivity_R2 | 0.723 | 0.929 | **+28.5%** |
+| tau_R2 | 0.451 | 0.922 | **+104.4%** |
+| V_rest_R2 | 0.062 | 0.484 | **+680.6%** |
+| cluster_accuracy | 0.722 | 0.824 | **+14.1%** |
+
+The experiment has successfully completed all 144 iterations across 6 blocks, establishing optimal configurations for each target metric with significant improvements over the baseline.
+

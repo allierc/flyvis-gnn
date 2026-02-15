@@ -2,23 +2,983 @@
 ============================================================
 === BATCH 0 (start call) ===
 ============================================================
-I have initialized all 4 config variations for the first batch. Here's the summary:
+I have initialized all 4 config variations for the first batch. Here's a summary of the setup:
 
-## Initial Batch (Block 1: Siren Learning Rate Exploration)
+**Block 1: Siren LR + Batch Baseline (2×2 Factorial Design)**
 
-| Slot | Config File | lr_siren | omega_f | Strategy | Rationale |
-|------|-------------|----------|---------|----------|-----------|
-| 0 | `fly_N9_63_1_Claude_00.yaml` | **1E-8** (baseline) | 4096 | baseline | Default Siren lr from base config |
-| 1 | `fly_N9_63_1_Claude_01.yaml` | **1E-6** | 4096 | explore | 100x higher - test if field learns |
-| 2 | `fly_N9_63_1_Claude_02.yaml` | **1E-4** | 4096 | explore | 10000x higher - aggressive boundary |
-| 3 | `fly_N9_63_1_Claude_03.yaml` | **1E-5** | **256** | explore | Mid lr + lower omega for stability |
+| Slot | Config File | LR Regime | lr_siren | batch | lr_W | lr | lr_emb | edge_norm |
+|------|-------------|-----------|----------|-------|------|------|--------|-----------|
+| 0 | `fly_N9_63_1_Claude_00.yaml` | 62_1-optimized | 1E-8 | 2 | 6E-4 | 1.2E-3 | 1.5E-3 | 1.0 |
+| 1 | `fly_N9_63_1_Claude_01.yaml` | 62_1-optimized | 1E-5 | 2 | 6E-4 | 1.2E-3 | 1.5E-3 | 1.0 |
+| 2 | `fly_N9_63_1_Claude_02.yaml` | Original | 1E-8 | 16 | 1E-3 | 5E-4 | 1E-3 | 1000 |
+| 3 | `fly_N9_63_1_Claude_03.yaml` | Original | 1E-5 | 16 | 1E-3 | 5E-4 | 1E-3 | 1000 |
 
-**GNN parameters** (fixed across all slots): lr_W=5E-4, lr=1.2E-3, lr_emb=1.5E-3, coeff_edge_diff=750
+**Design Rationale**: This factorial design tests:
+1. **lr_siren effect**: Does 1E-5 (higher) improve field learning vs 1E-8 (default)?
+2. **LR regime effect**: Does the 62_1-optimized regime (batch=2, lower lr_W) or Original regime (batch=16, higher lr_W) work better at 1 epoch with Siren?
+3. **Interaction**: Does optimal lr_siren depend on the batch_size/LR regime?
 
-**Hypothesis**: The Siren learning rate is the key unknown for joint field+connectivity learning. This batch explores 4 orders of magnitude (1E-8 to 1E-4). Slot 3 also tests whether lower omega_f (256 vs 4096) allows higher Siren lr without destabilizing training.
+The configs are ready for training. I've updated the working memory with the experimental design and established principles inherited from fly_N9_62_1 that need validation with Siren.
 
-All files updated:
-- 4 config files edited with diverse initial parameters
-- Working memory (`fly_N9_63_1_Claude_memory.md`) updated with block plan
-- Full log (`fly_N9_63_1_Claude_analysis.md`) updated with initial entries
+
+============================================================
+=== Batch 1-4 ===
+============================================================
+**Batch 1 (Iterations 1-4) Analysis Complete.**
+
+## Summary
+
+### Results from Batch 0 (Iterations 1-4):
+
+| Iter | LR Regime | lr_siren | conn_R2 | field_R2 | V_rest_R2 | time_min | Status |
+|------|-----------|----------|---------|----------|-----------|----------|--------|
+| 1 | 62_1-opt (batch=2) | 1E-8 | 0.918 | 0.346 | 0.368 | 95 | partial |
+| 2 | 62_1-opt (batch=2) | 1E-5 | 0.929 | **0.000** | 0.427 | 96 | partial |
+| 3 | Original (batch=16) | 1E-8 | 0.867 | **0.642** | 0.002 | 126 | partial |
+| 4 | Original (batch=16) | 1E-5 | 0.728 | **0.000** | 0.000 | 126 | failed |
+
+### Key Findings:
+1. **lr_siren=1E-5 destroys field learning** (field_R2=0.000) in both regimes
+2. **62_1-optimized regime (batch=2) dominates** for connectivity (0.918-0.929) and V_rest (0.368-0.427)
+3. **Original regime (batch=16, edge_norm=1000) gives better field_R2** (0.642 vs 0.346) but destroys V_rest
+4. **Training time exceeds budget** — 95-126 min vs 60 min target
+
+### Next Batch (Iterations 5-8) Config:
+
+| Slot | Strategy | Mutation | Key Change |
+|------|----------|----------|------------|
+| 0 | exploit | lr_siren: 1E-5 → 1E-7 | Test intermediate Siren LR |
+| 1 | exploit | omega_f: 4096 → 100 | Test lower frequency bandwidth |
+| 2 | explore | batch: 2 → 4 | Test batch scaling with Siren |
+| 3 | principle-test | edge_norm: 1.0 → 10.0 | Test principle #4 boundary |
+
+All slots now use data_aug=12 (reduced from 20-25) to target <60 min training time.
+
+
+============================================================
+=== Batch 1-4 ===
+============================================================
+**Summary: Batch 1 (Iterations 5-8) Analysis Complete**
+
+All 4 slots failed with empty analysis logs — a systemic failure rather than parameter-specific. The common change across all slots was `data_augmentation_loop` reduced from 20-25 to 12.
+
+**Recovery Strategy for Next Batch (Iterations 9-12):**
+
+| Slot | Strategy | Key Changes | Purpose |
+|------|----------|-------------|---------|
+| 0 | exploit | data_aug=15, lr_siren=1E-8, batch=2 | Minimal recovery test — validates data_aug=15 works |
+| 1 | exploit | lr_siren=5E-9 (vs 1E-8) | Test lower Siren LR for more stable field learning |
+| 2 | explore | batch=16, edge_norm=1.0 (was 1000) | Fix V_rest collapse from Node 3 while keeping batch=16 |
+| 3 | principle-test | batch=1 (vs 2) | Test principle #10: "batch=1 gives worse V_rest" |
+
+All 4 configs updated and ready for the next batch run.
+
+
+============================================================
+=== Batch 5-8 ===
+============================================================
+**Batch 1 (Iterations 5-8) Analysis Complete**
+
+## Summary
+
+**Results from iterations 5-8:**
+
+| Iter | Slot | Mutation | conn_R2 | field_R2 | tau_R2 | V_rest_R2 | time |
+|------|------|----------|---------|----------|--------|-----------|------|
+| 5 | 0 | baseline (data_aug=12) | 0.934 | 0.000 | 0.886 | 0.349 | 62m |
+| 6 | 1 | lr_siren=5E-9 | **0.946** | 0.020 | **0.940** | 0.306 | 63m |
+| 7 | 2 | batch=4 | 0.940 | **0.377** | 0.915 | 0.187 | 66m |
+| 8 | 3 | edge_norm=10 (principle test) | 0.927 | 0.044 | 0.854 | 0.332 | 62m |
+
+**Key findings:**
+1. **batch=4 gives best field_R2 (0.377)** — larger batch helps Siren learn the visual field
+2. **V_rest collapse at batch=4** (0.187 vs 0.349 at batch=2) — confirms principle #11
+3. **lr_siren=5E-9 gives best connectivity (0.946) and tau (0.940)** but field still near-zero
+4. **edge_norm=10 NOT catastrophic** — principle #4 refined (edge_norm=1000 is catastrophic, 10 just degrades)
+5. **Critical trade-off identified**: batch=4 improves field at cost of V_rest
+
+**Next batch (iterations 9-12) setup:**
+
+| Slot | Parent | Strategy | Config Change |
+|------|--------|----------|---------------|
+| 0 | Node 7 | exploit | batch=4, lr_W=7E-4 (boost connectivity at best-field config) |
+| 1 | Node 7 | explore | batch=8 (test if larger batch further improves field_R2) |
+| 2 | Node 5 | explore | batch=2, data_aug=18 (test if more data_aug recovers field at batch=2) |
+| 3 | Node 7 | principle-test | batch=4, lr_emb=2E-3 (test principle #3: lr_emb >= 1.8E-3 destroys V_rest) |
+
+
+============================================================
+=== Batch 5-8 ===
+============================================================
+**Analysis Complete: Batch 2 (Iterations 9-12) Results**
+
+## Summary
+
+### Results This Batch
+| Iter | Config | conn_R2 | field_R2 | tau_R2 | V_rest_R2 | time_min | Status |
+|------|--------|---------|----------|--------|-----------|----------|--------|
+| 9 | batch=4, lr_W=7E-4 | 0.937 | **0.492** | 0.945 | 0.297 | 67 | BEST FIELD |
+| 10 | batch=8 | - | - | - | - | - | FAILED (OOM) |
+| 11 | batch=16, edge_norm=1.0 | **0.945** | 0.364 | **0.950** | 0.228 | 91 | BEST CONN/TAU |
+| 12 | batch=1, data_aug=15 | 0.926 | 0.285 | 0.906 | **0.349** | 80 | BEST V_REST |
+
+### Key Findings
+1. **NEW BEST field_R2=0.492** at batch=4, lr_W=7E-4 (Node 9) — 31% improvement over prior best
+2. **batch=8 FAILS (OOM)** — batch=4 is the practical upper limit with hidden_dim_nnr_f=4096
+3. **batch=16 + edge_norm=1.0** recovers V_rest (0.228 vs 0.002 at edge_norm=1000) — confirms edge_norm was the culprit
+4. **batch=1 preserves V_rest=0.349** — best for V_rest but field_R2=0.285 is moderate
+
+### Next Batch (Iterations 13-16) Configuration
+| Slot | Strategy | Mutation | Key Change |
+|------|----------|----------|------------|
+| 0 | exploit | omega_f: 4096 → 2048 | Test if lower omega_f maintains field_R2 |
+| 1 | exploit | data_aug: 12 → 10 | Test if less data reduces time while keeping field_R2 |
+| 2 | explore | coeff_W_L1: 5E-5 → 1E-4 | Test if stronger W sparsity helps field |
+| 3 | principle-test | lr_emb: 1.5E-3 → 1.8E-3 | Test principle #3 (lr_emb≥1.8E-3 destroys V_rest) |
+
+
+============================================================
+=== Batch 9-12 ===
+============================================================
+## Summary: Batch 3 (Iterations 13-16) Analysis Complete
+
+### Results:
+| Slot | Iteration | Status | Config | conn_R2 | field_R2 | tau_R2 | V_rest_R2 | Time |
+|------|-----------|--------|--------|---------|----------|--------|-----------|------|
+| 0 | 13 | FAILED | omega_f=2048 | - | - | - | - | - |
+| 1 | 14 | partial | batch=8 | 0.906 | 0.480 | 0.903 | 0.191 | 81.3 |
+| 2 | 15 | partial | batch=2, data_aug=18 | **0.949** | **0.573** | **0.959** | 0.196 | 86.6 |
+| 3 | 16 | FAILED | lr_emb=1.8E-3 | - | - | - | - | - |
+
+### Key Findings:
+1. **NEW BEST field_R2=0.573** at batch=2, data_aug=18 — 16% improvement over prior best (0.492 at batch=4)
+2. **batch=8 now works** (OOM was transient) — field_R2=0.480 but conn dropped to 0.906
+3. **batch=2 is field-optimal** when combined with higher data_aug — refutes prior batch=4 finding
+4. **V_rest paradox**: data_aug=18 gives V_rest=0.196 vs data_aug=12's 0.349
+5. Two experiments failed (omega_f=2048, lr_emb=1.8E-3)
+
+### Next Batch (Iterations 17-20):
+| Slot | Strategy | Config Changes |
+|------|----------|----------------|
+| 0 | exploit | batch=2, data_aug=20 (test if more data_aug helps) |
+| 1 | exploit | batch=2, data_aug=18, lr_W=7E-4 (boost lr_W) |
+| 2 | explore | batch=2, data_aug=15 (V_rest recovery) |
+| 3 | principle-test | batch=4, data_aug=18 (batch=4 vs batch=2 at high data_aug) |
+
+
+============================================================
+=== Batch 9-12 ===
+============================================================
+**Summary of Batch 4 Analysis (Iterations 17-20 / labeled as 9-12 in prompt):**
+
+## Results Summary
+
+| Slot | Mutation | conn_R2 | field_R2 | tau_R2 | V_rest_R2 | time_min |
+|------|----------|---------|----------|--------|-----------|----------|
+| 17 (Iter 9) | baseline batch=4, lr_W=7E-4 | 0.899 | 0.496 | 0.895 | 0.252 | 66.1 |
+| 18 (Iter 10) | data_aug=10 | 0.867 | 0.277 | 0.853 | 0.322 | 58.7 |
+| 19 (Iter 11) | coeff_W_L1=1E-4 | 0.895 | 0.358 | 0.917 | 0.191 | 66.1 |
+| 20 (Iter 12) | lr_emb=1.8E-3 | **0.941** | 0.261 | 0.902 | 0.211 | 66.4 |
+
+## Key Findings
+
+1. **batch=4 baseline confirmed stable** — field_R2=0.496 replicates Node 9
+2. **data_aug=10 is insufficient for field learning** — 44% drop (0.496→0.277)
+3. **coeff_W_L1=1E-4 harms both field and V_rest** — confirms principle #8
+4. **lr_emb=1.8E-3 boosts connectivity (0.941) but hurts field (0.261)** — principle #3 refined
+
+## Principle Updates
+- **Principle #3 REFINED**: lr_emb=1.8E-3 doesn't destroy V_rest but significantly hurts field learning
+- **Principle #8 CONFIRMED**: coeff_W_L1=5E-5 remains optimal
+- **NEW Principle #21**: data_aug>=12 required for field learning
+
+## Next Batch (Iter 21-24) Config
+| Slot | Parent | Strategy | Config |
+|------|--------|----------|--------|
+| 0 | N15 | exploit | batch=2, data_aug=20, lr_W=6E-4 |
+| 1 | N15 | exploit | batch=2, data_aug=18, lr_W=7E-4 |
+| 2 | N12 | explore | batch=2, data_aug=15, lr_W=6E-4 |
+| 3 | N15 | principle-test | batch=4, data_aug=18 (test #16) |
+
+
+============================================================
+=== Batch 13-16 ===
+============================================================
+**Batch 5 Analysis Complete (Iterations 21-24)**
+
+## Summary
+
+### Results
+| Slot | Iter | Status | conn_R2 | field_R2 | tau_R2 | V_rest_R2 | time_min |
+|------|------|--------|---------|----------|--------|-----------|----------|
+| 0 | 21 | FAILED | - | - | - | - | - |
+| 1 | 22 | partial | 0.876 | 0.509 | 0.943 | **0.348** | 86.1 |
+| 2 | 23 | partial | 0.907 | 0.422 | 0.940 | 0.311 | 74.3 |
+| 3 | 24 | **partial** | **0.957** | **0.585** | **0.963** | 0.300 | 89.3 |
+
+### Key Findings
+1. **NEW BEST field_R2=0.585** at batch=4 + data_aug=18 (Node 24) — beats prior best of 0.573
+2. **batch=4 is SUPERIOR to batch=2** at high data_aug — principle #16 updated
+3. **lr_W=7E-4 at batch=2 recovers V_rest** — trades conn (0.876 vs 0.949) for V_rest (0.348 vs 0.196)
+4. **data_aug=20 at batch=2 FAILS** — unknown cause
+5. Training time 89.3 min near limit — data_aug=20 likely infeasible
+
+### Updated Pareto Front
+| Optimization | Config | conn_R2 | field_R2 | V_rest_R2 | tau_R2 | Node |
+|--------------|--------|---------|----------|-----------|--------|------|
+| **Field-optimized** | batch=4, data_aug=18, lr_W=6E-4 | **0.957** | **0.585** | 0.300 | **0.963** | N24 |
+| **V_rest-optimized** | batch=2, lr_W=7E-4, data_aug=18 | 0.876 | 0.509 | **0.348** | 0.943 | N22 |
+| **Balanced** | batch=2, data_aug=15, lr_W=6E-4 | 0.907 | 0.422 | 0.311 | 0.940 | N23 |
+
+### Next Batch (Iter 25-28) Plan
+| Slot | Mutation | Strategy |
+|------|----------|----------|
+| 0 | batch=4, data_aug=18, lr_W=7E-4 | exploit: test higher lr_W at batch=4 |
+| 1 | batch=4, data_aug=16, lr_W=6E-4 | exploit: reduce training time |
+| 2 | batch=4, data_aug=18, omega_f=2048 | explore: retry omega_f exploration |
+| 3 | batch=8, data_aug=12, lr_W=6E-4 | principle-test: does batch=8 work at lower data_aug? |
+
+
+============================================================
+=== Batch 13-16 ===
+============================================================
+## Summary
+
+**Batch 6 Results (Iterations 13-16):**
+
+| Iter | Config | conn_R2 | field_R2 | tau_R2 | V_rest_R2 | time_min | Status |
+|------|--------|---------|----------|--------|-----------|----------|--------|
+| 13 (Slot 0) | batch=4, lr_W=7E-4, data_aug=18 | - | - | - | - | - | **FAILED** |
+| 14 (Slot 1) | batch=2, lr_W=7E-4, data_aug=18 | 0.743 | 0.537 | 0.686 | **0.003** | 86.5 | V_rest collapse |
+| 15 (Slot 2) | batch=2, lr_W=6E-4, data_aug=15 | 0.865 | 0.357 | 0.896 | 0.259 | 74.6 | Stable |
+| 16 (Slot 3) | batch=4, lr_W=6E-4, data_aug=18, omega_f=2048 | 0.953 | 0.467 | 0.958 | 0.247 | 88.6 | omega_f works |
+
+**Key Findings:**
+1. **lr_W=7E-4 is UNRELIABLE** — failed at batch=4 (3rd time), catastrophic V_rest=0.003 at batch=2
+2. **omega_f=2048 works** but reduces field_R2 by 20% vs omega_f=4096 (0.467 vs 0.585)
+3. **lr_W=6E-4 is more stable** — prefer for reproducibility
+4. **Node 24 (batch=4, data_aug=18, lr_W=6E-4) remains best** with field_R2=0.585
+
+**Next Batch (Iterations 17-20) Config:**
+- **Slot 0**: hidden_dim_nnr_f=2048 (test smaller Siren capacity for speed)
+- **Slot 1**: data_aug=16 (test time vs field trade-off, already set)
+- **Slot 2**: n_layers_nnr_f=2 (explore shallower Siren)
+- **Slot 3**: batch=8, data_aug=10 (principle-test: can batch=8 work with low data_aug?)
+
+
+============================================================
+=== Batch 17-20 ===
+============================================================
+All configs are correctly set. Let me summarize:
+
+**Next Batch (Iterations 21-24) Config Summary:**
+
+| Slot | Strategy | Key Changes from N29 | hidden_dim_nnr_f | omega_f | lr_W | data_aug | batch |
+|------|----------|---------------------|------------------|---------|------|----------|-------|
+| 0 | exploit | data_aug: 18 -> 20 | 2048 | 4096 | 7E-4 | 20 | 4 |
+| 1 | exploit | hidden_dim_nnr_f: 2048 -> 1024 | 1024 | 4096 | 7E-4 | 18 | 4 |
+| 2 | explore | omega_f: 4096 -> 2048 | 2048 | 2048 | 7E-4 | 18 | 4 |
+| 3 | principle-test | lr_W: 7E-4 -> 8E-4 | 2048 | 4096 | 8E-4 | 18 | 4 |
+
+**Analysis Complete. Summary:**
+
+## Batch 7 Results (Iterations 17-20)
+
+**MAJOR BREAKTHROUGH in Iteration 17 (Node 29):**
+- `hidden_dim_nnr_f=2048` + `lr_W=7E-4` + `batch=4` + `data_aug=18` achieved **NEW BEST on all primary metrics**:
+  - **conn_R2=0.963** (prev best 0.957)
+  - **field_R2=0.588** (prev best 0.585)
+  - **V_rest_R2=0.379** (prev best 0.300 at batch=4)
+  - tau_R2=0.961, cluster_acc=0.868
+
+**Key Findings:**
+1. **hidden_dim_nnr_f=2048 enables lr_W=7E-4 at batch=4** — previously this combination failed 3 times with hidden_dim_nnr_f=4096
+2. **V_rest recovery** — batch=4 with smaller Siren shows V_rest=0.379, contradicting previous "batch>=3 causes V_rest collapse" principle
+3. **n_layers_nnr_f=2 fails** — confirms SIREN requires exactly 3 layers
+4. **batch=8 + data_aug=10 fails** — data_aug=10 is insufficient
+
+**Failed Experiments:**
+- Iter 19: n_layers_nnr_f=2 (shallower Siren) → FAILED
+- Iter 20: batch=8 + data_aug=10 → FAILED
+
+**Next Batch Plan (Iterations 21-24):**
+- Slot 0: Push data_aug to 20 at N29 config
+- Slot 1: Test hidden_dim_nnr_f=1024 for speed
+- Slot 2: Test omega_f=2048 with smaller Siren
+- Slot 3: Test lr_W=8E-4 (higher lr with small Siren)
+
+
+============================================================
+=== Batch 17-20 ===
+============================================================
+## Summary
+
+**Batch 8 Results (Iterations 21-24):**
+
+| Iter | Node | Mutation | conn_R2 | field_R2 | tau_R2 | V_rest_R2 | time_min | Status |
+|------|------|----------|---------|----------|--------|-----------|----------|--------|
+| 21 | N33 | data_aug=20 | 0.962 | 0.429 | 0.957 | 0.239 | 53.8 | data_aug=20 HURTS |
+| 22 | N34 | h_dim_nnr=1024 | ? | 0.495 | ? | ? | 81.5 | INCOMPLETE |
+| 23 | N35 | omega_f=2048 | **0.966** | **0.607** | **0.965** | 0.325 | 72.9 | **NEW BEST** |
+| 24 | N36 | lr_W=8E-4 | - | - | - | - | - | FAILED |
+
+**Key Findings:**
+1. **N35 is NEW BEST**: omega_f=2048 + hidden_dim_nnr_f=2048 → field_R2=0.607 (3.2% improvement over N29)
+2. **data_aug=20 is harmful** at batch=4 — field_R2 drops 27%
+3. **lr_W=8E-4 fails** even with smaller Siren — lr_W=7E-4 is the upper limit
+4. **Training time improved**: N35 at 72.9 min is 18% faster than N29
+
+**Next Batch (Iter 25-28) Setup:**
+- **Slot 0**: N35 exact (reproducibility check)
+- **Slot 1**: omega_f=1024 (push omega lower)
+- **Slot 2**: nnr_f_T_period=32000 (test temporal normalization)
+- **Slot 3**: lr_emb=1.8E-3 (principle test #3)
+
+
+============================================================
+=== Batch 21-24 ===
+============================================================
+## Summary
+
+**Block 1 Complete (Iterations 1-40)**
+
+### Final Batch Results (Iter 37-40):
+| Slot | Mutation | conn_R2 | field_R2 | tau_R2 | V_rest_R2 | cluster | time |
+|------|----------|---------|----------|--------|-----------|---------|------|
+| 37 | data_aug=20 at omega_f=2048 | 0.960 | 0.449 | 0.956 | 0.290 | 0.863 | 58.1 |
+| 38 | omega_f=1024 | **FAILED** | - | - | - | - | - |
+| 39 | nnr_f_T_period=32000 | 0.960 | **0.203** | 0.960 | 0.225 | 0.869 | 53.5 |
+| 40 | lr_emb=1.8E-3 | 0.959 | **0.026** | 0.967 | 0.278 | **0.888** | 53.7 |
+
+### Key Findings:
+1. **omega_f=1024 CRASHES** — omega_f >= 2048 required
+2. **nnr_f_T_period=32000 destroys field** (67% drop) — T_period=64000 is critical
+3. **lr_emb=1.8E-3 destroys field** (96% drop) — Principle #3 CONFIRMED
+4. **Best cluster_accuracy=0.888** achieved with lr_emb=1.8E-3, but field is destroyed
+
+### Best Config (N35):
+- batch=4, data_aug=18, lr_W=7E-4, h_dim_nnr=2048, omega_f=2048
+- conn_R2=0.966, field_R2=0.607, tau_R2=0.965, V_rest_R2=0.325
+
+### Block 2 Setup (Iter 25-28):
+| Slot | Config | Strategy | Goal |
+|------|--------|----------|------|
+| 00 | batch=2, lr_W=6E-4, data_aug=20 | exploit | Test 62_1 optimal with Siren |
+| 01 | batch=4, lr_W=6.5E-4, data_aug=18 | exploit | Fine-tune lr_W |
+| 02 | batch=1, lr_W=7E-4, data_aug=20 | explore | Test batch=1 for V_rest |
+| 03 | batch=8, lr_W=7E-4, data_aug=15 | principle-test | Test "batch=8 works" |
+
+
+============================================================
+=== Batch 21-24 ===
+============================================================
+Configs are set correctly:
+- **Slot 0**: omega_f=3072 (test if higher omega reduces variance)
+- **Slot 1**: lr_siren=5E-9 (test if lower Siren LR stabilizes)
+- **Slot 2**: baseline (exact N35 replication for variance assessment)
+- **Slot 3**: data_aug=22 (test if more data reduces variance)
+
+All have batch=4, lr_W=7E-4, h_dim_nnr=2048 (the N35 baseline).
+
+## Summary
+
+**Block 1 completed** (iterations 1-44 logged). Final results:
+- **Best overall (N35)**: conn_R2=0.966, field_R2=0.607, tau_R2=0.965, V_rest=0.325
+- **Best V_rest (N42)**: conn_R2=0.959, field_R2=0.175, V_rest=**0.419** (new record!)
+
+**Critical finding**: High variance in field_R2 at omega_f=2048 + h_dim_nnr=2048. Three identical runs gave field_R2={0.022, 0.175, 0.191}. N35's 0.607 may have been a lucky outlier.
+
+**Next batch (iterations 45-48)**:
+| Slot | Mutation | Goal |
+|------|----------|------|
+| 0 | omega_f: 2048 → 3072 | Reduce variance by using intermediate omega |
+| 1 | lr_siren: 1E-8 → 5E-9 | Stabilize Siren with slower learning |
+| 2 | Exact N35 baseline | 4th data point for variance assessment |
+| 3 | data_aug: 18 → 22 | Test if more training reduces variance |
+
+
+============================================================
+=== Batch 25-28 ===
+============================================================
+## Summary: Batch 7 Analysis (Iterations 25-28)
+
+### Results
+| Slot | Node | Status | conn_R2 | field_R2 | tau_R2 | V_rest_R2 | cluster | time_min |
+|------|------|--------|---------|----------|--------|-----------|---------|----------|
+| 0 | N45 | partial | 0.965 | **0.511** | **0.979** | 0.389 | 0.851 | 56.4 |
+| 1 | N46 | FAILED | - | - | - | - | - | - |
+| 2 | N47 | partial | 0.962 | **0.551** | 0.976 | 0.357 | **0.887** | 62.8 |
+| 3 | N48 | FAILED | - | - | - | - | - | - |
+
+### Key Discovery: SMALL BATCHES STABILIZE FIELD LEARNING!
+
+**N47 (batch=1, data_aug=20, lr_W=7E-4)**: field_R2=0.551 — BEST stable result since N35's lucky 0.607!
+**N45 (batch=2, data_aug=20, lr_W=6E-4)**: field_R2=0.511, tau_R2=0.979 (NEW BEST tau!)
+
+This is a **breakthrough** finding: small batches (1, 2) give **consistent** field_R2 ~0.5, unlike batch=4's high variance (0.02-0.61).
+
+### Next Batch Configs (Iterations 29-32)
+| Slot | Node | Strategy | Config | Expected outcome |
+|------|------|----------|--------|------------------|
+| 0 | N49 | exploit | batch=1, data_aug=18, lr_W=7E-4 | Test if less data_aug helps at batch=1 |
+| 1 | N50 | exploit | batch=2, data_aug=20, lr_W=7E-4 | Test higher lr_W at batch=2 |
+| 2 | N51 | explore | batch=1, data_aug=20, lr_W=6.5E-4 | Test lower lr_W at batch=1 |
+| 3 | N52 | principle-test | batch=4, data_aug=16, lr_W=7E-4 | Test if less data_aug reduces batch=4 variance |
+
+
+============================================================
+=== Batch 25-28 ===
+============================================================
+## Summary
+
+**Analysis of Iterations 25-28 (Block 2, Iter 1-4):**
+
+All 4 slots ran with batch=4 configurations (despite intended small-batch mutations), confirming the HIGH VARIANCE at batch=4:
+
+| Slot | Node | conn_R2 | field_R2 | tau_R2 | V_rest_R2 | Key Finding |
+|------|------|---------|----------|--------|-----------|-------------|
+| 0 | N49 | 0.946 | 0.059 | 0.929 | 0.146 | Field collapse, V_rest very low |
+| 1 | N50 | 0.939 | 0.070 | 0.929 | 0.174 | Another field collapse |
+| 2 | N51 | 0.959 | 0.308 | 0.961 | 0.378 | Better, V_rest near best |
+| 3 | N52 | 0.961 | **0.400** | 0.957 | 0.334 | data_aug=22 best field, time=63min |
+
+**Key findings:**
+- **batch=4 variance confirmed:** field_R2 ranges 0.059-0.400 (6.8× variance) in same batch
+- **data_aug=22 at batch=4** yielded best field this batch (0.400) but training time hits 63 min limit
+- **V_rest instability at batch=4:** ranges 0.146-0.378
+
+**Pareto front unchanged:** N47 (batch=1, field=0.551) and N45 (batch=2, field=0.511) remain best stable configs.
+
+**Next batch (Iter 29-32) configurations:**
+- Slot 0: batch=1, data_aug=18, lr_W=7E-4 (exploit N47 with less data_aug)
+- Slot 1: batch=2, data_aug=20, lr_W=7E-4 (exploit N45 with higher lr_W)
+- Slot 2: batch=1, data_aug=20, coeff_W_L1=3E-5 (explore lower W sparsity)
+- Slot 3: batch=4, data_aug=18, lr_W=6.5E-4 (principle-test: lower lr_W to reduce variance)
+
+
+============================================================
+=== Batch 29-32 ===
+============================================================
+## Summary: Batch 4 (Iterations 29-32 = Nodes 53-56)
+
+### Results
+| Slot | Node | Config | conn_R2 | field_R2 | V_rest_R2 | tau_R2 | cluster | time |
+|------|------|--------|---------|----------|-----------|--------|---------|------|
+| 0 | N53 | batch=1, data_aug=18, lr_W=7E-4 | 0.954 | 0.528 | 0.285 | 0.946 | 0.862 | 58.5 |
+| 1 | N54 | batch=2, lr_W=7E-4, data_aug=20 | 0.947 | 0.527 | 0.227 | 0.968 | 0.835 | 56.1 |
+| 2 | **N55** | batch=1, lr_W=6.5E-4, W_L1=3E-5 | **0.960** | **0.547** | **0.393** | 0.966 | 0.841 | 63.8 |
+| 3 | N56 | batch=4, lr_W=6.5E-4, data_aug=16 | 0.961 | 0.007 | 0.334 | 0.957 | 0.846 | 49.8 |
+
+### Key Findings
+1. **N55 is NEW PARETO BEST** — achieves field=0.547 + V_rest=0.393 + conn=0.960 (best combined!)
+2. **coeff_W_L1=3E-5 BOOSTS V_rest** — from 0.36 to 0.39 without hurting field
+3. **lr_W=7E-4 at batch=2 HURTS V_rest** — N54 V_rest=0.227 vs N45's 0.389 at lr_W=6E-4
+4. **batch=4 variance NOT FIXED** — N56 field=0.007 despite lower lr_W=6.5E-4
+
+### Next Batch (Iterations 33-36) Setup
+| Slot | Parent | Strategy | Mutation |
+|------|--------|----------|----------|
+| 0 | N55 | exploit | data_aug: 20→18 (save time) |
+| 1 | N55 | exploit | lr_W: 6.5E-4→6E-4 (test lower) |
+| 2 | N55 | explore | coeff_W_L1: 3E-5→2E-5 (even lower) |
+| 3 | N45 | principle-test | batch=2, coeff_W_L1: 5E-5→3E-5 |
+
+
+============================================================
+=== Batch 29-32 ===
+============================================================
+All 4 configs are set up correctly for the next batch. Let me summarize what was done:
+
+## Summary: Batch 14 Analysis (Iter 57-60) and Next Batch Setup
+
+### Results Analysis
+
+| Slot | Node | conn_R2 | field_R2 | V_rest_R2 | tau_R2 | cluster | time | Key finding |
+|------|------|---------|----------|-----------|--------|---------|------|-------------|
+| 0 | N57 | 0.959 | 0.530 | **0.438** | 0.973 | 0.884 | 58 | **NEW BEST V_rest!** lr_W=7E-4, W_L1=5E-5, data_aug=18 |
+| 1 | N58 | 0.963 | 0.509 | 0.285 | 0.975 | 0.869 | 56 | lr_W=6E-4 HURTS V_rest at batch=1 |
+| 2 | N59 | 0.951 | 0.552 | 0.336 | 0.964 | 0.832 | 64 | W_L1=2E-5 doesn't help; time over limit |
+| 3 | N60 | 0.961 | 0.289 | 0.298 | 0.954 | 0.840 | 54 | W_L1=3E-5 destroys field at batch=2 |
+
+**Key Discoveries:**
+1. **N57 achieves V_rest=0.438** — NEW BEST ever! Config: batch=1, lr_W=7E-4, W_L1=5E-5, data_aug=18
+2. **lr_W=7E-4 > 6.5E-4 > 6E-4 at batch=1** for V_rest recovery
+3. **W_L1=3E-5 is batch-specific** — helps batch=1 field but destroys batch=2 field
+4. **W_L1=5E-5 remains optimal at batch=1** for V_rest (beats W_L1=3E-5)
+
+### Next Batch Setup (Iter 61-64)
+
+| Slot | Parent | Strategy | Key mutation | Config summary |
+|------|--------|----------|--------------|----------------|
+| 0 | N57 | exploit | data_aug: 18 → 16 | batch=1, lr_W=7E-4, W_L1=5E-5, data_aug=16 |
+| 1 | N57 | exploit | lr_W: 7E-4 → 7.5E-4 | batch=1, lr_W=7.5E-4, W_L1=5E-5, data_aug=18 |
+| 2 | N57 | explore | W_L1: 5E-5 → 4E-5 | batch=1, lr_W=7E-4, W_L1=4E-5, data_aug=18 |
+| 3 | N47 | principle-test | lr_emb: 1.5E-3 → 1.6E-3 | batch=1, lr_W=7E-4, W_L1=5E-5, lr_emb=1.6E-3, data_aug=18 |
+
+
+============================================================
+=== Batch 33-36 ===
+============================================================
+The configs are set correctly:
+
+| Slot | batch_size | lr_W | W_L1 | data_aug | Strategy |
+|------|------------|------|------|----------|----------|
+| 0 | 1 | 6E-4 | 3E-5 | 20 | Replicate N62 |
+| 1 | 1 | 6E-4 | 3E-5 | 18 | N62 with lower data_aug |
+| 2 | 1 | 5.5E-4 | 3E-5 | 20 | Explore lower lr_W |
+| 3 | 2 | 6.5E-4 | 3E-5 | 20 | Principle-test at batch=2 |
+
+---
+
+## Summary
+
+**Batch 7 Analysis (Iterations 33-36, Nodes 61-64):**
+
+**MAJOR BREAKTHROUGH: N62 achieves V_rest=0.559** — the best V_rest recovery ever observed, beating N57's previous best of 0.438 by a significant margin.
+
+| Slot | Node | Config | Results |
+|------|------|--------|---------|
+| 0 | N61 | batch=1, lr_W=6.5E-4, W_L1=3E-5, data_aug=16 | conn=0.963, field=0.530, V_rest=0.371 |
+| 1 | **N62** | batch=1, lr_W=6E-4, W_L1=3E-5, data_aug=20 | conn=0.944, **field=0.554, V_rest=0.559** |
+| 2 | N63 | batch=1, lr_W=6.5E-4, W_L1=2E-5, data_aug=20 | conn=0.956, field=0.544, V_rest=0.292 |
+| 3 | N64 | batch=2, lr_W=6E-4, W_L1=3E-5, data_aug=20 | conn=0.965, field=0.514, V_rest=0.455 |
+
+**Key Findings:**
+1. **N62's configuration (lr_W=6E-4, W_L1=3E-5, data_aug=20, batch=1) is optimal** — achieves both best V_rest (0.559) and competitive field (0.554)
+2. **Contradicts previous findings:** lr_W=6E-4 at batch=1 was thought to hurt V_rest (N58), but N62 shows it can work brilliantly — HIGH VARIANCE observed
+3. **W_L1=3E-5 at batch=2 is NOT consistently harmful** — N64 recovered (field=0.514) vs N60's collapse (0.289)
+4. **data_aug=20 is critical for V_rest** — N61's data_aug=16 got only 0.371
+
+**Next batch (iterations 37-40):** Testing N62 reproducibility and exploring lr_W boundaries:
+- Slot 0: Replicate N62 exactly
+- Slot 1: N62 config with data_aug=18 (time reduction)
+- Slot 2: N62 config with lr_W=5.5E-4 (lower lr_W exploration)
+- Slot 3: batch=2 with lr_W=6.5E-4 (principle-test)
+
+
+============================================================
+=== Batch 33-36 ===
+============================================================
+I've completed the analysis and setup for the next batch. Here's a summary:
+
+## Batch 16 (Iter 65-68) Results Summary
+
+| Slot | Node | Config | conn_R2 | field_R2 | V_rest_R2 | time |
+|------|------|--------|---------|----------|-----------|------|
+| 0 | N65 | lr_W=7E-4, W_L1=5E-5, data_aug=16 | 0.956 | 0.520 | 0.392 | 52.5 |
+| 1 | N66 | lr_W=7.5E-4, W_L1=5E-5, data_aug=18 | 0.956 | 0.529 | 0.406 | 58.1 |
+| 2 | **N67** | lr_W=7E-4, **W_L1=4E-5**, data_aug=18 | 0.953 | 0.529 | **0.507** | 57.9 |
+| 3 | N68 | lr_W=7E-4, lr_emb=1.6E-3, data_aug=18 | 0.959 | 0.526 | 0.400 | 58.4 |
+
+**Key Finding:** N67 achieves V_rest=0.507 with W_L1=4E-5, making it the 2nd best result after N62 (V_rest=0.559). This suggests **W_L1=4E-5 may be a sweet spot** with the lr_W=7E-4 regime.
+
+## Next Batch Setup (Iter 69-72)
+
+| Slot | Parent | Strategy | Key Changes | Rationale |
+|------|--------|----------|-------------|-----------|
+| 0 | N67 | exploit | Replicate N67: lr_W=7E-4, W_L1=4E-5, data_aug=18 | Confirm V_rest=0.507 |
+| 1 | N67 | exploit | data_aug: 18→20 with W_L1=4E-5 | Test if data_aug=20 improves V_rest |
+| 2 | N67 | explore | lr_W: 7E-4→6.5E-4 with W_L1=4E-5 | Combine best W_L1 with mid lr_W |
+| 3 | N62 | principle-test | W_L1: 3E-5→4E-5 at N62 config (lr_W=6E-4, data_aug=20) | Test if W_L1=4E-5 beats W_L1=3E-5 |
+
+
+============================================================
+=== Batch 37-40 ===
+============================================================
+**Summary of batch 37-40 (iterations 69-72) analysis:**
+
+## Results
+
+| Slot | Node | Config | conn_R2 | field_R2 | V_rest_R2 | tau_R2 | time |
+|------|------|--------|---------|----------|-----------|--------|------|
+| 0 | N69 | N67 replicate (lr_W=7E-4, W_L1=4E-5, data_aug=18) | 0.962 | 0.550 | 0.430 | 0.976 | 64 |
+| 1 | N70 | data_aug=20 at W_L1=4E-5, lr_W=7E-4 | 0.951 | 0.535 | **0.530** | 0.951 | 59 |
+| 2 | N71 | lr_W=5.5E-4, W_L1=3E-5, data_aug=20 | 0.958 | 0.549 | 0.484 | 0.970 | 63 |
+| 3 | N72 | batch=2, lr_W=6.5E-4, W_L1=3E-5 | 0.944 | 0.528 | 0.322 | 0.945 | 55 |
+
+## Key Findings
+
+1. **N70 V_rest=0.530!** — W_L1=4E-5 + lr_W=7E-4 + data_aug=20 gives 3rd best V_rest (after N62=0.559, N67=0.507)
+2. **Two competitive regimes confirmed:** N62 (lr_W=6E-4, W_L1=3E-5) vs N70 (lr_W=7E-4, W_L1=4E-5)
+3. **lr_W=5.5E-4 works** — N71 V_rest=0.484, viable mid lr_W option
+4. **batch=2 + lr_W=6.5E-4 FAILS** — V_rest=0.322, confirms lr_W=6E-4 optimal for batch=2
+
+## Next Batch (73-76) Mutations
+
+| Slot | Parent | Strategy | Mutation |
+|------|--------|----------|----------|
+| 0 | N70 | exploit | REPLICATE N70 (lr_W=7E-4, W_L1=4E-5, data_aug=20) |
+| 1 | N62 | exploit | lr_W: 6E-4 -> 6.5E-4 at W_L1=3E-5 |
+| 2 | N70 | explore | W_L1: 4E-5 -> 3.5E-5 at lr_W=7E-4 |
+| 3 | N71 | principle-test | data_aug: 20 -> 18 at lr_W=5.5E-4. Testing: "data_aug=20 is critical" |
+
+
+============================================================
+=== Batch 37-40 ===
+============================================================
+The configs are set up correctly:
+- **Slot 0**: lr_W=6E-4, W_L1=3E-5, data_aug=20 (N62 replicate)
+- **Slot 1**: lr_W=7E-4, W_L1=4E-5, data_aug=20 (N70 replicate)
+- **Slot 2**: lr_W=5.8E-4, W_L1=3E-5, data_aug=20 (explore lower lr_W)
+- **Slot 3**: lr_W=7E-4, W_L1=4.5E-5, data_aug=18 (principle-test W_L1=4E-5)
+
+---
+
+**Batch 10 (Iterations 37-40 = Nodes 73-76) Analysis Summary:**
+
+| Slot | Node | Config | conn_R2 | field_R2 | V_rest_R2 | tau_R2 | time |
+|------|------|--------|---------|----------|-----------|--------|------|
+| 0 | N73 | lr_W=7E-4, W_L1=4E-5, data_aug=18 | 0.954 | 0.533 | 0.431 | 0.970 | 58 |
+| 1 | N74 | lr_W=6.5E-4, W_L1=3E-5, data_aug=20 | 0.945 | **0.555** | **0.465** | 0.966 | 64 |
+| 2 | N75 | lr_W=7E-4, W_L1=3.5E-5, data_aug=20 | 0.957 | 0.524 | 0.337 | 0.965 | 58 |
+| 3 | N76 | lr_W=5.5E-4, W_L1=3E-5, data_aug=18 | 0.955 | 0.547 | 0.423 | 0.968 | 64 |
+
+**Key Findings:**
+1. **data_aug=20 is CONFIRMED critical** — N73 (data_aug=18) got V_rest=0.431 vs N70 (data_aug=20) V_rest=0.530
+2. **lr_W=6.5E-4 + W_L1=3E-5** gives V_rest=0.465 — 4th best after N62/N70/N67
+3. **W_L1=3.5E-5 is NOT sweet spot** — V_rest=0.337 << N70's 0.530 (4E-5 optimal for lr_W=7E-4)
+4. **N74's field_R2=0.555** is best in batch (matches N62's regime)
+
+**Next Batch (Iter 77-80) Configuration:**
+- Slot 0: **N62 replicate** — lr_W=6E-4, W_L1=3E-5, data_aug=20 (confirm V_rest=0.559)
+- Slot 1: **N70 replicate** — lr_W=7E-4, W_L1=4E-5, data_aug=20 (confirm V_rest=0.530)
+- Slot 2: **Explore** — lr_W=5.8E-4, W_L1=3E-5, data_aug=20 (test lower lr_W)
+- Slot 3: **Principle-test** — lr_W=7E-4, W_L1=4.5E-5, data_aug=18 (test if W_L1=4E-5 is optimal)
+
+
+============================================================
+=== Batch 41-44 ===
+============================================================
+All configs are set correctly for the next batch. Here's the summary:
+
+## Batch 11 (Iter 77-80) Analysis Complete
+
+### Results Summary
+| Slot | Node | conn_R2 | field_R2 | V_rest_R2 | tau_R2 | cluster | time | Key finding |
+|------|------|---------|----------|-----------|--------|---------|------|-------------|
+| 0 | N77 | 0.960 | 0.539 | 0.419 | 0.964 | **0.894** | 64 | **HIGH VARIANCE!** N70 replicate got 0.419 vs 0.530 |
+| 1 | N78 | FAILED | - | - | - | - | - | Run failed |
+| 2 | N79 | 0.958 | 0.552 | 0.418 | 0.972 | 0.825 | 63 | lr_W=5.8E-4 + W_L1=3.5E-5 → V_rest=0.418 |
+| 3 | N80 | 0.953 | 0.526 | 0.311 | 0.959 | 0.874 | 57 | lr_W=5.5E-4 + data_aug=18 → V_rest=0.311 (POOR) |
+
+### Key Findings
+1. **HIGH VARIANCE in V_rest!** N77 replicate of N70 got V_rest=0.419 vs N70's 0.530 (~0.11 variance)
+2. **N78 FAILED** - cannot assess N62 reproducibility this batch
+3. **W_L1=3.5E-5 NOT optimal** - N79 V_rest=0.418 with this intermediate value
+4. **lr_W=5.5E-4 + data_aug=18 POOR** - N80 V_rest=0.311, both parameters must be optimal together
+5. **cluster_accuracy=0.894** at N77 is excellent even with lower V_rest
+
+### Next Batch (Iter 81-84) Configuration
+| Slot | Node | Strategy | Key params | Mutation |
+|------|------|----------|------------|----------|
+| 0 | N81 | exploit | lr_W=6E-4, W_L1=3E-5, data_aug=20 | EXACT replicate N62 (retry after N78 failed) |
+| 1 | N82 | exploit | lr_W=7E-4, W_L1=4.5E-5, data_aug=20 | Test W_L1=4.5E-5 for stability |
+| 2 | N83 | explore | lr_W=5.9E-4, W_L1=3E-5, data_aug=20 | Finer lr_W gradient near N62 optimal |
+| 3 | N84 | principle-test | lr_W=6E-4, W_L1=3E-5, edge_diff=850 | Test principle: "coeff_edge_diff=750 is optimal" |
+
+
+============================================================
+=== Batch 41-44 ===
+============================================================
+All configs are correctly set. Here's a summary:
+
+## Batch 12 (Iterations 81-84) Analysis Complete
+
+### Results Summary
+
+| Slot | Node | conn_R2 | field_R2 | V_rest_R2 | tau_R2 | cluster | time | Key finding |
+|------|------|---------|----------|-----------|--------|---------|------|-------------|
+| 0 | N81 | 0.955 | 0.554 | **0.264** | 0.950 | 0.859 | 64 | **EXTREME VARIANCE!** N62 replicate: 0.264 vs 0.559 |
+| 1 | N82 | 0.959 | 0.552 | **0.465** | 0.964 | 0.826 | 64 | **W_L1=4.5E-5 MORE STABLE** than 4E-5 |
+| 2 | N83 | 0.953 | 0.554 | 0.370 | **0.975** | 0.837 | 63 | lr_W=5.9E-4, excellent tau |
+| 3 | N84 | **0.964** | 0.529 | 0.426 | 0.969 | 0.865 | 59 | edge_diff=850 boosts conn |
+
+### Key Findings:
+1. **N62's V_rest=0.559 is NOT REPRODUCIBLE** — N81 exact replicate got V_rest=0.264 (0.295 drop!)
+2. **W_L1=4.5E-5 at lr_W=7E-4 is MORE STABLE** — N82 V_rest=0.465 > N77's 0.419 (W_L1=4E-5)
+3. **edge_diff=850 is VIABLE** — N84 conn=0.964 (best), V_rest=0.426, small field drop
+4. **V_rest variance is EXTREME (~0.3)** — focus should shift to stability over peak performance
+
+### Next Batch (Iter 85-88) Configs:
+| Slot | Strategy | Key changes | Rationale |
+|------|----------|-------------|-----------|
+| 0 (N85) | exploit | lr_W=7E-4, W_L1=4.5E-5, data_aug=20 | Replicate N82 for stability test |
+| 1 (N86) | exploit | W_L1=5E-5 at lr_W=7E-4, data_aug=20 | Test higher W_L1 |
+| 2 (N87) | explore | edge_diff=900 at lr_W=6E-4, W_L1=3E-5 | Test edge_diff gradient |
+| 3 (N88) | principle-test | batch=2 at W_L1=4.5E-5, lr_W=7E-4 | Test if batch=2+lr_W=7E-4 works with W_L1=4.5E-5 |
+
+
+============================================================
+=== Batch 45-48 ===
+============================================================
+**Summary of Batch 13 Analysis (Block 2 END):**
+
+## Results (Iterations 85-88 / Nodes N85-N88)
+
+| Slot | Node | conn_R2 | field_R2 | V_rest_R2 | tau_R2 | cluster | Key finding |
+|------|------|---------|----------|-----------|--------|---------|-------------|
+| 0 | N85 | 0.959 | 0.549 | 0.403 | 0.966 | 0.851 | N62-like config, V_rest in variance range |
+| 1 | N86 | 0.949 | 0.549 | 0.333 | 0.959 | 0.837 | W_L1=4.5E-5 shows variance (0.333 vs N82's 0.465) |
+| 2 | N87 | 0.959 | 0.551 | **0.447** | 0.968 | **0.871** | **BEST this batch!** lr_W=5.9E-4 viable |
+| 3 | N88 | 0.942 | 0.551 | 0.452 | **0.970** | 0.832 | edge_diff=850 replicate, tau excellent |
+
+## Block 2 Summary
+
+**CRITICAL FINDING: V_rest has EXTREME VARIANCE (~0.3)**
+- N62 (lr_W=6E-4, W_L1=3E-5): V_rest ranged 0.264-0.559 across replicates
+- W_L1=4.5E-5 regime also shows variance: 0.333-0.465
+
+**Best Configs (mean V_rest):**
+- lr_W=7E-4, W_L1=4E-5: mean=0.475 (N70, N77)
+- lr_W=5.9E-4, W_L1=3E-5: 0.447 (N87) - may be most stable
+
+## Next Batch (Block 3, Iter 1-4): Siren Architecture Exploration
+
+Using N87 baseline (lr_W=5.9E-4, W_L1=3E-5, batch=1, data_aug=20):
+
+| Slot | Mutation | Rationale |
+|------|----------|-----------|
+| 0 | omega_f: 2048 -> 3072 | Test higher omega_f |
+| 1 | hidden_dim_nnr_f: 2048 -> 1536 | Test smaller Siren |
+| 2 | omega_f: 2048 -> 4096 | Retest original omega |
+| 3 | n_layers_nnr_f: 3 -> 4 | Principle test: "n_layers must be 3" |
+
+
+============================================================
+=== Batch 45-48 ===
+============================================================
+**Batch 12 (Iter 45-48) Analysis Complete — BLOCK END**
+
+## Summary of Results
+
+| Iter | omega_f | h_dim_nnr | n_layers | conn_R2 | field_R2 | V_rest_R2 | tau_R2 | cluster | Status |
+|------|---------|-----------|----------|---------|----------|-----------|--------|---------|--------|
+| 45 | 3072 | 2048 | 3 | 0.950 | 0.553 | 0.459 | 0.972 | 0.855 | partial |
+| 46 | 2048 | 1536 | 3 | 0.953 | 0.552 | 0.441 | 0.970 | 0.803 | partial |
+| 47 | 4096 | 2048 | 3 | 0.959 | 0.552 | 0.414 | 0.970 | 0.879 | partial |
+| 48 | 2048 | 2048 | **4** | - | - | - | - | - | **FAILED** |
+
+## Key Findings
+
+1. **omega_f flexibility confirmed**: 2048, 3072, and 4096 all give field_R2≈0.55. omega_f=2048 gives slightly better V_rest.
+
+2. **h_dim_nnr_f=1536 viable**: Smaller Siren works without field penalty — may reduce variance.
+
+3. **n_layers_nnr_f=4 FAILS**: Principle **CONFIRMED** — Siren must have exactly 3 layers.
+
+4. **edge_diff=900 helps cluster**: N47 achieved cluster=0.879 with edge_diff=900.
+
+## Block 2 Final Summary
+
+- **Best V_rest**: N62 (0.559) — but unreproducible (variance ~0.3)
+- **Best conn**: N64 (0.965)
+- **Best tau**: N45 (0.979)
+- **Critical discovery**: V_rest has extreme variance across runs
+
+## Next Batch (Block 3, Iter 49-52) — Variance Reduction
+
+| Slot | Strategy | Mutation | Goal |
+|------|----------|----------|------|
+| 0 | exploit | h_dim_nnr=1536, omega_f=3072, lr_W=7E-4 | Test smaller Siren |
+| 1 | exploit | Replicate N47 (edge_diff=900, omega=4096) | Confirm cluster gain |
+| 2 | explore | W_L2=1E-6 added | Test L2 for stability |
+| 3 | principle-test | Exact N62 replicate | Measure V_rest variance |
+
+
+============================================================
+=== Batch 49-52 ===
+============================================================
+All tasks completed. Here's a summary of the batch 13 analysis and next batch setup:
+
+## Batch 13 Results Summary (Iterations 49-52)
+
+| Slot | Iter | Status | conn_R2 | field_R2 | V_rest_R2 | tau_R2 | cluster | Key Finding |
+|------|------|--------|---------|----------|-----------|--------|---------|-------------|
+| 0 | 49 | **FAILED** | - | - | - | - | - | h_dim_nnr=1536 + omega=3072 unstable |
+| 1 | 50 | OK | 0.958 | 0.512 | 0.400 | 0.971 | 0.868 | edge_diff=900 + omega=4096 stable |
+| 2 | 51 | **BEST** | 0.959 | **0.635** | 0.479 | 0.976 | 0.839 | **W_L2=1E-6 NEW BEST field!** |
+| 3 | 52 | **FAILED** | - | - | - | - | - | N62 replicate failed |
+
+**Major Discovery:** Node 91 (iter 51) achieves **field_R2=0.635**, beating the previous best of 0.607 (N35) by 4.6%! The addition of W_L2=1E-6 regularization significantly improves field learning.
+
+## Next Batch (Iterations 53-56) Configuration
+
+| Slot | Config | Strategy | Key Parameters |
+|------|--------|----------|----------------|
+| 0 | N91 replicate | exploit | lr_W=5.9E-4, W_L1=3E-5, **W_L2=1E-6**, omega=2048 |
+| 1 | W_L2=2E-6 | exploit | Same as N91 but **W_L2=2E-6** (test stronger) |
+| 2 | W_L2 + edge_diff=900 | explore | W_L2=1E-6, **edge_diff=900** (combine for cluster) |
+| 3 | W_L2 + lr_W=6E-4 | principle-test | W_L2=1E-6, **lr_W=6E-4** (N62-like with W_L2) |
+
+All 4 configs have been updated and are ready for the next batch.
+
+
+============================================================
+=== Batch 49-52 ===
+============================================================
+All configs are set correctly for Batch 15 (Iter 57-60).
+
+**Summary of Batch 14 Analysis (Iter 53-56 / Nodes N93-N96):**
+
+| Slot | Node | Key Changes | conn_R2 | field_R2 | V_rest_R2 | tau_R2 | Status |
+|------|------|-------------|---------|----------|-----------|--------|--------|
+| 0 | N93 | lr_W=7E-4, W_L1=4.5E-5, W_L2=1E-6 | 0.950 | 0.558 | 0.468 | 0.966 | OK |
+| 1 | N94 | **W_L2=2E-6**, edge_diff=900 | 0.938 | **0.638** | **0.518** | **0.982** | **NEW BEST!** |
+| 2 | N95 | edge_diff=900, lr_W=5.9E-4 | 0.964 | 0.557 | 0.351 | 0.974 | OK |
+| 3 | N96 | lr_W=6E-4, W_L2=1E-6 | 0.962 | 0.554 | 0.398 | 0.979 | OK |
+
+**Key Findings:**
+1. **N94 achieves NEW BEST field_R2=0.638** (W_L2=2E-6 > W_L2=1E-6)
+2. **N94 also has excellent tau_R2=0.982** (best overall) and V_rest=0.518 (2nd best)
+3. V_rest variance persists — N95 got V_rest=0.351 despite similar config to N91 (0.479)
+4. Connectivity drops slightly with W_L2=2E-6 (0.938 vs 0.96+ at W_L2=1E-6)
+
+**Next Batch 15 (Iter 57-60) Plan:**
+- Slot 0: Replicate N94 exactly (confirm reproducibility)
+- Slot 1: W_L2: 2E-6 → 3E-6 (explore stronger W_L2)
+- Slot 2: lr_W: 6E-4 → 5.9E-4 with W_L2=2E-6 (recover connectivity)
+- Slot 3: batch=2 with W_L2=2E-6 (principle test: batch=1 vs batch=2)
+
+
+============================================================
+=== Batch 53-56 ===
+============================================================
+Configs are correct. Let me summarize what was done.
+
+**Summary: Batch 15 (Iterations 53-56) Analysis**
+
+All 4 slots failed in this batch. The analysis log files were empty, indicating infrastructure or numerical instability issues.
+
+**What was planned:**
+- Slot 0 (N97): Replicate N94 (W_L2=2E-6, edge_diff=900) — failed
+- Slot 1 (N98): W_L2=3E-6 test — failed
+- Slot 2 (N99): lr_W=5.9E-4 + W_L2=2E-6 — failed
+- Slot 3 (N100): batch=2 + W_L2=2E-6 — failed
+
+**Batch 16 (Iterations 57-60) Setup — Conservative Recovery:**
+
+| Slot | Config | Strategy | Key params |
+|------|--------|----------|------------|
+| 0 | N91-like | exploit | lr_W=5.9E-4, W_L2=1E-6, batch=1 |
+| 1 | W_L2=1.5E-6 | exploit | lr_W=5.9E-4, W_L2=1.5E-6, batch=1 |
+| 2 | N64+W_L2 | explore | lr_W=6E-4, W_L2=1E-6, batch=2 |
+| 3 | N62-like | principle-test | lr_W=6E-4, W_L2=0, batch=1 (V_rest variance test) |
+
+The strategy for batch 16 reverts to more conservative W_L2 values (1E-6 and 1.5E-6 instead of 2E-6 and 3E-6) to avoid potential instability that may have caused the batch 15 failures. Slot 3 tests without W_L2 regularization to provide a baseline comparison and assess V_rest variance.
+
+
+============================================================
+=== Batch 57-60 ===
+============================================================
+## Batch 16 Analysis Complete (Iterations 57-60)
+
+**Results Summary:**
+
+| Slot | Node | Config | conn_R2 | field_R2 | V_rest_R2 | tau_R2 | cluster | time |
+|------|------|--------|---------|----------|-----------|--------|---------|------|
+| 0 | N101 | N91 replicate (lr_W=5.9E-4, W_L2=1E-6) | 0.954 | 0.551 | 0.338 | 0.968 | 0.861 | 63.7 |
+| 1 | N102 | W_L2=1.5E-6 | **0.959** | 0.550 | 0.345 | 0.970 | **0.874** | 63.5 |
+| 2 | N103 | batch=2 + W_L2=1E-6 | 0.955 | 0.523 | 0.360 | 0.969 | 0.839 | **56.3** |
+| 3 | N104 | N62 replicate (variance test) | **0.959** | 0.550 | 0.333 | **0.973** | 0.884 | 63.0 |
+
+**Key Findings:**
+1. **All 4 slots recovered** from Batch 15's infrastructure failure
+2. **V_rest variance CONFIRMED**: N104 (N62 replicate) got V_rest=0.333 vs original N62's 0.559 — a delta of 0.226
+3. **W_L2=1.5E-6 stable** and slightly improves conn (N102: 0.959 vs N101: 0.954)
+4. **batch=2 + W_L2=1E-6 viable** with 56 min training time (faster than batch=1)
+
+**Batch 17 Plan (Iterations 61-64):**
+
+| Slot | Parent | Strategy | Mutation | Key Parameters |
+|------|--------|----------|----------|----------------|
+| 0 | N64 | exploit | batch=2, W_L2=1.5E-6 | lr_W=6E-4, edge_diff=750 |
+| 1 | N58 | exploit | edge_diff: 750→850 | lr_W=6E-4, W_L1=3E-5, batch=1 |
+| 2 | N102 | explore | W_L2: 1.5E-6→2E-6 | lr_W=5.9E-4, batch=1 (safer LR to test W_L2) |
+| 3 | N57 | principle-test | edge_diff: 750→1000 | Testing: "edge_diff=750-900 optimal" (test upper bound) |
+
+
+============================================================
+=== Batch 61-64 ===
+============================================================
+**Batch 17 Analysis Complete (Iterations 61-64)**
+
+All 4 slots **FAILED** — this is the second consecutive all-failure batch (after Batch 15). The failures are likely infrastructure-related, not config-related, since Batch 16 recovered successfully with similar configurations.
+
+**Summary of failed experiments:**
+| Slot | Node | Mutation | Status |
+|------|------|----------|--------|
+| 0 | N105 | batch=2 + W_L2=1.5E-6 | FAILED |
+| 1 | N106 | edge_diff: 750 -> 850 | FAILED |
+| 2 | N107 | W_L2=2E-6 at lr_W=5.9E-4 | FAILED |
+| 3 | N108 | edge_diff=1000 (principle test) | FAILED |
+
+**Batch 18 Plan (Iterations 65-68) — Recovery configs:**
+| Slot | Parent | Strategy | Config |
+|------|--------|----------|--------|
+| 0 | N102 | exploit | **N102 replicate** (lr_W=5.9E-4, W_L2=1.5E-6, batch=1, data_aug=20) |
+| 1 | N104 | exploit | **N104 replicate** (lr_W=6E-4, W_L2=0, batch=1, data_aug=20) |
+| 2 | N67 | explore | lr_W=6.5E-4, W_L1=4E-5, W_L2=0, data_aug=18 (UCB-guided) |
+| 3 | N70 | principle-test | lr_W=7E-4, W_L1=4E-5, **data_aug=22** (testing "data_aug=20 optimal") |
+
+The recovery strategy uses:
+1. Ultra-conservative configs (no W_L2=2E-6 which failed in Batch 15)
+2. Known-working baseline replicates (N102, N104)
+3. UCB-guided exploration from high-scoring nodes (N67, N70)
+4. Principle test on data_aug upper bound
+
+
+============================================================
+=== Batch 65-68 ===
+============================================================
+**Batch 18 Analysis Complete (Iterations 65-68)**
+
+**Results Summary:**
+| Slot | Iter | Node | Status | conn_R2 | field_R2 | V_rest_R2 | tau_R2 | cluster | Key Finding |
+|------|------|------|--------|---------|----------|-----------|--------|---------|-------------|
+| 0 | 65 | N109 | FAILED | 0.958 | 0.545 | 0.341 | 0.970 | N/A | Training OK, cluster failed |
+| 1 | 66 | N110 | FAILED | 0.956 | 0.554 | 0.420 | 0.964 | N/A | Training OK, cluster failed |
+| 2 | 67 | N111 | PARTIAL | 0.954 | 0.530 | 0.340 | 0.972 | 0.868 | Only complete slot |
+| 3 | 68 | N112 | FAILED | N/A | 0.565 | N/A | N/A | N/A | Metrics extraction failed |
+
+**Key Insights:**
+1. **Infrastructure partially recovered** — training completes but cluster analysis crashes for most slots
+2. **W_L2=1.5E-6 at lr_W=5.9E-4 shows remarkably LOW variance** — N102 vs N109: V_rest=0.345 vs 0.341 (range only 0.004)
+3. **data_aug=22 shows best field_R2** (0.565) but exceeds 60 min time limit (68 min)
+4. **V_rest variance continues** — even with stable configs, V_rest ranges from 0.340 to 0.420 across slots
+
+**Batch 19 Mutations (Iterations 69-72):**
+| Slot | Node | Parent | Strategy | Config Changes |
+|------|------|--------|----------|----------------|
+| 0 | N113 | N61 | exploit | lr_W=6.5E-4, W_L1=3E-5, data_aug=16, W_L2=0 (UCB=4.427) |
+| 1 | N114 | N69 | exploit | lr_W=7E-4, W_L1=4E-5, data_aug=18, W_L2=0 (UCB=4.426) |
+| 2 | N115 | N94 | explore | lr_W=6E-4, W_L1=3E-5, W_L2=2E-6, edge_diff=900 (retry best field config) |
+| 3 | N116 | N110 | principle-test | lr_W=6.5E-4, W_L1=3E-5, data_aug=20 (test "lr_W=6E-4 optimal") |
+
+
+============================================================
+=== Batch 69-72 ===
+============================================================
+**Summary of Batch 19 Analysis (Iterations 69-72) — BLOCK 3 END:**
+
+**Results:**
+| Slot | Node | Config | conn_R2 | field_R2 | V_rest_R2 | tau_R2 | cluster | Time |
+|------|------|--------|---------|----------|-----------|--------|---------|------|
+| 0 | N113 | data_aug=16, lr_W=6.5E-4 | 0.955 | 0.518 | 0.370 | 0.958 | 0.833 | 52 |
+| 1 | N114 | lr_W=7E-4, W_L1=4E-5 | 0.906 | 0.533 | 0.251 | **0.501** | 0.867 | 58 |
+| 2 | N115 | W_L2=2E-6, edge_diff=900 | 0.957 | 0.551 | 0.461 | **0.978** | 0.859 | 64 |
+| 3 | N116 | lr_W=6.5E-4, W_L1=3E-5 | 0.955 | 0.551 | **0.511** | 0.967 | 0.865 | 63 |
+
+**Key Discoveries:**
+1. **tau_R2 variance discovered** — N114 tau=0.501 vs N69 tau=0.976 (same config!). Range of 0.475.
+2. **W_L2=2E-6 is stable** — N115 succeeded (field=0.551, tau=0.978) but field lower than N94's outlier 0.638
+3. **lr_W=6.5E-4 is excellent** — N116 V_rest=0.511 best this batch
+4. **data_aug=16 insufficient** — N113 field=0.518 and cluster=0.833 both dropped
+
+**Block 4 Setup (Next Batch — Iter 73-76):**
+| Slot | Strategy | Mutation | Config Summary |
+|------|----------|----------|----------------|
+| 0 | exploit | W_L2: 2E-6 -> 2.5E-6 | Build on N115, push W_L2 higher |
+| 1 | exploit | Add W_L2=1E-6 to N116 | lr_W=6.5E-4, W_L1=3E-5, W_L2=1E-6 |
+| 2 | explore | batch=4, data_aug=22 | Test high batch with extended data_aug |
+| 3 | principle-test | edge_diff: 900 -> 1000 | Test edge_diff upper bound |
 

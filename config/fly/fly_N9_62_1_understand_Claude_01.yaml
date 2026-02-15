@@ -21,7 +21,7 @@ graph_model:
   signal_model_name: PDE_N9_A
   prediction: first_derivative
   input_size: 3
-  n_layers: 3
+  n_layers: 4
   hidden_dim: 80
   output_size: 1
   input_size_update: 5
@@ -44,7 +44,7 @@ training:
   n_epochs: 1
   n_runs: 1
   device: auto
-  recurrent_training: false
+  recurrent_training: true
   batch_size: 2
   batch_ratio: 1
   small_init_batch_size: false
@@ -62,7 +62,7 @@ training:
   coeff_phi_weight_L1_rate: 0.5
   coeff_edge_weight_L2: 0
   coeff_phi_weight_L2: 0.001
-  coeff_W_L1: 5.0e-05
+  coeff_W_L1: 3.0e-05
   coeff_W_L1_rate: 0.5
   coeff_W_L2: 3.0e-06
   w_init_mode: zeros
@@ -72,3 +72,4 @@ claude:
   n_iter_block: 0
   ucb_c: 1.414
   node_name: h100
+  mutation: (Iter 38 config - 3rd documentation confirmation)

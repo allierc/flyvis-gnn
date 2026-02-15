@@ -1,4 +1,4 @@
-description: 'Slot 2: Much higher Siren lr=1E-4, baseline GNN params'
+description: designed by Claude (parallel flyvis)
 dataset: fly_N9_62_1
 simulation:
   connectivity_file: to be specified
@@ -33,13 +33,13 @@ graph_model:
   update_type: generic
   lin_edge_positive: true
   input_size_nnr_f: 3
-  hidden_dim_nnr_f: 4096
+  hidden_dim_nnr_f: 2048
   n_layers_nnr_f: 3
   outermost_linear_nnr_f: true
   output_size_nnr_f: 1
   nnr_f_xy_period: 1.0
   nnr_f_T_period: 64000
-  omega_f: 4096
+  omega_f: 2048
 plotting:
   colormap: tab20
   arrow_length: 1
@@ -54,14 +54,14 @@ training:
   n_runs: 1
   device: auto
   recurrent_training: false
-  batch_size: 1
+  batch_size: 4
   batch_ratio: 1
   sparsity: none
-  data_augmentation_loop: 25
-  learning_rate_W_start: 0.0005
+  data_augmentation_loop: 22
+  learning_rate_W_start: 0.0007
   learning_rate_start: 0.0012
   learning_rate_embedding_start: 0.0015
-  learning_rate_NNR_f: 1.0e-04
+  learning_rate_NNR_f: 1.0e-08
   coeff_edge_diff: 750
   coeff_update_u_diff: 0
   coeff_update_msg_diff: 0
@@ -73,6 +73,7 @@ training:
   coeff_phi_weight_L2: 0.001
   coeff_W_L1: 5.0e-05
   coeff_W_L1_rate: 0.5
+  coeff_W_L2: 0
   w_init_mode: zeros
 claude:
   n_epochs: 1

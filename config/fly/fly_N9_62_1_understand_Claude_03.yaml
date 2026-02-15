@@ -72,3 +72,4 @@ claude:
   n_iter_block: 0
   ucb_c: 1.414
   node_name: h100
+  mutation: (Iter 4 config - 15th confirmation)

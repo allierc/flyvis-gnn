@@ -20,15 +20,15 @@ simulation:
 graph_model:
   signal_model_name: PDE_N9_A
   prediction: first_derivative
-  input_size: 3
-  n_layers: 3
+  input_size: 5
+  n_layers: 4
   hidden_dim: 80
   output_size: 1
-  input_size_update: 5
+  input_size_update: 7
   n_layers_update: 3
   hidden_dim_update: 80
   aggr_type: add
-  embedding_dim: 2
+  embedding_dim: 4
   update_type: generic
   lin_edge_positive: true
 plotting:
@@ -44,13 +44,13 @@ training:
   n_epochs: 1
   n_runs: 1
   device: auto
-  recurrent_training: false
+  recurrent_training: true
   batch_size: 2
   batch_ratio: 1
   small_init_batch_size: false
   sparsity: none
   data_augmentation_loop: 20
-  learning_rate_W_start: 0.0003
+  learning_rate_W_start: 0.0006
   learning_rate_start: 0.0012
   learning_rate_embedding_start: 0.0015
   coeff_edge_diff: 750
@@ -72,3 +72,4 @@ claude:
   n_iter_block: 0
   ucb_c: 1.414
   node_name: h100
+  mutation: (Iter 33 config - 3rd documentation confirmation)
