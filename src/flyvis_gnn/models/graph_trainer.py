@@ -106,16 +106,14 @@ try:
     from flyvis_gnn.models.HashEncoding_Network import HashEncodingMLP
 except ImportError:
     HashEncodingMLP = None
-from flyvis_gnn.zarr_io import load_simulation_data_raw
+from flyvis_gnn.zarr_io import load_simulation_data, load_simulation_data_raw
+from flyvis_gnn.neuron_state import NeuronState
 
 from flyvis_gnn.sparsify import EmbeddingCluster, sparsify_cluster, clustering_evaluation
 from flyvis_gnn.fitting_models import linear_model
 
 from scipy.optimize import curve_fit
 
-from torch_geometric.data import Data as pyg_Data
-from torch_geometric.loader import DataLoader
-import torch_geometric as pyg
 import seaborn as sns
 # denoise_data import not needed - removed star import
 import imageio
@@ -140,6 +138,37 @@ from collections import deque
 from tqdm import tqdm, trange
 from prettytable import PrettyTable
 import imageio
+
+
+def _batch_frames(frames, edge_index):
+    """Batch multiple NeuronState frames into a single concatenated NeuronState + batched edge_index.
+
+    Replaces PyG DataLoader batching: concatenates node tensors across frames
+    and replicates/offsets edge_index per frame.
+
+    Args:
+        frames: list of NeuronState, each with N neurons
+        edge_index: (2, E) tensor — shared connectivity for one frame
+
+    Returns:
+        (batched_state, batched_edges) where batched_state has B*N neurons
+        and batched_edges has B*E edges with properly offset indices.
+    """
+    n_per_frame = frames[0].n_neurons
+    batched = NeuronState(
+        index=torch.cat([f.index for f in frames]),
+        pos=torch.cat([f.pos for f in frames]),
+        group_type=torch.cat([f.group_type for f in frames]),
+        neuron_type=torch.cat([f.neuron_type for f in frames]),
+        voltage=torch.cat([f.voltage for f in frames]),
+        stimulus=torch.cat([f.stimulus for f in frames]),
+        calcium=torch.cat([f.calcium for f in frames]),
+        fluorescence=torch.cat([f.fluorescence for f in frames]),
+    )
+    batched_edges = torch.cat(
+        [edge_index + i * n_per_frame for i in range(len(frames))], dim=1
+    )
+    return batched, batched_edges
 
 
 def data_train(config=None, erase=False, best_model=None, style=None, device=None, log_file=None):
@@ -236,24 +265,22 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
     x_list = []
     y_list = []
-    for run in trange(0,n_runs, ncols=50):
-        # load with format-aware loader (supports both .npy and .zarr)
-        x = load_simulation_data_raw(f'graphs_data/{dataset_name}/x_list_{run}')
+    for run in trange(0, n_runs, ncols=50):
+        x = load_simulation_data(f'graphs_data/{dataset_name}/x_list_{run}')
         y = load_simulation_data_raw(f'graphs_data/{dataset_name}/y_list_{run}')
 
         if training_selected_neurons:
             selected_neuron_ids = np.array(train_config.selected_neuron_ids).astype(int)
-            x = x[:, selected_neuron_ids, :]
+            x = x.subset_neurons(selected_neuron_ids)
             y = y[:, selected_neuron_ids, :]
 
         x_list.append(x)
         y_list.append(y)
 
-    print(f'dataset: {len(x_list)} run, {len(x_list[0])} frames')
-    x = x_list[0][n_frames - 10]
+    print(f'dataset: {len(x_list)} run, {x_list[0].n_frames} frames')
+    x = x_list[0].frame(n_frames - 10)
 
-    activity = torch.tensor(x_list[0][:, :, 3:4], device=device)
-    activity = activity.squeeze()
+    activity = x_list[0].voltage.to(device)
     distrib = activity.flatten()
     valid_distrib = distrib[~torch.isnan(distrib)]
     if len(valid_distrib) > 0:
@@ -265,11 +292,11 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     print(f'xnorm: {to_numpy(xnorm):0.3f}')
     logger.info(f'xnorm: {to_numpy(xnorm)}')
 
-    n_neurons = x.shape[0]
+    n_neurons = x.n_neurons
     print(f'n neurons: {n_neurons}')
     logger.info(f'N neurons: {n_neurons}')
-    config.simulation.n_neurons =n_neurons
-    type_list = torch.tensor(x[:, 6:7], device=device)  # neuron_type is at column 6
+    config.simulation.n_neurons = n_neurons
+    type_list = x.neuron_type.float().unsqueeze(-1).to(device)
     ynorm = torch.tensor(1.0, device=device)
     torch.save(ynorm, os.path.join(log_dir, 'ynorm.pt'))
     time.sleep(0.5)
@@ -279,7 +306,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     # SVD analysis of activity and visual stimuli (skip if already exists)
     svd_plot_path = os.path.join(log_dir, 'results', 'svd_analysis.png')
     if not os.path.exists(svd_plot_path):
-        analyze_data_svd(x_list[0], log_dir, config=config, logger=logger, is_flyvis=True)
+        analyze_data_svd(x_list[0].to_packed(), log_dir, config=config, logger=logger, is_flyvis=True)
     else:
         print(f'svd analysis already exists: {svd_plot_path}')
 
@@ -416,7 +443,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
             optimizer.zero_grad()
 
-            dataset_batch = []
+            state_batch = []
             ids_batch = []
             k_batch = []
             visual_input_batch = []
@@ -432,24 +459,26 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                 if recurrent_training or neural_ODE_training:
                     k = k - k % time_step
 
-                x = torch.tensor(x_list[run][k], dtype=torch.float32, device=device)
+                x = x_list[run].frame(k).to(device)
 
                 if time_window > 0:
-                    x_temporal = x_list[run][k - time_window + 1: k + 1, :, 3:4].transpose(1, 0, 2).squeeze(-1)
-                    x = torch.cat((x, torch.tensor(x_temporal.reshape(n_neurons, time_window), dtype=torch.float32, device=device)), dim=1)
+                    x_temporal = x_list[run].voltage[k - time_window + 1: k + 1].T.float().to(device)
+                    x_packed = torch.cat((x.to_packed(), x_temporal), dim=1)
+                    x = x_packed  # temporal model uses packed tensor with extra columns
 
                 if has_visual_field:
-                    visual_input = model.forward_visual(x,k)
-                    x[:model.n_input_neurons, 4:5] = visual_input
-                    x[model.n_input_neurons:, 4:5] = 0
+                    visual_input = model.forward_visual(x, k)
+                    x.stimulus[:model.n_input_neurons] = visual_input.squeeze(-1)
+                    x.stimulus[model.n_input_neurons:] = 0
 
                 loss = torch.zeros(1, device=device)
                 regularizer.reset_iteration()
 
-                if not (torch.isnan(x).any()):
+                x_packed = x.to_packed() if isinstance(x, NeuronState) else x
+                if not (torch.isnan(x_packed).any()):
                     regul_loss = regularizer.compute(
                         model=model,
-                        x=x,
+                        x=x_packed,
                         in_features=None,
                         ids=ids,
                         ids_batch=None,
@@ -460,9 +489,9 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                     loss = loss + regul_loss
 
                     if recurrent_training or neural_ODE_training:
-                        y = torch.tensor(x_list[run][k + time_step,:,3:4], dtype=torch.float32, device=device).detach()       # loss on next activity
+                        y = x_list[run].voltage[k + time_step].unsqueeze(-1).float().to(device).detach()
                     elif test_neural_field:
-                        y = torch.tensor(x_list[run][k, :n_input_neurons, 4:5], device=device)  # loss on current excitation
+                        y = x_list[run].stimulus[k, :n_input_neurons].unsqueeze(-1).float().to(device)
                     else:
                         y = torch.tensor(y_list[run][k], device=device) / ynorm     # loss on activity derivative
 
@@ -472,30 +501,30 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
                     if not (torch.isnan(y).any()):
 
-                        dataset = pyg_Data(x=x, edge_index=edges)
-                        dataset_batch.append(dataset)
+                        state_batch.append(x)
 
-                        if len(dataset_batch) == 1:
-                            data_id = torch.ones((x.shape[0], 1), dtype=torch.int, device=device) * run
-                            x_batch = x[:, 3:5]
+                        n = x.n_neurons if isinstance(x, NeuronState) else x.shape[0]
+                        if len(state_batch) == 1:
+                            data_id = torch.ones((n, 1), dtype=torch.int, device=device) * run
+                            v_batch = x.voltage.unsqueeze(-1) if isinstance(x, NeuronState) else x[:, 3:4]
                             y_batch = y
                             ids_batch = ids
-                            k_batch = torch.ones((x.shape[0], 1), dtype=torch.int, device=device) * k
+                            k_batch = torch.ones((n, 1), dtype=torch.int, device=device) * k
                             if test_neural_field:
                                 visual_input_batch = visual_input
                         else:
-                            data_id = torch.cat((data_id, torch.ones((x.shape[0], 1), dtype=torch.int, device=device) * run), dim=0)
-                            x_batch = torch.cat((x_batch, x[:, 3:5]), dim=0)
+                            data_id = torch.cat((data_id, torch.ones((n, 1), dtype=torch.int, device=device) * run), dim=0)
+                            v_batch = torch.cat((v_batch, x.voltage.unsqueeze(-1) if isinstance(x, NeuronState) else x[:, 3:4]), dim=0)
                             y_batch = torch.cat((y_batch, y), dim=0)
                             ids_batch = np.concatenate((ids_batch, ids + ids_index), axis=0)
-                            k_batch = torch.cat((k_batch, torch.ones((x.shape[0], 1), dtype=torch.int, device=device) * k), dim=0)
+                            k_batch = torch.cat((k_batch, torch.ones((n, 1), dtype=torch.int, device=device) * k), dim=0)
                             if test_neural_field:
                                 visual_input_batch = torch.cat((visual_input_batch, visual_input), dim=0)
 
-                        ids_index += x.shape[0]
+                        ids_index += n
 
 
-            if not (dataset_batch == []):
+            if state_batch:
 
                 total_loss_regul += loss.item()
 
@@ -506,24 +535,23 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
 
                 elif 'MLP_ODE' in signal_model_name:
-                    batch_loader = DataLoader(dataset_batch, batch_size=batch_size, shuffle=False)
-                    for batch in batch_loader:
-                        pred = model(batch.x, data_id=data_id, return_all=False)
+                    batched_state, _ = _batch_frames(state_batch, edges) if isinstance(state_batch[0], NeuronState) else (torch.cat(state_batch, dim=0), None)
+                    batched_x = batched_state.to_packed() if isinstance(batched_state, NeuronState) else batched_state
+                    pred = model(batched_x, data_id=data_id, return_all=False)
 
                     loss = loss + (pred[ids_batch] - y_batch[ids_batch]).norm(2)
 
                 elif 'MLP' in signal_model_name:
-                    batch_loader = DataLoader(dataset_batch, batch_size=batch_size, shuffle=False)
-                    for batch in batch_loader:
-                        pred = model(batch.x, data_id=data_id, return_all=False)
+                    batched_state, _ = _batch_frames(state_batch, edges) if isinstance(state_batch[0], NeuronState) else (torch.cat(state_batch, dim=0), None)
+                    batched_x = batched_state.to_packed() if isinstance(batched_state, NeuronState) else batched_state
+                    pred = model(batched_x, data_id=data_id, return_all=False)
 
                     loss = loss + (pred[ids_batch] - y_batch[ids_batch]).norm(2)
 
                 else: # GNN branch
 
-                    batch_loader = DataLoader(dataset_batch, batch_size=batch_size, shuffle=False)
-                    for batch in batch_loader:
-                        pred, in_features, msg = model(batch, data_id=data_id, return_all=True)
+                    batched_state, batched_edges = _batch_frames(state_batch, edges) if isinstance(state_batch[0], NeuronState) else _batch_frames(state_batch, edges)
+                    pred, in_features, msg = model(batched_state, batched_edges, data_id=data_id, return_all=True)
 
                     update_regul = regularizer.compute_update_regul(model, in_features, ids_batch, device)
                     loss = loss + update_regul
@@ -533,9 +561,11 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
                         ode_state_clamp = getattr(train_config, 'ode_state_clamp', 10.0)
                         ode_stab_lambda = getattr(train_config, 'ode_stab_lambda', 0.0)
+                        packed_batch = [s.to_packed() if isinstance(s, NeuronState) else s for s in state_batch]
                         ode_loss, pred_x = neural_ode_loss_FlyVis(
                             model=model,
-                            dataset_batch=dataset_batch,
+                            dataset_batch=packed_batch,
+                            edge_index=edges,
                             x_list=x_list,
                             run=run,
                             k_batch=k_batch,
@@ -562,33 +592,40 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
                     elif recurrent_training:
 
-                        pred_x = x_batch[:, 0:1] + delta_t * pred + noise_recurrent_level * torch.randn_like(pred)
+                        pred_x = v_batch + delta_t * pred + noise_recurrent_level * torch.randn_like(pred)
 
                         if time_step > 1:
                             for step in range(time_step - 1):
-                                dataset_batch_new = []
-                                neurons_per_sample = dataset_batch[0].x.shape[0]
+                                neurons_per_sample = state_batch[0].n_neurons if isinstance(state_batch[0], NeuronState) else state_batch[0].shape[0]
 
                                 for b in range(batch_size):
                                     start_idx = b * neurons_per_sample
                                     end_idx = (b + 1) * neurons_per_sample
-                                    dataset_batch[b].x[:, 3:4] = pred_x[start_idx:end_idx].reshape(-1, 1)
+
+                                    if isinstance(state_batch[b], NeuronState):
+                                        state_batch[b].voltage = pred_x[start_idx:end_idx].squeeze()
+                                    else:
+                                        state_batch[b][:, 3:4] = pred_x[start_idx:end_idx].reshape(-1, 1)
 
                                     k_current = k_batch[start_idx, 0].item() + step + 1
 
                                     if has_visual_field:
-                                        visual_input_next = model.forward_visual(dataset_batch[b].x, k_current)
-                                        dataset_batch[b].x[:model.n_input_neurons, 4:5] = visual_input_next
-                                        dataset_batch[b].x[model.n_input_neurons:, 4:5] = 0
+                                        visual_input_next = model.forward_visual(state_batch[b], k_current)
+                                        if isinstance(state_batch[b], NeuronState):
+                                            state_batch[b].stimulus[:model.n_input_neurons] = visual_input_next.squeeze(-1)
+                                            state_batch[b].stimulus[model.n_input_neurons:] = 0
+                                        else:
+                                            state_batch[b][:model.n_input_neurons, 4:5] = visual_input_next
+                                            state_batch[b][model.n_input_neurons:, 4:5] = 0
                                     else:
-                                        x_next = torch.tensor(x_list[run][k_current], dtype=torch.float32, device=device)
-                                        dataset_batch[b].x[:, 4:5] = x_next[:, 4:5]
+                                        x_next = x_list[run].frame(k_current).to(device)
+                                        if isinstance(state_batch[b], NeuronState):
+                                            state_batch[b].stimulus = x_next.stimulus
+                                        else:
+                                            state_batch[b][:, 4:5] = x_next.to_packed()[:, 4:5]
 
-                                    dataset_batch_new.append(dataset_batch[b])
-
-                                batch_loader = DataLoader(dataset_batch_new, batch_size=batch_size, shuffle=False)
-                                for batch in batch_loader:
-                                    pred, in_features, msg = model(batch, data_id=data_id, return_all=True)
+                                batched_state, batched_edges = _batch_frames(state_batch, edges) if isinstance(state_batch[0], NeuronState) else _batch_frames(state_batch, edges)
+                                pred, in_features, msg = model(batched_state, batched_edges, data_id=data_id, return_all=True)
 
                                 pred_x = pred_x + delta_t * pred + noise_recurrent_level * torch.randn_like(pred)
 
@@ -615,27 +652,6 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
                 # finalize iteration to record history
                 regularizer.finalize_iteration()
-
-                if False: #(N % 2000 == 0) & hasattr(model, 'W') :
-
-                    plt.style.use('default')
-
-                    row_start = 1736
-                    row_end = 1736 + 217 * 2  # 2160   L1 L2
-                    col_start = 0
-                    col_end = 217 * 2  # 424
-                    learned_in_region = torch.zeros((n_neurons, n_neurons), dtype=torch.float32, device=edges.device)
-                    learned_in_region[edges[1], edges[0]] = model.W.squeeze()
-                    fig, ax = plt.subplots(1, 1, figsize=(10, 10))
-                    ax1 = sns.heatmap(to_numpy(learned_in_region[row_start:row_end, col_start:col_end]), center=0, square=True, cmap='bwr',
-                                        cbar=False, ax=ax)
-                    ax.set_title('learned connectivity', fontsize=24)
-                    ax.set_xlabel('columns [0:434] (R1 R2)', fontsize=18)
-                    ax.set_ylabel('rows [1736:2160] (L1 L2)', fontsize=18)
-                    plt.tight_layout()
-                    plt.savefig(f'{log_dir}/results/connectivity_comparison_R_to_L_{N:04d}.png', dpi=150, bbox_inches='tight')
-                    plt.close()
-
 
 
                 if regularizer.should_record():
@@ -677,7 +693,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                         plt.style.use('default')
 
                         # Static XY locations (take from first frame of this run)
-                        X1 = to_numpy(x_list[run][0][:n_input_neurons, 1:3])
+                        X1 = to_numpy(x_list[run].pos[:n_input_neurons])
 
                         # group-based selection of 10 traces
                         groups = 217
@@ -712,9 +728,9 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                         all_gt = []
                         all_pred = []
                         for k_fit in range(0, 800, step_video):
-                            x_fit = torch.tensor(x_list[run][k_fit], dtype=torch.float32, device=device)
+                            x_fit = x_list[run].frame(k_fit).to(device)
                             pred_fit = to_numpy(model.forward_visual(x_fit, k_fit)).squeeze()
-                            gt_fit = to_numpy(x_list[0][k_fit, :n_input_neurons, 4:5]).squeeze()
+                            gt_fit = to_numpy(x_list[0].stimulus[k_fit, :n_input_neurons]).squeeze()
                             all_gt.append(gt_fit)
                             all_pred.append(pred_fit)
                         all_gt = np.concatenate(all_gt)
@@ -742,13 +758,12 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
                             for k in trange(0, 800, step_video, ncols=100):
                                 # inputs and predictions
-                                x = torch.tensor(x_list[run][k], dtype=torch.float32, device=device)
+                                x = x_list[run].frame(k).to(device)
                                 pred = to_numpy(model.forward_visual(x, k))
                                 pred_vec = np.asarray(pred).squeeze()  # (n_input_neurons,)
                                 pred_corrected = a_coeff * pred_vec # + b_coeff  # corrected to GT scale
 
-                                gt_field = x_list[0][k, :n_input_neurons, 4:5]
-                                gt_vec = to_numpy(gt_field).squeeze()  # (n_input_neurons,)
+                                gt_vec = to_numpy(x_list[0].stimulus[k, :n_input_neurons]).squeeze()
 
                                 # update rolling traces (store corrected predictions)
                                 hist_t.append(k)
@@ -2155,16 +2170,14 @@ def data_test_flyvis(
                                                                                                   dtype=torch.float32,
                                                                                                   device=device) * noise_visual_input
 
-                    x_generated[:,4] = x[:,4]
-                    dataset = pyg.data.Data(x=x_generated, pos=x_generated[:, 1:3], edge_index=edge_index)
-                    y_generated = pde(dataset, has_field=False)
+                    x_generated[:, 4] = x[:, 4]
+                    y_generated = pde(NeuronState.from_numpy(x_generated), edge_index, has_field=False)
 
-                    x_generated_modified[:,4] = x[:,4]
-                    dataset_modified = pyg.data.Data(x=x_generated_modified, pos=x_generated_modified[:, 1:3], edge_index=edge_index)
-                    y_generated_modified = pde_modified(dataset_modified, has_field=False)
+                    x_generated_modified[:, 4] = x[:, 4]
+                    y_generated_modified = pde_modified(NeuronState.from_numpy(x_generated_modified), edge_index, has_field=False)
 
                     if 'visual' in field_type:
-                        visual_input = model.forward_visual(x, it)
+                        visual_input = model.forward_visual(NeuronState.from_numpy(x), it)
                         x[:model.n_input_neurons, 4:5] = visual_input
                         x[model.n_input_neurons:, 4:5] = 0
 
@@ -2194,13 +2207,13 @@ def data_test_flyvis(
                         elif 'MLP' in signal_model_name:
                             y = model(x, data_id=None, return_all=False)
                         elif neural_ODE_training:
-                            dataset = pyg.data.Data(x=x, pos=x, edge_index=edge_index)
                             data_id = torch.zeros((x.shape[0], 1), dtype=torch.int, device=device)
                             v0 = x[:, 3].flatten()
                             v_final, _ = integrate_neural_ode_FlyVis(
                                 model=model,
                                 v0=v0,
-                                data_template=dataset,
+                                x_template=x,
+                                edge_index=edge_index,
                                 data_id=data_id,
                                 time_steps=1,
                                 delta_t=delta_t,
@@ -2219,9 +2232,8 @@ def data_test_flyvis(
                             )
                             y = (v_final.view(-1, 1) - x[:, 3:4]) / delta_t
                         else:
-                            dataset = pyg.data.Data(x=x, pos=x, edge_index=edge_index)
                             data_id = torch.zeros((x.shape[0], 1), dtype=torch.int, device=device)
-                            y = model(dataset, data_id=data_id, return_all=False)
+                            y = model(NeuronState.from_numpy(x), edge_index, data_id=data_id, return_all=False)
 
                     # Save states
                     x_generated_list.append(to_numpy(x_generated.clone().detach()))

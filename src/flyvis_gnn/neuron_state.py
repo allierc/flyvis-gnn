@@ -138,6 +138,19 @@ class NeuronTimeSeries:
             fluorescence=self.fluorescence[t],
         )
 
+    def subset_neurons(self, ids: np.ndarray | torch.Tensor) -> NeuronTimeSeries:
+        """Select a subset of neurons by index."""
+        return NeuronTimeSeries(
+            index=self.index[ids],
+            pos=self.pos[ids],
+            group_type=self.group_type[ids],
+            neuron_type=self.neuron_type[ids],
+            voltage=self.voltage[:, ids],
+            stimulus=self.stimulus[:, ids],
+            calcium=self.calcium[:, ids],
+            fluorescence=self.fluorescence[:, ids],
+        )
+
     @classmethod
     def from_numpy(cls, arr: np.ndarray) -> NeuronTimeSeries:
         """Create from legacy (T, N, 9) numpy array.

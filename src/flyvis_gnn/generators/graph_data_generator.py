@@ -528,7 +528,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
 
     with torch.no_grad():
         for pass_num in range(num_passes_needed):
-            for data_idx, data in enumerate(tqdm(stimulus_dataset, desc="processing stimulus data")):
+            for data_idx, data in enumerate(tqdm(stimulus_dataset, desc="processing stimulus data"), ncols=100):
                 if simulation_config.simulation_initial_state:
                     x.voltage[:] = initial_state
                     if only_noise_visual_input > 0:

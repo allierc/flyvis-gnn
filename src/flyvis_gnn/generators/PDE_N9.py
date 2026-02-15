@@ -54,7 +54,7 @@ def get_photoreceptor_positions_from_net(net):
     """
     nodes = net.connectome.nodes
 
-    print(f"Total nodes: {len(nodes['u'])}")
+    print(f"total nodes: {len(nodes['u'])}")
 
     u_coords = np.array(nodes['u'])
     v_coords = np.array(nodes['v'])

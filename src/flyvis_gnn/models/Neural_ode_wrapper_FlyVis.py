@@ -68,18 +68,20 @@ class GNNODEFunc_FlyVis(nn.Module):
 
         elif self.x_list is not None:
             # Update visual input for each batch sample from x_list
+            from flyvis_gnn.neuron_state import NeuronTimeSeries
             for b in range(self.batch_size):
                 start_idx = b * self.neurons_per_sample
                 end_idx = (b + 1) * self.neurons_per_sample
                 k_current = int(self.k_batch[b].item()) + k_offset
 
-                if k_current < len(self.x_list[self.run]):
-                    x_next = torch.tensor(
-                        self.x_list[self.run][k_current],
-                        dtype=torch.float32,
-                        device=self.device
-                    )
-                    x_new[start_idx:end_idx, 4:5] = x_next[:, 4:5]
+                x_ts = self.x_list[self.run]
+                n_frames = x_ts.n_frames if isinstance(x_ts, NeuronTimeSeries) else len(x_ts)
+                if k_current < n_frames:
+                    if isinstance(x_ts, NeuronTimeSeries):
+                        x_new[start_idx:end_idx, 4] = x_ts.stimulus[k_current].float().to(self.device)
+                    else:
+                        x_next = torch.tensor(x_ts[k_current], dtype=torch.float32, device=self.device)
+                        x_new[start_idx:end_idx, 4:5] = x_next[:, 4:5]
 
         state = NeuronState.from_numpy(x_new)
         pred = self.model(
