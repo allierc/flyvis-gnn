@@ -752,6 +752,9 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     y_writer.finalize()
     print(f"generated {n_frames_written} frames total (saved as .zarr)")
 
+    # restore gradient computation now (before any early-return paths)
+    torch.set_grad_enabled(True)
+
     # --- Always run diagnostics after data generation ---
     from flyvis_gnn.zarr_io import load_simulation_data, load_simulation_data_raw
     x_ts = load_simulation_data(f"graphs_data/{dataset_name}/x_list_{run}")
@@ -917,7 +920,5 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
         for f in files:
             os.remove(f)
 
-    # restore gradient computation for subsequent training
-    torch.set_grad_enabled(True)
 
 
