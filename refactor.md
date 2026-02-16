@@ -87,7 +87,14 @@ x.voltage = x.voltage + dt * y.squeeze(-1)
 - `data_train_flyvis` constructs `x` as `NeuronState`, removes all `isinstance` checks
 - Training data (`x_list`) is loaded as `NeuronTimeSeries`, kept on GPU
 - `data_test_flyvis` still uses packed tensors internally (migration pending)
-- `GNN_PlotFigure.py` uses `load_simulation_data_raw` (returns packed numpy) because 50+ subscript operations exist — migration is a larger task
+- `GNN_PlotFigure.py` — `plot_synaptic_flyvis()` fully migrated:
+  - `x_list` loaded via `load_simulation_data()` → returns `NeuronTimeSeries`
+  - Type/region extraction: `x0.neuron_type`, `x0.group_type` (not `x[:, 6]`, `x[:, 5]`)
+  - Activity stats: `x0.voltage.t()` (not `x_list[0][:, :, 3:4]`)
+  - Activity traces: `to_numpy(x0.voltage).T`, `to_numpy(x0.stimulus).T`
+  - Baseline checks: `type_list[n].item()` (not `x_list[0][100][n, 6]`)
+  - Batch building: `x0.frame(k).to(device).to_packed()` (not `torch.tensor(x_list[0][k])`)
+  - Other functions (`plot_signal`, `plot_synaptic_CElegans`, `plot_synaptic_zebra`) still use `load_simulation_data_raw` (raw numpy) — these are for non-flyvis datasets
 
 ### Shape considerations
 
@@ -237,5 +244,11 @@ A single module used by both the training loop and post-training analysis, elimi
 
 **Integration pattern:**
 - `plot_training_flyvis()` in `utils.py` calls `compute_all_corrected_weights()` + `plot_weight_scatter()` directly
-- `GNN_PlotFigure.py` uses thin wrappers (`create_weight_subplot`, `create_embedding_subplot`, etc.) that call the shared functions while preserving the original calling convention for the movie generation code
+- `plot_synaptic_flyvis()` in `GNN_PlotFigure.py` calls the vectorized helpers directly for MLP evaluation and slope extraction
 - `generators/plots.py` uses `FigureStyle` for generation-time plots (connectivity matrices, spatial layouts)
+
+**Removed code:**
+- `plot_synaptic3` — deleted (unused PDE_N3 model)
+- Movie generation functions (`movie_synaptic_flyvis`, `create_combined_movie`, `create_individual_movies`) — deleted. GNN_PlotFigure generates static figures only; movies are handled separately for visual stimuli reconstruction with SIREN
+- Thin subplot wrappers (`create_weight_subplot`, `create_embedding_subplot`, etc.) — deleted, were only used by movie functions
+- `analyze_model_functions` and `load_model_for_epoch` — deleted, were only used by movie functions
