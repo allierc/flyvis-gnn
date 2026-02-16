@@ -2842,6 +2842,18 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
             # lin_edge domain range: evaluate + slope extraction (vectorized)
             mu = to_numpy(mu_activity).astype(np.float32)
             sigma = to_numpy(sigma_activity).astype(np.float32)
+
+            # # Percentile-based range (clamped to positive):
+            # voltage = x_list[0].voltage.to(device)  # (T, N)
+            # p_low = to_numpy(torch.quantile(voltage, 0.05, dim=0)).astype(np.float32)
+            # p_high = to_numpy(torch.quantile(voltage, 0.95, dim=0)).astype(np.float32)
+            # starts_edge = np.maximum(p_low, 0.0)
+            # ends_edge = np.maximum(p_high, 0.0)
+            # valid_edge = ends_edge > starts_edge + 1e-6
+            # starts_edge[~valid_edge] = 0.0
+            # ends_edge[~valid_edge] = 1.0
+
+            # mu ± 2σ range
             valid_edge = (mu + sigma) > 0
             starts_edge = np.maximum(mu - 2 * sigma, 0.0)
             ends_edge = mu + 2 * sigma
