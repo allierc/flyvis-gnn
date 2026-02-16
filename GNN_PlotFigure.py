@@ -23,7 +23,6 @@ from flyvis_gnn.zarr_io import load_simulation_data, load_simulation_data_raw
 from flyvis_gnn.fitting_models import linear_model
 from flyvis_gnn.sparsify import EmbeddingCluster, sparsify_cluster, clustering_gmm
 from flyvis_gnn.models.utils import (
-    choose_training_model,
     get_in_features,
     get_in_features_update,
     get_index_particles,
@@ -32,6 +31,7 @@ from flyvis_gnn.models.utils import (
     analyze_data_svd,
     compute_normalization_value,
 )
+from flyvis_gnn.models.registry import create_model
 from flyvis_gnn.models.plot_utils import (
     analyze_mlp_edge_lines,
     analyze_mlp_edge_lines_weighted_with_max,
@@ -45,7 +45,8 @@ from flyvis_gnn.utils import (
     sort_key,
     get_equidistant_points,
     create_log_dir,
-    add_pre_folder
+    add_pre_folder,
+    choose_boundary_values,
 )
 from flyvis_gnn.models.Siren_Network import Siren, Siren_Network
 from flyvis_gnn.models.Signal_Propagation_FlyVis import Signal_Propagation_FlyVis
@@ -59,7 +60,7 @@ from flyvis_gnn.plot import (
     _build_lin_edge_features,
     _build_lin_phi_features,
 )
-from flyvis_gnn.generators.utils import choose_model
+from flyvis_gnn.generators.flyvis_ode import FlyVisODE
 from flyvis_gnn.config import NeuralGraphConfig
 
 # Optional imports
@@ -107,6 +108,32 @@ plt.rcParams.update({
 
 
 # get_model_W imported from flyvis_gnn.plot
+
+
+def _create_learned_model(config, device):
+    """Create a fresh learned model (FlyVisGNN) for loading trained weights into."""
+    model = create_model(config.graph_model.signal_model_name,
+                         aggr_type=config.graph_model.aggr_type,
+                         config=config, device=device)
+    bc_pos, bc_dpos = choose_boundary_values(config.simulation.boundary)
+    return model, bc_pos, bc_dpos
+
+
+def _create_true_model(config, W, device):
+    """Create a ground-truth ODE model (FlyVisODE) from saved parameters."""
+    dataset_name = config.dataset
+    sim = config.simulation
+
+    w = torch.load(f'./graphs_data/{dataset_name}/weights.pt', map_location=device)
+    tau_i = torch.load(f'./graphs_data/{dataset_name}/taus.pt', map_location=device)
+    V_i_rest = torch.load(f'./graphs_data/{dataset_name}/V_i_rest.pt', map_location=device)
+    p = {"tau_i": tau_i, "V_i_rest": V_i_rest, "w": w}
+
+    true_model = FlyVisODE(p=p, f=torch.nn.functional.relu, params=sim.params,
+                           model_type=config.graph_model.signal_model_name,
+                           n_neuron_types=sim.n_neuron_types, device=device)
+    bc_pos, bc_dpos = choose_boundary_values(sim.boundary)
+    return true_model, bc_pos, bc_dpos
 
 
 def get_training_files(log_dir, n_runs):
@@ -209,7 +236,7 @@ def determine_plot_limits_signal(config, log_dir, n_runs, device, n_neurons, typ
     if len(file_id_list) == 0:
         return None
 
-    model, bc_pos, bc_dpos = choose_training_model(config, device)
+    model, bc_pos, bc_dpos = _create_learned_model(config, device)
 
     # Sample indices evenly distributed
     sample_indices = np.linspace(0, len(file_id_list) - 1, min(n_samples, len(file_id_list)), dtype=int)
@@ -797,7 +824,7 @@ def create_signal_movies(config, log_dir, n_runs, device, n_neurons, n_neuron_ty
         print('could not determine plot limits')
         return
 
-    model, bc_pos, bc_dpos = choose_training_model(config, device)
+    model, bc_pos, bc_dpos = _create_learned_model(config, device)
 
     # load second_correction if available (computed in 'best' mode)
     second_correction_path = f'{log_dir}/second_correction.npy'
@@ -1113,7 +1140,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
         files = glob.glob(f"{log_dir}/models/*.pt")
         files.sort(key=os.path.getmtime)
 
-        model, bc_pos, bc_dpos = choose_training_model(config, device)
+        model, bc_pos, bc_dpos = _create_learned_model(config, device)
 
 
         files, file_id_list = get_training_files(log_dir, tc.n_runs)
@@ -1121,7 +1148,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
         # Load connectivity for movie generation and create true_model for plotting true curves
         connectivity = torch.load(f'./graphs_data/{config.dataset}/connectivity.pt', map_location=device)
 
-        true_model, _, _ = choose_model(config=config, W=connectivity, device=device)
+        true_model, _, _ = _create_true_model(config=config, W=connectivity, device=device)
 
         # create movies with stable axes
         create_signal_movies(
@@ -1214,136 +1241,6 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                 plt.savefig(f"./{log_dir}/results/all/W_{num}.png", dpi=80)
                 plt.close()
 
-
-                rr = torch.linspace(-xnorm.squeeze(), xnorm.squeeze(), 1000).to(device)
-                if model_config.signal_model_name == 'PDE_N5':
-                    fig, ax = fig_style.figure()
-                    plt.axis('off')
-                    for k in range(sim.n_neuron_types):
-                        ax = fig.add_subplot(2, 2, k + 1)
-                        for spine in ax.spines.values():
-                            spine.set_edgecolor(cmap.color(k))
-                            spine.set_linewidth(3)
-                        if k==0:
-                            plt.ylabel(r'learned $\mathrm{MLP_1}( a_i, a_j, v_j)$', fontsize=32)
-                        for n in range(sim.n_neuron_types):
-                            for m in range(250):
-                                pos0 = to_numpy(torch.argwhere(type_list == k).squeeze())
-                                pos1 = to_numpy(torch.argwhere(type_list == n).squeeze())
-                                n0 = np.random.randint(len(pos0))
-                                n0 = pos0[n0, 0]
-                                n1 = np.random.randint(len(pos1))
-                                n1 = pos1[n1, 0]
-                                embedding0 = model.a[n0, :] * torch.ones((1000, config.graph_model.embedding_dim), device=device)
-                                embedding1 = model.a[n1, :] * torch.ones((1000, config.graph_model.embedding_dim), device=device)
-                                in_features = torch.cat((rr[:, None], embedding0, embedding1), dim=1)
-                                func = model.lin_edge(in_features.float())
-                                if apply_weight_correction:
-                                    func = func * correction[n0]
-                                plt.plot(to_numpy(rr), to_numpy(func), 2, color=cmap.color(n), linewidth=3, alpha=0.25)
-                        plt.ylim([-1.6, 1.6])
-                        plt.xlim([-5, 5])
-                        plt.xticks([])
-                        plt.yticks([])
-                    plt.xlabel(r'$x_j$', fontsize=68)
-                    plt.tight_layout()
-                    plt.savefig(f"./{log_dir}/results/all/MLP1_{num}.png", dpi=80)
-                    plt.close()
-                elif (model_config.signal_model_name == 'PDE_N4'):
-                    fig, ax = fig_style.figure()
-                    for k in range(sim.n_neuron_types):
-                        for m in range(250):
-                            pos0 = to_numpy(torch.argwhere(type_list == k).squeeze())
-                            n0 = np.random.randint(len(pos0))
-                            n0 = pos0[n0, 0]
-                            embedding0 = model.a[n0, :] * torch.ones((1000, config.graph_model.embedding_dim), device=device)
-                            in_features = get_in_features(rr, embedding0, model, model_config.signal_model_name, sim.max_radius)
-                            if config.graph_model.lin_edge_positive:
-                                func = model.lin_edge(in_features.float()) ** 2
-                            else:
-                                func = model.lin_edge(in_features.float())
-                            if apply_weight_correction:
-                                func = func * correction[n0]
-                            plt.plot(to_numpy(rr), to_numpy(func), color=cmap.color(k), linewidth=2, alpha=0.25)
-                    plt.xlabel(r'$x_j$', fontsize=68)
-                    plt.ylabel(r'learned $\mathrm{MLP_1}(\mathbf{a}_j, v_j)$', fontsize=68)
-                    plt.ylim([-1.6, 1.6])
-                    plt.xlim([-to_numpy(xnorm)//2, to_numpy(xnorm)//2])
-                    plt.tight_layout()
-                    plt.savefig(f"./{log_dir}/results/all/MLP1_{num}.png", dpi=80)
-                    plt.close()
-                elif (model_config.signal_model_name == 'PDE_N8'):
-                    rr = torch.linspace(0, 10, 1000).to(device)
-                    fig, ax = fig_style.figure()
-                    for idx, k in enumerate(np.linspace(4, 10, 13)):  # Corrected step size to generate 13 evenly spaced values
-
-                        for n in range(0,n_neurons,4):
-                            embedding_i = model.a[n, :] * torch.ones((1000, config.graph_model.embedding_dim), device=device)
-                            embedding_j = model.a[np.random.randint(n_neurons), :] * torch.ones((1000, config.graph_model.embedding_dim), device=device)
-                            if model.embedding_trial:
-                                in_features = torch.cat((torch.ones_like(rr[:, None]) * k, rr[:, None], embedding_i, embedding_j, model.b[0].repeat(1000, 1)), dim=1)
-                            else:
-                                in_features = torch.cat((rr[:, None], torch.ones_like(rr[:, None])*k, embedding_i, embedding_j), dim=1)
-                            with torch.no_grad():
-                                func = model.lin_edge(in_features.float())
-                            if config.graph_model.lin_edge_positive:
-                                func = func ** 2
-                            plt.plot(to_numpy(rr-k), to_numpy(func), 2, color=cmap.color(idx), linewidth=2, alpha=0.25)
-                    plt.xlabel(r'$x_i-x_j$', fontsize=68)
-                    # plt.ylabel(r'learned $\psi^*(\mathbf{a}_i, v_i)$', fontsize=68)
-                    plt.ylabel(r'$\mathrm{MLP_1}(\mathbf{a}_i, a_j, v_i, v_j)$', fontsize=68)
-                    plt.ylim([0,4])
-                    plt.tight_layout()
-                    plt.savefig(f"./{log_dir}/results/all/MLP1_{num}.png", dpi=80)
-                    plt.close()
-                elif (model_config.signal_model_name == 'PDE_N11'):
-                    fig, ax = fig_style.figure()
-                    # Compute normalization factor from true model at x > 6 (asymptotic region)
-                    norm_factor = 1.0
-                    if true_model is not None:
-                        rr_asymptotic = torch.linspace(6.0, 10.0, 100).to(device)
-                        true_max = 0.0
-                        for n_type in range(sim.n_neuron_types):
-                            true_func = true_model.func(rr_asymptotic, n_type, 'phi')
-                            true_asymptotic = torch.abs(true_func).mean().item()
-                            true_max = max(true_max, true_asymptotic)
-                        if true_max > 0:
-                            norm_factor = true_max
-                    # Plot true curves first (green, thick)
-                    if true_model is not None:
-                        for n_type in range(sim.n_neuron_types):
-                            true_func = true_model.func(rr, n_type, 'phi')
-                            plt.plot(to_numpy(rr), to_numpy(true_func) / norm_factor, c='g', linewidth=8)
-                    # Plot learned curves
-                    for k in range(sim.n_neuron_types):
-                        pos0 = torch.argwhere(type_list == k).squeeze()
-                        if pos0.numel() == 0:
-                            continue
-                        pos0_np = to_numpy(pos0)
-                        if pos0_np.ndim == 0:
-                            pos0_np = np.array([[pos0_np.item()]])
-                        elif pos0_np.ndim == 1:
-                            pos0_np = pos0_np[:, None]
-                        for m in range(250):
-                            n0 = np.random.randint(len(pos0_np))
-                            n0 = pos0_np[n0, 0]
-                            embedding0 = model.a[n0, :] * torch.ones((1000, config.graph_model.embedding_dim), device=device)
-                            in_features = torch.cat((rr[:, None], embedding0), dim=1)
-                            with torch.no_grad():
-                                func = model.lin_edge(in_features.float())
-                            if apply_weight_correction:
-                                func = func * correction[n0]
-                            plt.plot(to_numpy(rr), to_numpy(func) / norm_factor, color=cmap.color(k), linewidth=2, alpha=0.25)
-                    plt.xlabel(r'$v_j$', fontsize=68)
-                    if label_style == 'MLP':
-                        plt.ylabel(r'$\mathrm{MLP_1}$', fontsize=68)
-                    else:
-                        plt.ylabel(r'$f$', fontsize=68)
-                    plt.ylim([-1.2, 1.2])
-                    plt.xlim([-to_numpy(xnorm).item(), to_numpy(xnorm).item()])
-                    plt.tight_layout()
-                    plt.savefig(f"./{log_dir}/results/all/MLP1_{num}.png", dpi=80)
-                    plt.close()
 
                 fig, ax = fig_style.figure()
                 func_list = []
@@ -1516,40 +1413,6 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                     plt.savefig(f"./{log_dir}/results/all/comparison_derivative_yi_{num}.png", dpi=80)
                     plt.close()
 
-                if (model.update_type == 'generic') & (model_config.signal_model_name == 'PDE_N5'):
-
-                    k = np.random.randint(sim.n_frames - 50)
-                    state_k = x0.frame(k).to(device)
-
-                    fig, ax = fig_style.figure()
-                    msg_list = []
-                    u = torch.linspace(-xnorm.squeeze(), xnorm.squeeze(), 400).to(device)
-                    for sample in range(n_neurons):
-                        id0 = np.random.randint(0, n_neurons)
-                        id1 = np.random.randint(0, n_neurons)
-                        f = state_k.fluorescence[id0].unsqueeze(0)
-                        embedding0 = model.a[id0, :] * torch.ones((400, config.graph_model.embedding_dim),
-                                                                  device=device)
-                        embedding1 = model.a[id1, :] * torch.ones((400, config.graph_model.embedding_dim),
-                                                                  device=device)
-                        in_features = torch.cat((u[:, None], embedding0, embedding1), dim=1)
-                        msg = model.lin_edge(in_features.float()) ** 2 * correction
-                        in_features = torch.cat((torch.zeros((400, 1), device=device), embedding0, msg,
-                                                 f * torch.ones((400, 1), device=device)), dim=1)
-                        plt.plot(to_numpy(u), to_numpy(msg), c=cmap.color(int(state_k.group_type[id0])), linewidth=2, alpha=0.25)
-                        # plt.scatter(to_numpy(u), to_numpy(model.lin_phi(in_features)), s=5, c='r', alpha=0.15)
-                        # plt.scatter(to_numpy(u), to_numpy(f*msg), s=1, c='w', alpha=0.1)
-                        msg_list.append(msg)
-                    plt.tight_layout()
-                    msg_list = torch.stack(msg_list).squeeze()
-                    y_min, y_max = msg_list.min().item(), msg_list.max().item()
-                    plt.xlabel(r'$v_i$', fontsize=68)
-                    plt.ylabel(r'learned MLPs', fontsize=68)
-                    plt.ylim([y_min - y_max/2, y_max * 1.5])
-                    plt.tight_layout()
-                    plt.savefig(f'./{log_dir}/results/all/MLP1_{num}.png', dpi=80)
-                    plt.close()
-
                 im0 = imageio.imread(f"./{log_dir}/results/all/comparison_{num}.png")
                 im1 = imageio.imread(f"./{log_dir}/results/all/embedding_{num}.png")
                 im2 = imageio.imread(f"./{log_dir}/results/all/MLP0_{num}.png")
@@ -1594,7 +1457,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
         connectivity = torch.load(f'./graphs_data/{config.dataset}/connectivity.pt', map_location=device)
 
         # Create true_model for computing plot limits with true MLP values
-        true_model_for_limits, _, _ = choose_model(config=config, W=connectivity, device=device)
+        true_model_for_limits, _, _ = _create_true_model(config=config, W=connectivity, device=device)
 
         # Compute plot limits for consistent axes (includes true MLP values)
         limits = determine_plot_limits_signal(
@@ -1675,12 +1538,12 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
         plt.savefig(f'./{log_dir}/results/activity_gt.pdf', dpi=300)
         plt.close()
 
-        true_model, bc_pos, bc_dpos = choose_model(config=config, W=adjacency, device=device)
+        true_model, bc_pos, bc_dpos = _create_true_model(config=config, W=adjacency, device=device)
 
         for epoch in epoch_list:
 
             net = f'{log_dir}/models/best_model_with_{tc.n_runs-1}_graphs_{epoch}.pt'
-            model, bc_pos, bc_dpos = choose_training_model(config, device)
+            model, bc_pos, bc_dpos = _create_learned_model(config, device)
             state_dict = torch.load(net, map_location=device)
             model.load_state_dict(state_dict['model_state_dict'])
             model.edges = edge_index
@@ -2710,177 +2573,6 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                     if log_file is not None:
                         log_file.write(f'external_input_R2: {r_squared:0.4f}\n')
                         log_file.write(f'external_input_slope: {np.round(lin_fit[0], 4)}\n')
-
-
-            if ('PDE_N6' in model_config.signal_model_name):
-
-                modulation = to_numpy(x0.fluorescence.t())  # (N, T)
-
-                modulation = scipy.ndimage.zoom(modulation, (1024 / modulation.shape[0], 1024 / modulation.shape[1]))
-                pred_list_ = to_numpy(model.b**2)
-                pred_list_ = scipy.ndimage.zoom(pred_list_, (1024 / pred_list_.shape[0], 1024 / pred_list_.shape[1]))
-
-                plt.figure(figsize=(20, 10))
-                plt.subplot(1, 2, 1)
-                plt.title('true field')
-                plt.imshow(modulation, cmap='grey')
-                plt.xticks([])
-                plt.yticks([])
-                plt.subplot(1, 2, 2)
-                plt.title('reconstructed field')
-                plt.imshow(pred_list_, cmap='grey')
-                plt.xticks([])
-                plt.yticks([])
-                plt.tight_layout()
-                plt.tight_layout()
-                plt.savefig(f"./{log_dir}/results/pic_comparison {epoch}.png", dpi=80)
-                plt.close()
-
-                for frame in trange(0, modulation.shape[1], modulation.shape[1] // 257, ncols=90):
-                    im = modulation[:, frame]
-                    im = np.reshape(im, (32, 32))
-                    plt.figure(figsize=(8, 8))
-                    plt.axis('off')
-                    plt.imshow(im, cmap='gray', vmin=0, vmax=1)
-                    plt.tight_layout()
-                    plt.savefig(f"./{log_dir}/results/field/true_field_{frame}.png", dpi=80)
-                    plt.close()
-
-            if ('PDE_N5' in model_config.signal_model_name) & (model.update_type == 'generic') & False:
-
-                k = np.random.randint(sim.n_frames - 50)
-                state = x0.frame(k).to(device)
-                if has_external_input:
-                    if 'visual' in external_input_type:
-                        state.stimulus[:n_input_neurons] = (model_f(time=k / sim.n_frames) ** 2).squeeze()
-                        state.stimulus[n_input_neurons:n_neurons] = 1
-                    elif 'learnable_short_term_plasticity' in external_input_type:
-                        alpha = (k % model.embedding_step) / model.embedding_step
-                        state.stimulus = alpha * model.b[:, k // model.embedding_step + 1] ** 2 + (1 - alpha) * model.b[:,
-                                                                                                         k // model.embedding_step] ** 2
-                    elif ('short_term_plasticity' in external_input_type) | ('modulation_permutation' in external_input_type):
-                        t = torch.tensor([k / sim.n_frames], dtype=torch.float32, device=device)
-                        state.stimulus = (model_f(t) ** 2).squeeze()
-                    else:
-                        state.stimulus = (model_f(time=k / sim.n_frames) ** 2).squeeze()
-                else:
-                    state.stimulus[:] = 1
-                x = state.to_packed()
-                import torch_geometric.data as data
-                dataset = data.Data(x=x, edge_index=edge_index)
-                data_id = torch.zeros(n_neurons, dtype=torch.long, device=device)
-                pred, in_features_ = model(data=dataset, data_id=data_id, return_all=True)
-                feature_list = ['u', 'embedding0', 'embedding1', 'msg', 'field']
-                for n in range(in_features_.shape[1]):
-                    print(f'feature {feature_list[n]}: {to_numpy(torch.mean(in_features_[:, n])):0.4f}  std: {to_numpy(torch.std(in_features_[:, n])):0.4f}')
-
-                fig, ax = fig_style.figure()
-                plt.hist(to_numpy(in_features_[:, -1]), 150)
-                plt.tight_layout()
-                plt.close()
-
-                fig, ax = fig_style.figure()
-                f = torch.reshape(state.stimulus[:n_input_neurons], (n_input_neurons_per_axis, n_input_neurons_per_axis))
-                f = to_numpy(torch.sqrt(f))
-                f = np.rot90(f, k=1)
-                plt.imshow(f, cmap='grey')
-                plt.xticks([])
-                plt.yticks([])
-                plt.tight_layout()
-                plt.savefig(f"./{log_dir}/results/field/field_{epoch}.png", dpi=80)
-                plt.close()
-
-
-                fig, ax = fig_style.figure()
-                msg_list = []
-                u = torch.linspace(-xnorm.squeeze(), xnorm.squeeze(), 400).to(device)
-                for sample in range(n_neurons):
-                    id0 = np.random.randint(0, n_neurons)
-                    id1 = np.random.randint(0, n_neurons)
-                    f = state.fluorescence[id0].unsqueeze(0)
-                    embedding0 = model.a[id0, :] * torch.ones((400, config.graph_model.embedding_dim), device=device)
-                    embedding1 = model.a[id1, :] * torch.ones((400, config.graph_model.embedding_dim), device=device)
-                    in_features = torch.cat((u[:, None], embedding0, embedding1), dim=1)
-                    msg = model.lin_edge(in_features.float()) ** 2 * correction
-                    in_features = torch.cat((torch.zeros((400, 1), device=device), embedding0, msg,
-                                             f * torch.ones((400, 1), device=device)), dim=1)
-                    plt.plot(to_numpy(u), to_numpy(msg), c=cmap.color(int(state.group_type[id0])), linewidth=2, alpha=0.15)
-                    # plt.scatter(to_numpy(u), to_numpy(model.lin_phi(in_features)), s=5, c='r', alpha=0.15)
-                    # plt.scatter(to_numpy(u), to_numpy(f*msg), s=1, c='w', alpha=0.1)
-                    msg_list.append(msg)
-                plt.tight_layout()
-                msg_list = torch.stack(msg_list).squeeze()
-                y_min, y_max = msg_list.min().item(), msg_list.max().item()
-                plt.xlabel(r'$v_i$', fontsize=68)
-                plt.ylabel(r'learned $\mathrm{MLP_0}$', fontsize=68)
-                plt.ylim([y_min - y_max / 2, y_max * 1.5])
-                plt.tight_layout()
-                plt.savefig(f'./{log_dir}/results/learned_multiple_psi_{epoch}.png', dpi=300)
-                plt.close()
-
-                fig, ax = fig_style.figure()
-                u = torch.linspace(-xnorm.squeeze(), xnorm.squeeze(), 400).to(device)
-                for n in range(sim.n_neuron_types):
-                    for m in range(sim.n_neuron_types):
-                        true_func = true_model.func(u, n, m, 'phi')
-                        plt.plot(to_numpy(u), to_numpy(true_func), c=cmap.color(n), linewidth=3)
-                plt.xlabel(r'$v_i$', fontsize=68)
-                plt.ylabel(r'true functions', fontsize=68)
-                plt.ylim([y_min - y_max / 2, y_max * 1.5])
-                plt.tight_layout()
-                plt.savefig(f'./{log_dir}/results/true_multiple_psi.png', dpi=300)
-                plt.close()
-
-                msg_start = torch.mean(in_features_[:, 3]) - torch.std(in_features_[:, 3])
-                msg_end = torch.mean(in_features_[:, 3]) + torch.std(in_features_[:, 3])
-                msgs = torch.linspace(msg_start, msg_end, 400).to(device)
-                fig, ax = fig_style.figure()
-                func_list = []
-                rr_list = []
-                for sample in range(n_neurons):
-                    id0 = np.random.randint(0, n_neurons)
-                    embedding0 = model.a[id0, :] * torch.ones((400, config.graph_model.embedding_dim), device=device)
-                    in_features = torch.cat((torch.zeros((400, 1), device=device), embedding0, msgs[:,None], torch.ones((400, 1), device=device)), dim=1)
-                    pred = model.lin_phi(in_features)
-                    plt.plot(to_numpy(msgs), to_numpy(pred), c=cmap.color(int(state.group_type[id0])),  linewidth=2, alpha=0.25)
-                    func_list.append(pred)
-                    rr_list.append(msgs)
-                plt.xlabel(r'$sum_i$', fontsize=68)
-                plt.ylabel(r'$\mathrm{MLP_0}(\mathbf{a}_i, x_i=0, sum_i, g_i=1)$', fontsize=48)
-                plt.tight_layout()
-                plt.savefig(f'./{log_dir}/results/learned_multivariate_phi_{epoch}.png', dpi=300)
-                plt.close()
-
-
-                print('symbolic regression ...')
-
-                text_trap = StringIO()
-                sys.stdout = text_trap
-
-                model_pysrr = PySRRegressor( #noqa: F821
-                    niterations=30,  # < Increase me for better results
-                    binary_operators=["+", "*"],
-                    unary_operators=[
-                        "cos",
-                        "exp",
-                        "sin",
-                        "tanh"
-                    ],
-                    random_state=0,
-                    temp_equation_file=False
-                )
-
-
-                func_list = torch.stack(func_list).squeeze()
-                rr_list = torch.stack(rr_list).squeeze()
-                func = torch.reshape(func_list, (func_list.shape[0] * func_list.shape[1], 1))
-                rr = torch.reshape(rr_list, (func_list.shape[0] * func_list.shape[1], 1))
-                idx = torch.randperm(len(rr))[:5000]
-
-                model_pysrr.fit(to_numpy(rr[idx]), to_numpy(func[idx]))
-
-                sys.stdout = sys.__stdout__
-
 
 
 def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extended, device, log_file=None):

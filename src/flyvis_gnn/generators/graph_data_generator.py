@@ -258,7 +258,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     # flyvis.__init__ sets root logger to INFO via basicConfig — restore to WARNING
     import logging
     logging.getLogger().setLevel(logging.WARNING)
-    from flyvis_gnn.generators.PDE_N9 import PDE_N9, get_photoreceptor_positions_from_net, \
+    from flyvis_gnn.generators.flyvis_ode import FlyVisODE, get_photoreceptor_positions_from_net, \
         group_by_direction_and_function
 
     # Initialize datasets
@@ -396,8 +396,8 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
             p["w"] = torch.cat([p["w"], torch.zeros(len(extra_edges), device=device)])
             print(f"Total extra edges added: {len(extra_edges)}")
 
-    pde = PDE_N9(p=p, f=torch.nn.functional.relu, params=simulation_config.params,
-                 model_type=model_config.signal_model_name, n_neuron_types=n_neuron_types, device=device)
+    pde = FlyVisODE(p=p, f=torch.nn.functional.relu, params=simulation_config.params,
+                    model_type=model_config.signal_model_name, n_neuron_types=n_neuron_types, device=device)
 
     if bSave:
         torch.save(p["w"], f"./graphs_data/{dataset_name}/weights.pt")

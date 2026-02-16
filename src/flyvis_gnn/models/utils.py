@@ -2,16 +2,7 @@ import matplotlib.pyplot as plt
 import os
 import torch
 
-# Optional signal-specific imports (not available in flyvis-gnn spinoff)
-try:
-    from flyvis_gnn.models import Signal_Propagation
-except ImportError:
-    Signal_Propagation = None
-try:
-    from flyvis_gnn.models.Signal_Propagation_MLP import Signal_Propagation_MLP
-except ImportError:
-    Signal_Propagation_MLP = None
-from flyvis_gnn.utils import to_numpy, choose_boundary_values
+from flyvis_gnn.utils import to_numpy
 import numpy as np
 import seaborn as sns
 from scipy.optimize import curve_fit
@@ -325,93 +316,6 @@ def plot_training_flyvis(x_list, model, config, epoch, N, log_dir, device, cmap,
     plt.close()
 
     return r_squared
-
-def choose_training_model(model_config=None, device=None):
-
-    dataset_name = model_config.dataset
-    aggr_type = model_config.graph_model.aggr_type
-    dimension = model_config.simulation.dimension
-
-    bc_pos, bc_dpos = choose_boundary_values(model_config.simulation.boundary)
-
-    model=[]
-    model_name = model_config.graph_model.particle_model_name
-    match model_name:
-        case 'PDE_R':
-            model = Signal_Propagation(aggr_type=aggr_type, config=model_config, device=device, bc_dpos=bc_dpos,
-                                     dimension=dimension)
-        case  'PDE_Cell' | 'PDE_Cell_area':
-            model = Signal_Propagation(aggr_type=aggr_type, config=model_config, device=device, bc_dpos=bc_dpos, dimension=dimension)
-            model.edges = []
-        case 'PDE_ParticleField_A' | 'PDE_ParticleField_B':
-            model = Signal_Propagation(aggr_type=aggr_type, config=model_config, device=device, bc_dpos=bc_dpos, dimension=dimension)
-            model.edges = []
-        case 'PDE_Agents' | 'PDE_Agents_A' | 'PDE_Agents_B' | 'PDE_Agents_C':
-            model = Signal_Propagation(aggr_type=aggr_type, config=model_config, device=device, bc_dpos=bc_dpos, dimension=dimension)
-        case 'PDE_A' | 'PDE_A_bis' | 'PDE_B' | 'PDE_B_mass' | 'PDE_B_bis' | 'PDE_E' | 'PDE_G' | 'PDE_K' | 'PDE_T':
-            model = Signal_Propagation(aggr_type=aggr_type, config=model_config, device=device, bc_dpos=bc_dpos, dimension=dimension)
-            model.edges = []
-            if 'PDE_K' in model_name:
-                model.connection_matrix = torch.load(f'./graphs_data/{dataset_name}/connection_matrix_list.pt', map_location=device)
-        case 'PDE_GS':
-            model = Signal_Propagation(aggr_type=aggr_type, config=model_config, device=device)
-            t = np.arange(model_config.simulation.n_neurons)
-            t1 = np.repeat(t, model_config.simulation.n_neurons)
-            t2 = np.tile(t, model_config.simulation.n_neurons)
-            e = np.stack((t1, t2), axis=0)
-            pos = np.argwhere(e[0, :] - e[1, :] != 0)
-            e = e[:, pos]
-            model.edges = torch.tensor(e, dtype=torch.long, device=device)
-        case 'PDE_GS2':
-            model = Signal_Propagation(aggr_type=aggr_type, config=model_config, device=device)
-            t = np.arange(model_config.simulation.n_neurons)
-            t1 = np.repeat(t, model_config.simulation.n_neurons)
-            t2 = np.tile(t, model_config.simulation.n_neurons)
-            e = np.stack((t1, t2), axis=0)
-            pos = np.argwhere(e[0, :] - e[1, :] != 0)
-            e = e[:, pos]
-            model.edges = torch.tensor(e, dtype=torch.long, device=device)
-        case 'PDE_Cell_A' | 'PDE_Cell_B' | 'PDE_Cell_B_area' | 'PDE_Cell_A_area':
-            model = Signal_Propagation(aggr_type=aggr_type, config=model_config, device=device, bc_dpos=bc_dpos, dimension=dimension)
-        case 'PDE_F_A' |'PDE_F_B'|'PDE_F_C'|'PDE_F_D'|'PDE_F_E' :
-            model = Signal_Propagation(aggr_type=aggr_type, config=model_config, device=device, bc_dpos=bc_dpos, dimension=dimension)
-        case 'PDE_MLPs' | 'PDE_MLPs_A' | 'PDE_MLPs_A_bis' | 'PDE_MLPs_A_ter' | 'PDE_MLPs_B'| 'PDE_MLPs_B_0' |'PDE_MLPs_B_1' | 'PDE_MLPs_B_4'| 'PDE_MLPs_B_10' |'PDE_MLPs_C' | 'PDE_MLPs_D' | 'PDE_MLPs_E' | 'PDE_MLPs_F':
-            model = Signal_Propagation(aggr_type=aggr_type, config=model_config, device=device,
-                                                bc_dpos=bc_dpos, dimension=dimension)
-
-    model_name = model_config.graph_model.mesh_model_name
-    match model_name:
-        case 'DiffMesh':
-            model = Signal_Propagation(aggr_type=aggr_type, config=model_config, device=device, bc_dpos=bc_dpos)
-            model.edges = []
-        case 'WaveMesh':
-            model = Signal_Propagation(aggr_type=aggr_type, config=model_config, device=device, bc_dpos=bc_dpos)
-            model.edges = []
-        case 'WaveMeshSmooth':
-            model = Signal_Propagation(aggr_type=aggr_type, config=model_config, device=device, bc_dpos=bc_dpos)
-            model.edges = []
-        case 'RD_Mesh' | 'RD_Mesh2' | 'RD_Mesh3' | 'RD_Mesh4':
-            model = Signal_Propagation(aggr_type=aggr_type, config=model_config, device=device, bc_dpos=bc_dpos)
-            model.edges = []
-
-    model_name = model_config.graph_model.signal_model_name
-    match model_name:
-        case 'PDE_N9_MLP':
-            model = Signal_Propagation_MLP(aggr_type=aggr_type, config=model_config, device=device, bc_dpos=bc_dpos)
-            model.edges = []
-        case 'PDE_N2' | 'PDE_N3' | 'PDE_N4' | 'PDE_N5' | 'PDE_N6' | 'PDE_N7' | 'PDE_N9' | 'PDE_N8' | 'PDE_N11':
-            model = Signal_Propagation(aggr_type=aggr_type, config=model_config, device=device, bc_dpos=bc_dpos)
-            model.edges = []
-        case 'PDE_WBI':
-            from flyvis_gnn.models import WBI_Communication
-            model = WBI_Communication(aggr_type=aggr_type, config=model_config, device=device, bc_dpos=bc_dpos)
-            model.edges = []
-
-    if model==[]:
-        raise ValueError(f'Unknown model {model_name}')
-
-    return model, bc_pos, bc_dpos
-
 
 def set_trainable_parameters(model=[], lr_embedding=[], lr=[],  lr_update=[], lr_W=[], lr_modulation=[], learning_rate_NNR=[], learning_rate_NNR_f=[], learning_rate_NNR_E=[], learning_rate_NNR_b=[]):
 

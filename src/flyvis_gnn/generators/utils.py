@@ -6,11 +6,6 @@ import scipy
 import subprocess
 import torch
 import xarray as xr
-# Optional signal-specific PDE imports (not available in flyvis-gnn spinoff)
-try:
-    from flyvis_gnn.generators import PDE_N2, PDE_N3, PDE_N4, PDE_N5, PDE_N6, PDE_N7, PDE_N11
-except ImportError:
-    PDE_N2 = PDE_N3 = PDE_N4 = PDE_N5 = PDE_N6 = PDE_N7 = PDE_N11 = None
 from flyvis_gnn.utils import choose_boundary_values, get_equidistant_points, to_numpy, large_tensor_nonzero
 from scipy import stats
 from scipy.spatial import Delaunay
@@ -24,53 +19,6 @@ try:
     from fa2_modified import ForceAtlas2
 except ImportError:
     ForceAtlas2 = None
-
-
-def choose_model(config=[], W=[], device=[]):
-    model_signal_name = config.graph_model.signal_model_name
-    aggr_type = config.graph_model.aggr_type
-    short_term_plasticity_mode = config.simulation.short_term_plasticity_mode
-
-    bc_pos, bc_dpos = choose_boundary_values(config.simulation.boundary)
-
-    params = config.simulation.params
-    p = torch.tensor(params, dtype=torch.float32, device=device)
-    if p.ndim > 2:
-        p = p.squeeze(0)
-    if p.ndim == 1:
-        p = p.unsqueeze(0)
-
-
-    match config.simulation.phi:
-        case 'tanh':
-            phi=torch.tanh
-        case 'relu':
-            phi=torch.relu
-        case 'sigmoid':
-            phi=torch.sigmoid
-        case _:
-            phi=torch.sigmoid
-
-    match model_signal_name:
-        case 'PDE_N2':
-            model = PDE_N2(config=config, aggr_type=aggr_type, p=p, W=W, phi=phi, device=device)
-        case 'PDE_N3':
-            model = PDE_N3(config=config, aggr_type=aggr_type, p=p, W=W, phi=phi, device=device)
-        case 'PDE_N4':
-            model = PDE_N4(config=config, aggr_type=aggr_type, p=p, W=W, phi=phi, device=device)
-        case 'PDE_N5':
-            model = PDE_N5(config=config, aggr_type=aggr_type, p=p, W=W, phi=phi, device=device)
-        case 'PDE_N6':
-            model = PDE_N6(config=config, aggr_type=aggr_type, p=p, W=W, phi=phi, short_term_plasticity_mode=short_term_plasticity_mode, device=device)
-        case 'PDE_N7':
-            model = PDE_N7(config=config, aggr_type=aggr_type, p=p, W=W, phi=phi, short_term_plasticity_mode=short_term_plasticity_mode, device=device)
-        case 'PDE_N11':
-            func_p = config.simulation.func_params
-            model = PDE_N11(config=config, aggr_type=aggr_type, p=p, W=W, phi=phi, func_p=func_p, device=device)
-
-
-
-    return model, bc_pos, bc_dpos
 
 
 def initialize_random_values(n, device):

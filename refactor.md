@@ -286,3 +286,117 @@ Then uses `sim.n_neurons`, `tc.batch_size`, `model_config.signal_model_name` dir
 - `n_neurons` in `data_test_flyvis` (conditional on `training_selected_neurons`)
 - `replace_with_cluster = 'replace' in tc.sparsity` (derived)
 - `getattr()` calls in `data_train_INR` (provide defaults for optional fields)
+
+## 5. Model Registry, Naming Cleanup, and Dead Code Removal
+
+### The problem
+
+Three related issues in the model layer:
+
+1. **Magic names**: `PDE_N9` is a meaningless internal code (PDE variant #9). `Signal_Propagation_FlyVis` is an overly verbose class name inherited from the parent repo. Neither conveys what the code does.
+
+2. **Dead dispatch functions**: `choose_training_model()` in `models/utils.py` (85 lines) and `choose_model()` in `generators/utils.py` (45 lines) dispatched to model classes (`PDE_N2`–`PDE_N8`, `PDE_N11`, `Signal_Propagation_MLP`, etc.) that don't exist in this repo. `GNN_PlotFigure.py` called both functions, but `choose_model()` had no case for `PDE_N9_A` — it only covered PDE_N2–N7 and N11 — so the ground-truth plotting paths were silently broken for flyvis configs.
+
+3. **If/elif model creation chains**: Three sites in `graph_trainer.py` used if/elif chains to instantiate models by checking `signal_model_name` strings against class names (`Signal_Propagation_Temporal`, `Signal_Propagation_MLP_ODE`, `Signal_Propagation_MLP`, `Signal_Propagation_FlyVis`). Only the last branch was ever reachable. Additionally, ~50 lines of try/except imports attempted to load non-existent model classes, a `data_train_zebra` branch called a non-existent function, and `GNN_PlotFigure.py` had dead branches for PDE_N2–N8/N11 plotting.
+
+### The solution: Model registry + rename + cleanup
+
+**Model registry** (`src/flyvis_gnn/models/registry.py`):
+
+A decorator-based registry replaces scattered if/elif dispatch with a single lookup:
+
+```python
+from flyvis_gnn.models.registry import register_model, create_model
+
+@register_model("PDE_N9_A", "PDE_N9_B", "PDE_N9_C", ...)
+class FlyVisGNN(nn.Module):
+    ...
+
+# At call sites (graph_trainer.py):
+model = create_model(model_config.signal_model_name,
+                     aggr_type=model_config.aggr_type,
+                     config=config, device=device)
+```
+
+The registry uses lazy auto-discovery: `_discover_models()` imports model modules on first `create_model()` or `list_models()` call, triggering their `@register_model` decorators. This avoids circular imports and keeps startup fast.
+
+**Class and file renames**:
+
+| Old | New | Purpose |
+|-----|-----|---------|
+| `Signal_Propagation_FlyVis` (class) | `FlyVisGNN` | Learned GNN model |
+| `Signal_Propagation_FlyVis.py` (file) | `flyvis_gnn.py` | Main model module |
+| `PDE_N9` (class) | `FlyVisODE` | Ground-truth ODE simulator |
+| `PDE_N9.py` (file) | `flyvis_ode.py` | ODE module |
+
+Config values (`PDE_N9_A`, `PDE_N9_A_tanh`, etc.) are preserved as-is — they are registry keys, not class names. Existing saved configs and checkpoints keep working without migration.
+
+**Backward compatibility**: Old files (`Signal_Propagation_FlyVis.py`, `PDE_N9.py`) become one-line re-export stubs. Old class names are aliased at the bottom of the new modules:
+
+```python
+# In flyvis_gnn.py:
+Signal_Propagation_FlyVis = FlyVisGNN
+
+# In flyvis_ode.py:
+PDE_N9 = FlyVisODE
+```
+
+### What was removed
+
+- `choose_training_model()` — 85-line 3-stage match/case function in `models/utils.py`
+- `choose_model()` — 45-line match/case function in `generators/utils.py`
+- ~50 lines of phantom try/except imports in `graph_trainer.py` for non-existent classes: `LowRankINR`, `Signal_Propagation_MLP`, `Signal_Propagation_MLP_ODE`, `Signal_Propagation_Zebra`, `Signal_Propagation_Temporal`, `Signal_Propagation_RNN`, `Signal_Propagation_LSTM`, `HashEncodingMLP`, `integrate_neural_ode_Signal`, `neural_ode_loss_Signal`, zebra utilities
+- ~7 try/except imports in `generators/utils.py` for `PDE_N2` through `PDE_N7`, `PDE_N11`
+- Zebra branch in `data_train()` dispatcher
+- 3 model creation if/elif chains in `graph_trainer.py` replaced with single `create_model()` calls
+- 4 `choose_training_model()` calls in `GNN_PlotFigure.py` replaced with `_create_learned_model()` (uses `create_model` from registry)
+- 3 `choose_model()` calls in `GNN_PlotFigure.py` replaced with `_create_true_model()` (loads saved parameters and constructs `FlyVisODE` directly — first version that actually works for flyvis configs)
+- ~335 lines of dead PDE_N2–N8/N11 branches in `GNN_PlotFigure.py` (modulation plots, symbolic regression blocks, per-model MLP plotting)
+
+### Plotting model creation (`GNN_PlotFigure.py`)
+
+The old `choose_training_model()` and `choose_model()` were replaced by two local helpers:
+
+```python
+def _create_learned_model(config, device):
+    """Create a fresh FlyVisGNN for loading trained weights into."""
+    model = create_model(config.graph_model.signal_model_name,
+                         aggr_type=config.graph_model.aggr_type,
+                         config=config, device=device)
+    bc_pos, bc_dpos = choose_boundary_values(config.simulation.boundary)
+    return model, bc_pos, bc_dpos
+
+def _create_true_model(config, W, device):
+    """Create a ground-truth FlyVisODE from saved parameters."""
+    p = {"tau_i": torch.load('.../taus.pt'),
+         "V_i_rest": torch.load('.../V_i_rest.pt'),
+         "w": torch.load('.../weights.pt')}
+    true_model = FlyVisODE(p=p, f=relu, params=sim.params,
+                           model_type=signal_model_name, ...)
+    bc_pos, bc_dpos = choose_boundary_values(sim.boundary)
+    return true_model, bc_pos, bc_dpos
+```
+
+`_create_true_model` loads the ground-truth ODE parameters that were saved during data generation (`weights.pt`, `taus.pt`, `V_i_rest.pt`), constructing a `FlyVisODE` directly. The old `choose_model()` had no match case for `PDE_N9_A` and would have raised `UnboundLocalError` — this is the first working version for flyvis configs.
+
+### What was kept
+
+- **Behavioral dispatch sites** (10 remaining): Sites in `graph_trainer.py` that check `signal_model_name` for forward pass logic, integration method, hidden state handling, and feature guards. These dispatch to code paths for MLP/RNN/LSTM models that may be added in the future. Cleaning them requires those model classes to exist first.
+- **Helper functions** in `GNN_PlotFigure.py` (`determine_plot_limits_signal`, `create_signal_lin_edge_subplot`) that reference PDE_N variants — these are part of `plot_signal()` which is only called for non-fly datasets.
+
+### Files changed
+
+| File | Action |
+|------|--------|
+| `src/flyvis_gnn/models/registry.py` | New — model registry |
+| `src/flyvis_gnn/models/flyvis_gnn.py` | Renamed from `Signal_Propagation_FlyVis.py`, class → `FlyVisGNN` |
+| `src/flyvis_gnn/models/Signal_Propagation_FlyVis.py` | Now a backward-compat re-export stub |
+| `src/flyvis_gnn/generators/flyvis_ode.py` | Renamed from `PDE_N9.py`, class → `FlyVisODE` |
+| `src/flyvis_gnn/generators/PDE_N9.py` | Now a backward-compat re-export stub |
+| `src/flyvis_gnn/models/utils.py` | Removed `choose_training_model()` + dead imports |
+| `src/flyvis_gnn/generators/utils.py` | Removed `choose_model()` + dead imports |
+| `src/flyvis_gnn/models/graph_trainer.py` | Removed phantom imports, zebra branch; 3 model creation sites → `create_model()` |
+| `src/flyvis_gnn/generators/graph_data_generator.py` | `PDE_N9` → `FlyVisODE` |
+| `GNN_PlotFigure.py` | Removed dead PDE_N2–N8/N11 branches; replaced `choose_training_model` / `choose_model` with registry-based helpers |
+| `src/flyvis_gnn/models/__init__.py` | Added `flyvis_gnn`, `registry` to exports |
+| `src/flyvis_gnn/generators/__init__.py` | Added `flyvis_ode` to exports |

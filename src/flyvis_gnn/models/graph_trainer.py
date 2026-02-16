@@ -44,62 +44,12 @@ from flyvis_gnn.utils import (
 )
 from flyvis_gnn.figure_style import dark_style
 from flyvis_gnn.generators.plots import plot_spatial_activity_grid, INDEX_TO_NAME
-from flyvis_gnn.models.Signal_Propagation_FlyVis import Signal_Propagation_FlyVis
+from flyvis_gnn.models.flyvis_gnn import FlyVisGNN
+from flyvis_gnn.models.registry import create_model
 from flyvis_gnn.models.Neural_ode_wrapper_FlyVis import (
     integrate_neural_ode_FlyVis, neural_ode_loss_FlyVis,
     debug_check_gradients, DEBUG_ODE
 )
-
-# Optional signal-specific imports (not available in flyvis-gnn spinoff)
-try:
-    from flyvis_gnn.models.LowRank_INR import LowRankINR
-except ImportError:
-    LowRankINR = None
-try:
-    from flyvis_gnn.models.Signal_Propagation_MLP import Signal_Propagation_MLP
-except ImportError:
-    Signal_Propagation_MLP = None
-try:
-    from flyvis_gnn.models.Signal_Propagation_MLP_ODE import Signal_Propagation_MLP_ODE
-except ImportError:
-    Signal_Propagation_MLP_ODE = None
-try:
-    from flyvis_gnn.models.Signal_Propagation_Zebra import Signal_Propagation_Zebra
-except ImportError:
-    Signal_Propagation_Zebra = None
-try:
-    from flyvis_gnn.models.Neural_ode_wrapper_Signal import integrate_neural_ode_Signal, neural_ode_loss_Signal
-except ImportError:
-    integrate_neural_ode_Signal = None
-    neural_ode_loss_Signal = None
-try:
-    from flyvis_gnn.models.Signal_Propagation_Temporal import Signal_Propagation_Temporal
-except ImportError:
-    Signal_Propagation_Temporal = None
-try:
-    from flyvis_gnn.models.Signal_Propagation_RNN import Signal_Propagation_RNN
-except ImportError:
-    Signal_Propagation_RNN = None
-try:
-    from flyvis_gnn.models.Signal_Propagation_LSTM import Signal_Propagation_LSTM
-except ImportError:
-    Signal_Propagation_LSTM = None
-try:
-    from flyvis_gnn.models.utils_zebra import (
-        plot_field_comparison,
-        plot_field_comparison_continuous_slices,
-        plot_field_comparison_discrete_slices,
-        plot_field_discrete_xy_slices_grid,
-    )
-except ImportError:
-    plot_field_comparison = None
-    plot_field_comparison_continuous_slices = None
-    plot_field_comparison_discrete_slices = None
-    plot_field_discrete_xy_slices_grid = None
-try:
-    from flyvis_gnn.models.HashEncoding_Network import HashEncodingMLP
-except ImportError:
-    HashEncodingMLP = None
 from flyvis_gnn.zarr_io import load_simulation_data, load_simulation_data_raw
 from flyvis_gnn.neuron_state import NeuronState
 
@@ -113,7 +63,7 @@ import seaborn as sns
 import imageio
 imread = imageio.imread
 from matplotlib.colors import LinearSegmentedColormap
-from flyvis_gnn.generators.utils import choose_model, plot_signal_loss, generate_compressed_video_mp4, init_connectivity
+from flyvis_gnn.generators.utils import plot_signal_loss, generate_compressed_video_mp4, init_connectivity
 from flyvis_gnn.generators.graph_data_generator import (
     apply_pairwise_knobs_torch,
     assign_columns_from_uv,
@@ -186,8 +136,6 @@ def data_train(config=None, erase=False, best_model=None, style=None, device=Non
             data_train_flyvis_RNN(config, erase, best_model, device)
         else:
             data_train_flyvis(config, erase, best_model, device, log_file=log_file)
-    elif 'zebra' in config.dataset:
-        data_train_zebra(config, erase, best_model, device)
     else:
         raise ValueError(f"Unknown dataset type: {config.dataset}")
 
@@ -276,15 +224,8 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         print(f'svd analysis already exists: {svd_plot_path}')
 
     print('create models ...')
-    if tc.time_window >0:
-        model = Signal_Propagation_Temporal(aggr_type=model_config.aggr_type, config=config, device=device)
-    elif 'MLP_ODE' in model_config.signal_model_name:
-        model = Signal_Propagation_MLP_ODE(aggr_type=model_config.aggr_type, config=config, device=device)
-    elif 'MLP' in model_config.signal_model_name:
-        model = Signal_Propagation_MLP(aggr_type=model_config.aggr_type, config=config, device=device)
-    else:
-        model = Signal_Propagation_FlyVis(aggr_type=model_config.aggr_type, config=config, device=device)
-
+    model = create_model(model_config.signal_model_name,
+                         aggr_type=model_config.aggr_type, config=config, device=device)
 
     model = model.to(device)
 
@@ -982,12 +923,9 @@ def data_train_flyvis_RNN(config, erase, best_model, device):
     logger.info(f'ynorm: {ynorm.item():.3f}')
 
     # Create model
-    if 'LSTM' in model_config.signal_model_name:
-        model = Signal_Propagation_LSTM(aggr_type=model_config.aggr_type, config=config, device=device)
-        use_lstm = True
-    else:  # GRU/RNN
-        model = Signal_Propagation_RNN(aggr_type=model_config.aggr_type, config=config, device=device)
-        use_lstm = False
+    model = create_model(model_config.signal_model_name,
+                         aggr_type=model_config.aggr_type, config=config, device=device)
+    use_lstm = 'LSTM' in model_config.signal_model_name
 
     # Count parameters
     n_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -1624,7 +1562,7 @@ def data_test_flyvis(
     import flyvis
     from flyvis import NetworkView, Network
     from flyvis.utils.config_utils import get_default_config, CONFIG_PATH
-    from flyvis_gnn.generators.PDE_N9 import PDE_N9, get_photoreceptor_positions_from_net, \
+    from flyvis_gnn.generators.flyvis_ode import FlyVisODE, get_photoreceptor_positions_from_net, \
         group_by_direction_and_function
     # Initialize datasets
     if "DAVIS" in sim.visual_input_type or "mixed" in sim.visual_input_type:
@@ -1713,20 +1651,12 @@ def data_test_flyvis(
             edge_index = torch.cat([edge_index, extra_edge_index], dim=1)
             p["w"] = torch.cat([p["w"], torch.zeros(len(extra_edges), device=device)])
 
-    pde = PDE_N9(p=p, f=torch.nn.functional.relu, params=sim.params, model_type=model_config.signal_model_name, n_neuron_types=n_neuron_types, device=device)
-    pde_modified = PDE_N9(p=copy.deepcopy(p), f=torch.nn.functional.relu, params=sim.params, model_type=model_config.signal_model_name, n_neuron_types=n_neuron_types, device=device)
+    pde = FlyVisODE(p=p, f=torch.nn.functional.relu, params=sim.params, model_type=model_config.signal_model_name, n_neuron_types=n_neuron_types, device=device)
+    pde_modified = FlyVisODE(p=copy.deepcopy(p), f=torch.nn.functional.relu, params=sim.params, model_type=model_config.signal_model_name, n_neuron_types=n_neuron_types, device=device)
 
 
-    if 'RNN' in model_config.signal_model_name:
-        model = Signal_Propagation_RNN(aggr_type=model_config.aggr_type, config=config, device=device)
-    elif 'LSTM' in model_config.signal_model_name:
-        model = Signal_Propagation_LSTM(aggr_type=model_config.aggr_type, config=config, device=device)
-    elif 'MLP_ODE' in model_config.signal_model_name:
-        model = Signal_Propagation_MLP_ODE(aggr_type=model_config.aggr_type, config=config, device=device)
-    elif 'MLP' in model_config.signal_model_name:
-        model = Signal_Propagation_MLP(aggr_type=model_config.aggr_type, config=config, device=device)
-    else:
-        model = Signal_Propagation_FlyVis(aggr_type=model_config.aggr_type, config=config, device=device)
+    model = create_model(model_config.signal_model_name,
+                         aggr_type=model_config.aggr_type, config=config, device=device)
 
 
     if best_model == 'best':
