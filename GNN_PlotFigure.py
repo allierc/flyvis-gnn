@@ -5032,9 +5032,11 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
 
             with torch.no_grad():
                 from torch_geometric.loader import DataLoader
+                from flyvis_gnn.neuron_state import NeuronState
                 batch_loader = DataLoader(dataset_batch, batch_size=len(k_list), shuffle=False)
                 for batch in batch_loader:
-                    pred, in_features, msg = model(batch, data_id=data_id, mask=mask_batch, return_all=True)
+                    batch_state = NeuronState.from_numpy(batch.x)
+                    pred, in_features, msg = model(batch_state, batch.edge_index, data_id=data_id, mask=mask_batch, return_all=True)
 
             # Extract features and compute gradient of lin_phi w.r.t. msg
             emb_dim = model_config.embedding_dim
