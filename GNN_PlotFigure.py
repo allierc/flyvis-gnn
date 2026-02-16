@@ -2946,19 +2946,19 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
     print(f'xnorm: {to_numpy(xnorm):0.3f}, ynorm: {to_numpy(ynorm):0.3f}')
     logger.info(f'xnorm: {to_numpy(xnorm):0.3f}, ynorm: {to_numpy(ynorm):0.3f}')
 
-    gt_weights = torch.load(f'./graphs_data/{config.dataset}/weights.pt', map_location=device)
-    gt_taus = torch.load(f'./graphs_data/{config.dataset}/taus.pt', map_location=device)
-    gt_V_Rest = torch.load(f'./graphs_data/{config.dataset}/V_i_rest.pt', map_location=device)
-    edges = torch.load(f'./graphs_data/{config.dataset}/edge_index.pt', map_location=device)
-    true_weights = torch.zeros((n_neurons, n_neurons), dtype=torch.float32, device=edges.device)
-    true_weights[edges[1], edges[0]] = gt_weights
-
     x0 = x_list[0]
     type_list = x0.neuron_type.to(device)
     n_types = len(torch.unique(type_list))
     region_list = x0.group_type.to(device)
     n_region_types = len(torch.unique(region_list))
     n_neurons = x0.n_neurons
+
+    gt_weights = torch.load(f'./graphs_data/{config.dataset}/weights.pt', map_location=device)
+    gt_taus = torch.load(f'./graphs_data/{config.dataset}/taus.pt', map_location=device)
+    gt_V_Rest = torch.load(f'./graphs_data/{config.dataset}/V_i_rest.pt', map_location=device)
+    edges = torch.load(f'./graphs_data/{config.dataset}/edge_index.pt', map_location=device)
+    true_weights = torch.zeros((n_neurons, n_neurons), dtype=torch.float32, device=edges.device)
+    true_weights[edges[1], edges[0]] = gt_weights
 
     # Neuron type index to name mapping
     index_to_name = {
