@@ -20,7 +20,7 @@ import pandas as pd
 
 
 from flyvis_gnn.figure_style import default_style as fig_style
-from flyvis_gnn.zarr_io import load_simulation_data
+from flyvis_gnn.zarr_io import load_simulation_data, load_simulation_data_raw
 from flyvis_gnn.fitting_models import linear_model
 from flyvis_gnn.sparsify import EmbeddingCluster, sparsify_cluster, clustering_gmm
 from flyvis_gnn.models.utils import (
@@ -172,7 +172,7 @@ def load_training_data(dataset_name, n_runs, log_dir, device):
     for run in trange(n_runs, ncols=90):
         x = load_simulation_data(f'graphs_data/{dataset_name}/x_list_{run}')
         x = torch.tensor(x, dtype=torch.float32, device=device)
-        y = load_simulation_data(f'graphs_data/{dataset_name}/y_list_{run}')
+        y = load_simulation_data_raw(f'graphs_data/{dataset_name}/y_list_{run}')
         y = torch.tensor(y, dtype=torch.float32, device=device)
 
         x_list.append(x)
@@ -1060,7 +1060,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
     y_list = []
     run =0
     x = load_simulation_data(f'graphs_data/{dataset_name}/x_list_{run}')
-    y = load_simulation_data(f'graphs_data/{dataset_name}/y_list_{run}')
+    y = load_simulation_data_raw(f'graphs_data/{dataset_name}/y_list_{run}')
     if os.path.exists(f'graphs_data/{dataset_name}/raw_x_list_{run}.npy'):
         raw_x = np.load(f'graphs_data/{dataset_name}/raw_x_list_{run}.npy')
     x_list.append(x)
@@ -2936,7 +2936,7 @@ def plot_synaptic3(config, epoch_list, log_dir, logger, cc, style, extended, dev
     y_list = []
     for run in trange(1, ncols=90):
         x = load_simulation_data(f'graphs_data/{dataset_name}/x_list_{run}')
-        y = load_simulation_data(f'graphs_data/{dataset_name}/y_list_{run}')
+        y = load_simulation_data_raw(f'graphs_data/{dataset_name}/y_list_{run}')
         x_list.append(x)
         y_list.append(y)
     vnorm = torch.load(os.path.join(log_dir, 'vnorm.pt'))
@@ -3658,7 +3658,7 @@ def plot_synaptic_CElegans(config, epoch_list, log_dir, logger, cc, style, exten
     y_list = []
     for run in trange(0,n_runs, ncols=90):
         x = load_simulation_data(f'graphs_data/{dataset_name}/x_list_{run}')
-        y = load_simulation_data(f'graphs_data/{dataset_name}/y_list_{run}')
+        y = load_simulation_data_raw(f'graphs_data/{dataset_name}/y_list_{run}')
         if os.path.exists(f'graphs_data/{dataset_name}/raw_x_list_{run}.npy'):
             np.load(f'graphs_data/{dataset_name}/raw_x_list_{run}.npy')
         x_list.append(x)
@@ -4528,7 +4528,7 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
     print('load simulation data...')
     for run in range(0, n_runs):
         x = load_simulation_data(f'graphs_data/{dataset_name}/x_list_{run}')
-        y = load_simulation_data(f'graphs_data/{dataset_name}/y_list_{run}')
+        y = load_simulation_data_raw(f'graphs_data/{dataset_name}/y_list_{run}')
         x_list.append(x)
         y_list.append(y)
 
@@ -5563,7 +5563,7 @@ def plot_synaptic_zebra(config, epoch_list, log_dir, logger, cc, style, extended
     run = 0
     x = load_simulation_data(f'graphs_data/{dataset_name}/x_list_{run}')
     x = torch.tensor(x, dtype=torch.float32, device=device)
-    y = load_simulation_data(f'graphs_data/{dataset_name}/y_list_{run}')
+    y = load_simulation_data_raw(f'graphs_data/{dataset_name}/y_list_{run}')
     y = torch.tensor(y, dtype=torch.float32, device=device)
     x_list.append(x)
     y_list.append(y)
