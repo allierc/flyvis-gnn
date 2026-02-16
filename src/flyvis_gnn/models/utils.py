@@ -273,114 +273,52 @@ def get_in_features(rr=None, embedding=None, model=[], model_name = [], max_radi
 
 def plot_training_flyvis(x_list, model, config, epoch, N, log_dir, device, cmap, type_list,
                          gt_weights, edges, n_neurons=None, n_neuron_types=None):
-    signal_model_name = config.graph_model.signal_model_name
+    from flyvis_gnn.plot import (
+        plot_embedding, plot_lin_edge, plot_lin_phi, plot_weight_scatter,
+        compute_all_corrected_weights,
+    )
 
     if n_neurons is None:
         n_neurons = len(type_list)
 
-
     plt.style.use('default')
 
     # Plot 1: Embedding scatter plot
-    plt.figure(figsize=(8, 8))
-    for n in range(n_neuron_types):
-        pos = torch.argwhere(type_list == n)
-        plt.scatter(to_numpy(model.a[pos, 0]), to_numpy(model.a[pos, 1]), s=5, color=cmap.color(n), alpha=0.7, edgecolors='none')
-    plt.xlabel('embedding 0', fontsize=18)
-    plt.ylabel('embedding 1', fontsize=18)
-    plt.xticks([])
-    plt.yticks([])
+    fig, ax = plt.subplots(figsize=(8, 8))
+    plot_embedding(ax, model, type_list, n_neuron_types, cmap)
     plt.tight_layout()
     plt.savefig(f"./{log_dir}/tmp_training/embedding/{epoch}_{N}.png", dpi=87)
     plt.close()
 
-    x_data = to_numpy(gt_weights)
-    y_data = to_numpy(model.W.squeeze())
-    lin_fit, lin_fitv = curve_fit(linear_model, x_data, y_data)
-    residuals = y_data - linear_model(x_data, *lin_fit)
-    ss_res = np.sum(residuals ** 2)
-    ss_tot = np.sum((y_data - np.mean(y_data)) ** 2)
-    r_squared = 1 - (ss_res / ss_tot)
-    # print(f'R^2$: {np.round(r_squared, 3)}  slope: {np.round(lin_fit[0], 2)}')
+    # Compute corrected weights
+    corrected_W, _, _, _ = compute_all_corrected_weights(
+        model, config, edges, x_list, device)
 
-
-    # Check Dale's Law for learned weights
-    dale_results = check_dales_law(
-        edges=edges,
-        weights=model.W,
-        type_list=type_list,
-        n_neurons=n_neurons,
-        verbose=False,
-        logger=None
-    )
-
-    # Plot 2: Weight comparison scatter plot
+    # Plot 2: Corrected weight comparison scatter plot
     fig, ax = plt.subplots(figsize=(8, 8))
-
-    ax.scatter(to_numpy(gt_weights), to_numpy(model.W.squeeze()), s=0.1, c='k', alpha=0.01)
-    ax.set_xlabel(r'true $W_{ij}$', fontsize=18)
-    ax.set_ylabel(r'learned $W_{ij}$', fontsize=18)
-
-    # Add R² and slope using axes transform for consistent positioning
-    ax.text(0.05, 0.95, f'$R^2$: {r_squared:.3f}', transform=ax.transAxes,
-            fontsize=14, verticalalignment='top')
-    ax.text(0.05, 0.9, f'slope: {lin_fit[0]:.3f}', transform=ax.transAxes,
-            fontsize=14, verticalalignment='top')
-
-    # Add Dale's Law statistics
-    # dale_text = (f"Exc (W>0): {dale_results['n_excitatory']} ({100*dale_results['n_excitatory']/n_neurons:.0f}%)\n"
-    #              f"Inh (W<0): {dale_results['n_inhibitory']} ({100*dale_results['n_inhibitory']/n_neurons:.0f}%)\n"
-    #              f"Mixed: {dale_results['n_mixed']} ({100*dale_results['n_mixed']/n_neurons:.0f}%)")
-    # ax.text(0.95, 0.05, dale_text, transform=ax.transAxes,
-    #         fontsize=9, verticalalignment='bottom', horizontalalignment='right')
-
-    ax.set_xlim([-1, 1])
-    ax.set_ylim([-5, 5])
+    r_squared, _ = plot_weight_scatter(
+        ax,
+        gt_weights=to_numpy(gt_weights),
+        learned_weights=to_numpy(corrected_W.squeeze()),
+        corrected=True,
+        xlim=[-1, 2],
+        ylim=[-1, 2],
+    )
     plt.tight_layout()
     plt.savefig(f"./{log_dir}/tmp_training/matrix/comparison_{epoch}_{N}.png",
                 dpi=87, bbox_inches='tight', pad_inches=0)
     plt.close()
 
-    # Plot 3: Edge function visualization
-    plt.figure(figsize=(8, 8))
-    rr = torch.linspace(config.plotting.xlim[0], config.plotting.xlim[1], 1000, device=device)
-    for n in range(n_neurons):
-        embedding_ = model.a[n, :] * torch.ones((1000, config.graph_model.embedding_dim), device=device)
-        if ('PDE_N9_A' in signal_model_name) | ('PDE_N9_C' in signal_model_name) | ('PDE_N9_D' in signal_model_name):
-            in_features = torch.cat((rr[:, None], embedding_,), dim=1)
-        elif ('PDE_N9_B' in signal_model_name):
-            in_features = torch.cat((rr[:, None] * 0, rr[:, None], embedding_, embedding_), dim=1)
-        with torch.no_grad():
-            func = model.lin_edge(in_features.float())
-        if config.graph_model.lin_edge_positive:
-            func = func ** 2
-        if (n % 20 == 0):
-            plt.plot(to_numpy(rr), to_numpy(func), 2,
-                     color=cmap.color(to_numpy(type_list)[n].astype(int)),
-                     linewidth=1, alpha=0.1)
-    plt.xlim(config.plotting.xlim)
+    # Plot 3: Edge function visualization (lin_edge / MLP1)
+    fig, ax = plt.subplots(figsize=(8, 8))
+    plot_lin_edge(ax, model, config, n_neurons, type_list, cmap, device)
     plt.tight_layout()
     plt.savefig(f"./{log_dir}/tmp_training/function/MLP1/func_{epoch}_{N}.png", dpi=87)
     plt.close()
 
-    # Plot 4: Phi function visualization
-    plt.figure(figsize=(8, 8))
-    for n in range(n_neurons):
-        embedding_ = model.a[n, :] * torch.ones((1000, config.graph_model.embedding_dim), device=device)
-        if ('PDE_N9_C' in signal_model_name):
-            in_features = torch.cat((rr[:, None], embedding_, torch.zeros_like(rr[:, None])), dim=1)
-        else:
-            if model.training_time_window>0:
-                in_features = torch.cat((rr[:, None].repeat(1, model.training_time_window-1), embedding_, rr[:, None] * 0, torch.zeros_like(rr[:, None]), torch.zeros((rr.shape[0],model.training_time_window))),dim=1)
-            else:
-                in_features = torch.cat((rr[:, None], embedding_, rr[:, None] * 0, torch.zeros_like(rr[:, None])), dim=1)
-        with torch.no_grad():
-            func = model.lin_phi(in_features.float())
-        if (n % 20 == 0):
-            plt.plot(to_numpy(rr), to_numpy(func), 2,
-                     color=cmap.color(to_numpy(type_list)[n].astype(int)),
-                     linewidth=1, alpha=0.1)
-    plt.xlim(config.plotting.xlim)
+    # Plot 4: Phi function visualization (lin_phi / MLP0)
+    fig, ax = plt.subplots(figsize=(8, 8))
+    plot_lin_phi(ax, model, config, n_neurons, type_list, cmap, device)
     plt.tight_layout()
     plt.savefig(f"./{log_dir}/tmp_training/function/MLP0/func_{epoch}_{N}.png", dpi=87)
     plt.close()

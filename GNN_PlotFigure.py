@@ -53,6 +53,22 @@ from flyvis_gnn.utils import (
 from flyvis_gnn.models.Siren_Network import Siren, Siren_Network
 from flyvis_gnn.models.Signal_Propagation_FlyVis import Signal_Propagation_FlyVis
 from flyvis_gnn.models.graph_trainer import data_test
+from flyvis_gnn.plot import (
+    get_model_W,
+    compute_r_squared,
+    compute_activity_stats,
+    extract_lin_edge_slopes,
+    extract_lin_phi_slopes,
+    compute_grad_msg,
+    compute_corrected_weights,
+    compute_all_corrected_weights,
+    plot_embedding,
+    plot_lin_phi,
+    plot_lin_edge,
+    plot_weight_scatter,
+    plot_tau,
+    plot_vrest,
+)
 from flyvis_gnn.generators.utils import choose_model
 from flyvis_gnn.config import NeuralGraphConfig
 
@@ -104,14 +120,7 @@ plt.rcParams.update({
 # Optional dependency
 
 
-def get_model_W(model):
-    """Get the weight matrix from a model, handling low-rank factorization."""
-    if hasattr(model, 'W'):
-        return model.W
-    elif hasattr(model, 'WL') and hasattr(model, 'WR'):
-        return model.WL @ model.WR
-    else:
-        raise AttributeError("Model has neither 'W' nor 'WL'/'WR' attributes")
+# get_model_W imported from flyvis_gnn.plot
 
 
 def get_training_files(log_dir, n_runs):
@@ -6167,226 +6176,87 @@ def load_model_for_epoch(config, log_dir, files, file_id_, n_runs, device, edges
 
 def analyze_model_functions(model, config, n_neurons, mu_activity, sigma_activity, device, x_list, y_list, edges,
                             ynorm):
-    """Analyze model functions and return slopes and corrected weights."""
-    slopes_lin_phi_list, offsets_list = analyze_lin_phi_functions(model, config, n_neurons, mu_activity, sigma_activity,
-                                                                  device)
-    slopes_lin_edge_list = analyze_lin_edge_functions(model, config, n_neurons, mu_activity, sigma_activity, device)
-    corrected_W = calculate_corrected_weights(model, config, x_list, y_list, edges, ynorm, device, slopes_lin_phi_list,
-                                              slopes_lin_edge_list)
-    return slopes_lin_phi_list, offsets_list, slopes_lin_edge_list, corrected_W
+    """Analyze model functions and return slopes and corrected weights.
+
+    Delegates to shared functions in flyvis_gnn.plot.
+    """
+    slopes_lin_phi, offsets = extract_lin_phi_slopes(
+        model, config, n_neurons, mu_activity, sigma_activity, device)
+    slopes_lin_edge = extract_lin_edge_slopes(
+        model, config, n_neurons, mu_activity, sigma_activity, device)
+
+    # Compute corrected weights using a sample forward pass
+    mid_frame = x_list[0].voltage.shape[0] // 2
+    from flyvis_gnn.neuron_state import NeuronTimeSeries
+    if isinstance(x_list[0], NeuronTimeSeries):
+        state = x_list[0].frame(mid_frame)
+    else:
+        # Legacy packed array path
+        from flyvis_gnn.neuron_state import NeuronState
+        state = NeuronState.from_numpy(
+            torch.tensor(x_list[0][mid_frame], dtype=torch.float32, device=device))
+
+    data_id = torch.zeros((n_neurons, 1), dtype=torch.int, device=device)
+    was_training = model.training
+    model.eval()
+    with torch.no_grad():
+        _, in_features, _ = model(state, edges, data_id=data_id, return_all=True)
+    if was_training:
+        model.train()
+
+    grad_msg = compute_grad_msg(model, in_features, config)
+    corrected_W = compute_corrected_weights(
+        model, edges, slopes_lin_phi, slopes_lin_edge, grad_msg)
+
+    return slopes_lin_phi, offsets, slopes_lin_edge, corrected_W
 
 
-def analyze_lin_phi_functions(model, config, n_neurons, mu_activity, sigma_activity, device):
-    """Analyze lin_phi functions and return slopes and offsets."""
-    slopes_lin_phi_list = []
-    offsets_list = []
-
-    for n in range(n_neurons):
-        rr = torch.linspace(mu_activity[n] - 2 * sigma_activity[n], mu_activity[n] + 2 * sigma_activity[n], 1000,
-                            device=device)
-        embedding_ = model.a[n, :] * torch.ones((1000, config.graph_model.embedding_dim), device=device)
-        in_features = torch.cat((rr[:, None], embedding_, rr[:, None] * 0, torch.zeros_like(rr[:, None])), dim=1)
-
-        with torch.no_grad():
-            func = model.lin_phi(in_features.float())
-
-        rr_numpy = to_numpy(rr)
-        func_numpy = to_numpy(func.squeeze())
-        try:
-            lin_fit, _ = curve_fit(linear_model, rr_numpy, func_numpy)
-            slope, offset = lin_fit[0], lin_fit[1]
-        except:
-            coeffs = np.polyfit(rr_numpy, func_numpy, 1)
-            slope, offset = coeffs[0], coeffs[1]
-
-        slopes_lin_phi_list.append(slope)
-        offsets_list.append(offset)
-
-    return slopes_lin_phi_list, offsets_list
-
-
-def analyze_lin_edge_functions(model, config, n_neurons, mu_activity, sigma_activity, device):
-    """Analyze lin_edge functions and return slopes."""
-    slopes_lin_edge_list = []
-
-    for n in range(n_neurons):
-        rr = torch.linspace(mu_activity[n] - 2 * sigma_activity[n], mu_activity[n] + 2 * sigma_activity[n], 1000,
-                            device=device)
-        embedding_ = model.a[n, :] * torch.ones((1000, config.graph_model.embedding_dim), device=device)
-
-        if ('PDE_N9_A' in config.graph_model.signal_model_name) | ('PDE_N9_D' in config.graph_model.signal_model_name):
-            in_features = torch.cat((rr[:, None], embedding_,), dim=1)
-        elif ('PDE_N9_B' in config.graph_model.signal_model_name):
-            in_features = torch.cat((rr[:, None] * 0, rr[:, None], embedding_, embedding_), dim=1)
-
-        with torch.no_grad():
-            func = model.lin_edge(in_features.float())
-            if config.graph_model.lin_edge_positive:
-                func = func ** 2
-
-        rr_numpy = to_numpy(rr[rr.shape[0] // 2 + 1:])
-        func_numpy = to_numpy(func[rr.shape[0] // 2 + 1:].squeeze())
-        try:
-            lin_fit, _ = curve_fit(linear_model, rr_numpy, func_numpy)
-            slope = lin_fit[0]
-        except:
-            coeffs = np.polyfit(rr_numpy, func_numpy, 1)
-            slope = coeffs[0]
-
-        slopes_lin_edge_list.append(slope)
-
-    return slopes_lin_edge_list
-
-
-def calculate_corrected_weights(model, config, x_list, y_list, edges, ynorm, device, slopes_lin_phi_list,
-                                slopes_lin_edge_list):
-    """Calculate corrected weights using gradient analysis."""
-    # [Implementation of the corrected weight calculation logic from the original code]
-    # This would include the data construction and gradient calculation steps
-    # Returning placeholder for brevity
-    return torch.zeros((edges.shape[1], 1), device=device)
-
+# Thin wrappers that create subplot axes and delegate to shared plot functions.
+# These preserve the create_*_subplot(fig, ..., rows, cols, pos) calling convention.
 
 def create_weight_subplot(fig, model, gt_weights, mc, rows, cols, pos):
     """Create weight comparison subplot using uncorrected weights."""
     ax = fig.add_subplot(rows, cols, pos)
-    learned_weights = to_numpy(get_model_W(model).squeeze())
-    true_weights = to_numpy(gt_weights)
-
-    # Fit linear model for R² calculation
-    from scipy.optimize import curve_fit
-    lin_fit, _ = curve_fit(linear_model, true_weights, learned_weights)
-    residuals = learned_weights - linear_model(true_weights, *lin_fit)
-    ss_res = np.sum(residuals ** 2)
-    ss_tot = np.sum((learned_weights - np.mean(learned_weights)) ** 2)
-    r_squared = 1 - (ss_res / ss_tot)
-
-    plt.text(0.05, 0.95, f'R²: {r_squared:.3f}\nslope: {lin_fit[0]:.2f}\nN: {len(true_weights)}',
-             transform=ax.transAxes, verticalalignment='top', fontsize=24)
-
-    plt.scatter(true_weights, learned_weights , c=mc, s=0.1, alpha=0.1)
-    ax.set_xlabel('true $W_{ij}$', fontsize=32)
-    ax.set_ylabel('learned $W_{ij}$', fontsize=32)
-    ax.set_xlim([-2, 2])
-    ax.set_ylim([-8, 8])
-    ax.tick_params(axis='both', which='major', labelsize=24)
+    plot_weight_scatter(
+        ax,
+        gt_weights=to_numpy(gt_weights),
+        learned_weights=to_numpy(get_model_W(model).squeeze()),
+        corrected=False,
+        xlim=[-2, 2],
+        ylim=[-8, 8],
+    )
 
 
 def create_embedding_subplot(fig, model, type_list, n_types, colors_65, rows, cols, pos):
     """Create embedding subplot."""
     ax = fig.add_subplot(rows, cols, pos)
-    embedding_plot = to_numpy(model.a)
-
-    for n in range(n_types):
-        type_mask = (to_numpy(type_list).squeeze() == n)
-        if np.any(type_mask):
-            ax.scatter(embedding_plot[type_mask, 0], embedding_plot[type_mask, 1],
-                       c=colors_65[n], s=6, alpha=0.25, edgecolors='none')
-    ax.set_xlabel('$a_0$', fontsize=32)
-    ax.set_ylabel('$a_1$', fontsize=32)
-    ax.tick_params(axis='both', which='major', labelsize=24)
-    ax.xaxis.set_major_formatter(FormatStrFormatter('%.1f'))
-    ax.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
+    plot_embedding(ax, model, type_list, n_types, colors_65)
 
 
 def create_lin_phi_subplot(fig, model, config, n_neurons, mu_activity, sigma_activity, cmap, type_list, device, rows,
                            cols, pos):
     """Create lin_phi function subplot."""
     ax = fig.add_subplot(rows, cols, pos)
-
-    for n in range(n_neurons):
-        if n % 20 == 0:
-            rr = torch.linspace(config.plotting.xlim[0], config.plotting.xlim[1], 1000, device=device)
-            embedding_ = model.a[n, :] * torch.ones((1000, config.graph_model.embedding_dim), device=device)
-            in_features = torch.cat((rr[:, None], embedding_, rr[:, None] * 0, torch.zeros_like(rr[:, None])), dim=1)
-            with torch.no_grad():
-                func = model.lin_phi(in_features.float())
-                ax.plot(to_numpy(rr), to_numpy(func), color=cmap.color(to_numpy(type_list)[n].astype(int)),
-                        linewidth=1, alpha=0.2)
-
-    ax.set_xlim(config.plotting.xlim)
-    ax.set_ylim(config.plotting.ylim)
-    ax.set_xlabel('$v_i$', fontsize=32)
-    ax.set_ylabel(r'learned $\mathrm{MLP_0}(\mathbf{a}_i, v_i)$', fontsize=32)
-    ax.tick_params(axis='both', which='major', labelsize=24)
+    plot_lin_phi(ax, model, config, n_neurons, type_list, cmap, device)
 
 
 def create_lin_edge_subplot(fig, model, config, n_neurons, mu_activity, sigma_activity, cmap, type_list, device, rows,
                             cols, pos):
     """Create lin_edge function subplot."""
     ax = fig.add_subplot(rows, cols, pos)
-
-    for n in range(n_neurons):
-        if n % 20 == 0:
-            rr = torch.linspace(config.plotting.xlim[0], config.plotting.xlim[1], 1000, device=device)
-            embedding_ = model.a[n, :] * torch.ones((1000, config.graph_model.embedding_dim), device=device)
-            if ('PDE_N9_A' in config.graph_model.signal_model_name) | (
-                    'PDE_N9_D' in config.graph_model.signal_model_name):
-                in_features = torch.cat((rr[:, None], embedding_,), dim=1)
-            elif ('PDE_N9_B' in config.graph_model.signal_model_name):
-                in_features = torch.cat((rr[:, None] * 0, rr[:, None], embedding_, embedding_), dim=1)
-
-            with torch.no_grad():
-                func = model.lin_edge(in_features.float())
-                if config.graph_model.lin_edge_positive:
-                    func = func ** 2
-                ax.plot(to_numpy(rr), to_numpy(func), color=cmap.color(to_numpy(type_list)[n].astype(int)),
-                        linewidth=1, alpha=0.2)
-
-    ax.set_xlim(config.plotting.xlim)
-    ax.set_ylim([-config.plotting.xlim[1] / 10, config.plotting.xlim[1] * 1.2])
-    ax.set_xlabel('$v_i$', fontsize=32)
-    ax.set_ylabel(r'learned $\mathrm{MLP_1}(\mathbf{a}_j, v_i)$', fontsize=32)
-    ax.tick_params(axis='both', which='major', labelsize=24)
+    plot_lin_edge(ax, model, config, n_neurons, type_list, cmap, device)
 
 
 def create_tau_subplot(fig, slopes_lin_phi_list, gt_taus, n_neurons, mc, rows, cols, pos):
     """Create tau comparison subplot."""
     ax = fig.add_subplot(rows, cols, pos)
-    slopes_lin_phi_array_np = np.array(slopes_lin_phi_list)
-    learned_tau = np.where(slopes_lin_phi_array_np != 0, 1.0 / -slopes_lin_phi_array_np, 1)
-    learned_tau = learned_tau[:n_neurons]
-    learned_tau = np.clip(learned_tau, 0, 1)
-    gt_taus_numpy = to_numpy(gt_taus[:n_neurons])
-
-    lin_fit, _ = curve_fit(linear_model, gt_taus_numpy, learned_tau)
-    residuals = learned_tau - linear_model(gt_taus_numpy, *lin_fit)
-    ss_res = np.sum(residuals ** 2)
-    ss_tot = np.sum((learned_tau - np.mean(learned_tau)) ** 2)
-    r_squared = 1 - (ss_res / ss_tot)
-
-    ax.scatter(gt_taus_numpy, learned_tau, c=mc, s=1, alpha=0.25)
-    ax.text(0.05, 0.95, f'R²: {r_squared:.3f}\nslope: {lin_fit[0]:.2f}\nN: {len(gt_taus)}',
-            transform=ax.transAxes, verticalalignment='top', fontsize=24)
-    ax.set_xlabel('true $\\tau$', fontsize=32)
-    ax.set_ylabel('learned $\\tau$', fontsize=32)
-    ax.set_xlim([0, 0.35])
-    ax.set_ylim([0, 0.35])
-    ax.tick_params(axis='both', which='major', labelsize=24)
+    plot_tau(ax, np.array(slopes_lin_phi_list), gt_taus, n_neurons, mc)
 
 
 def create_vrest_subplot(fig, slopes_lin_phi_list, offsets_list, gt_V_Rest, n_neurons, mc, rows, cols, pos):
     """Create V_rest comparison subplot."""
     ax = fig.add_subplot(rows, cols, pos)
-    slopes_lin_phi_array_np = np.array(slopes_lin_phi_list)
-    offsets_array = np.array(offsets_list)
-    learned_V_rest = np.where(slopes_lin_phi_array_np != 0, -offsets_array / slopes_lin_phi_array_np, 1)
-
-    gt_V_rest_numpy = to_numpy(gt_V_Rest[:n_neurons])
-    lin_fit, _ = curve_fit(linear_model, gt_V_rest_numpy, learned_V_rest)
-    residuals = learned_V_rest - linear_model(gt_V_rest_numpy, *lin_fit)
-    ss_res = np.sum(residuals ** 2)
-    ss_tot = np.sum((learned_V_rest - np.mean(learned_V_rest)) ** 2)
-    r_squared = 1 - (ss_res / ss_tot)
-
-    ax.scatter(gt_V_rest_numpy, learned_V_rest, c=mc, s=1, alpha=0.25)
-    ax.text(0.05, 0.95, f'R²: {r_squared:.3f}\nslope: {lin_fit[0]:.2f}\nN: {len(gt_V_rest_numpy)}',
-            transform=ax.transAxes, verticalalignment='top', fontsize=24)
-    ax.set_xlabel('true $V_{rest}$', fontsize=32)
-    ax.set_ylabel(r'learned $V_{rest}$', fontsize=32)
-    ax.set_xlim([-0.05, 0.9])
-    ax.set_ylim([-0.05, 0.9])
-    ax.tick_params(axis='both', which='major', labelsize=24)
+    plot_vrest(ax, np.array(slopes_lin_phi_list), np.array(offsets_list), gt_V_Rest, n_neurons, mc)
 
 
 def plot_ising_comparison_from_saved(config_list, labels=None, output_path='fig/ising_noise_comparison.png'):
