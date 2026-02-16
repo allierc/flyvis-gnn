@@ -370,12 +370,11 @@ def compute_corrected_weights(model, edges, slopes_lin_phi, slopes_lin_edge, gra
     return corrected_W
 
 
-def compute_all_corrected_weights(model, config, edges, x_list, device):
+def compute_all_corrected_weights(model, config, edges, x_list, device, n_grad_frames=8):
     """High-level: compute corrected W from model state and training data.
 
-    Runs one forward pass on a sample frame to obtain in_features,
-    extracts slopes from lin_edge and lin_phi, computes grad_msg,
-    and applies the correction formula.
+    Extracts slopes from lin_edge and lin_phi, computes grad_msg averaged
+    over multiple frames, and applies the correction formula.
 
     Args:
         model: FlyVisGNN model.
@@ -383,6 +382,7 @@ def compute_all_corrected_weights(model, config, edges, x_list, device):
         edges: (2, E) edge index tensor.
         x_list: list of NeuronTimeSeries (training data).
         device: torch device.
+        n_grad_frames: number of frames to sample for grad_msg (default 100).
 
     Returns:
         corrected_W: (E, 1) tensor of corrected weights.
@@ -401,22 +401,28 @@ def compute_all_corrected_weights(model, config, edges, x_list, device):
     slopes_lin_phi, offsets_lin_phi = extract_lin_phi_slopes(
         model, config, n_neurons, mu_activity, sigma_activity, device)
 
-    # 3. Forward pass on a sample frame to get in_features
-    mid_frame = x_list[0].voltage.shape[0] // 2
-    state = x_list[0].frame(mid_frame)
+    # 3. Compute grad_msg over multiple frames and take median
+    n_frames = x_list[0].voltage.shape[0]
+    frame_indices = np.linspace(n_frames // 10, n_frames - 100, n_grad_frames, dtype=int)
     data_id = torch.zeros((n_neurons, 1), dtype=torch.int, device=device)
 
     was_training = model.training
     model.eval()
-    with torch.no_grad():
-        _, in_features, _ = model(state, edges, data_id=data_id, return_all=True)
+
+    grad_list = []
+    for k in frame_indices:
+        state = x_list[0].frame(int(k))
+        with torch.no_grad():
+            _, in_features, _ = model(state, edges, data_id=data_id, return_all=True)
+        grad_k = compute_grad_msg(model, in_features, config)
+        grad_list.append(grad_k)
+
     if was_training:
         model.train()
 
-    # 4. Gradient of lin_phi w.r.t. msg
-    grad_msg = compute_grad_msg(model, in_features, config)
+    grad_msg = torch.stack(grad_list).median(dim=0).values  # (N,)
 
-    # 5. Corrected weights
+    # 4. Corrected weights
     corrected_W = compute_corrected_weights(
         model, edges, slopes_lin_phi, slopes_lin_edge, grad_msg)
 
