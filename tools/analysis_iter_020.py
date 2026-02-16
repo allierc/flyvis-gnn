@@ -22,12 +22,12 @@ MODEL_TO_SLOT = {'049': 0, '011': 1, '041': 2, '003': 3}
 
 def load_true_weights(model_id):
     """Load ground truth W for a model"""
-    path = f'graphs_data/fly/fly_N9_62_1_id_{model_id}/weights.pt'
+    path = f'graphs_data/fly/flyvis_62_1_id_{model_id}/weights.pt'
     return torch.load(path, weights_only=True, map_location='cpu').numpy()
 
 def load_learned_weights(slot):
     """Load learned W from trained model"""
-    path = f'log/fly/fly_N9_62_1_understand_Claude_{slot:02d}/models/best_model_with_0_graphs_0.pt'
+    path = f'log/fly/flyvis_62_1_understand_Claude_{slot:02d}/models/best_model_with_0_graphs_0.pt'
     try:
         sd = torch.load(path, map_location='cpu', weights_only=False)
         return sd['model_state_dict']['W'].numpy().flatten()
@@ -36,13 +36,13 @@ def load_learned_weights(slot):
 
 def load_edge_index(model_id):
     """Load edge connectivity"""
-    path = f'graphs_data/fly/fly_N9_62_1_id_{model_id}/edge_index.pt'
+    path = f'graphs_data/fly/flyvis_62_1_id_{model_id}/edge_index.pt'
     return torch.load(path, weights_only=True, map_location='cpu').numpy()
 
 def load_neuron_metadata(model_id):
     """Load neuron metadata (positions, types)"""
     import zarr
-    path = f'graphs_data/fly/fly_N9_62_1_id_{model_id}/x_list_0/metadata.zarr'
+    path = f'graphs_data/fly/flyvis_62_1_id_{model_id}/x_list_0/metadata.zarr'
     z = zarr.open(path, 'r')
     return np.array(z)
 

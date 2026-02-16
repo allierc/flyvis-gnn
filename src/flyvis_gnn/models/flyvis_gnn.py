@@ -9,15 +9,15 @@ from flyvis_gnn.models.registry import register_model
 
 
 @register_model(
-    "PDE_N9_A", "PDE_N9_A_tanh", "PDE_N9_A_multiple_ReLU", "PDE_N9_A_NULL",
-    "PDE_N9_B", "PDE_N9_C", "PDE_N9_D",
+    "flyvis_A", "flyvis_A_tanh", "flyvis_A_multiple_ReLU", "flyvis_A_NULL",
+    "flyvis_B", "flyvis_C", "flyvis_D",
 )
 class FlyVisGNN(nn.Module):
     """GNN for FlyVis neural signal dynamics with per-edge W.
 
     Equations:
-        msg_j = W[edge] * lin_edge(v_j, a_j)^2   (PDE_N9_A, lin_edge_positive=True)
-        msg_j = W[edge] * lin_edge(v_i, v_j, a_i, a_j)^2   (PDE_N9_B)
+        msg_j = W[edge] * lin_edge(v_j, a_j)^2   (flyvis_A, lin_edge_positive=True)
+        msg_j = W[edge] * lin_edge(v_i, v_j, a_i, a_j)^2   (flyvis_B)
         du/dt = lin_phi(v, a, sum(msg), excitation)
 
     Uses explicit scatter_add for message passing (no PyG dependency).
@@ -34,8 +34,8 @@ class FlyVisGNN(nn.Module):
             "lin_edge_positive": "When True, lin_edge output is squared to enforce positive edge messages",
         },
         "equations": {
-            "message_PDE_N9_A": "msg_j = W[edge_idx] * lin_edge(v_j, a_j)^2   (lin_edge_positive=True)",
-            "message_PDE_N9_B": "msg_j = W[edge_idx] * lin_edge(v_i, v_j, a_i, a_j)^2",
+            "message_flyvis_A": "msg_j = W[edge_idx] * lin_edge(v_j, a_j)^2   (lin_edge_positive=True)",
+            "message_flyvis_B": "msg_j = W[edge_idx] * lin_edge(v_i, v_j, a_i, a_j)^2",
             "update": "du/dt = lin_phi(v, a, sum(msg), excitation)",
         },
         "graph_model_config": {
@@ -43,8 +43,8 @@ class FlyVisGNN(nn.Module):
             "lin_edge (MLP0)": {
                 "description": "Edge message function — computes per-edge features, multiplied by W[edge]",
                 "input_size": {
-                    "PDE_N9_A": "input_size = 1 + embedding_dim  (v_j, a_j)",
-                    "PDE_N9_B": "input_size = 2 + 2*embedding_dim  (v_i, v_j, a_i, a_j)",
+                    "flyvis_A": "input_size = 1 + embedding_dim  (v_j, a_j)",
+                    "flyvis_B": "input_size = 2 + 2*embedding_dim  (v_i, v_j, a_i, a_j)",
                 },
                 "output_size": "1 (scalar edge message)",
                 "hidden_dim": {"description": "Hidden layer width", "typical_range": [32, 128], "default": 64},
@@ -218,7 +218,7 @@ class FlyVisGNN(nn.Module):
         edge_W_idx = torch.arange(n_edges_batch, device=self.device) % (self.n_edges + self.n_extra_null_edges)
 
         # build per-edge features
-        if self.model == 'PDE_N9_B':
+        if self.model == 'flyvis_B':
             in_features = torch.cat([v[dst], v[src], embedding[dst], embedding[src]], dim=1)
         else:
             in_features = torch.cat([v[src], embedding[src]], dim=1)
@@ -266,7 +266,3 @@ class FlyVisGNN(nn.Module):
             return pred, in_features, msg
         else:
             return pred
-
-
-# Backward compatibility alias
-Signal_Propagation_FlyVis = FlyVisGNN

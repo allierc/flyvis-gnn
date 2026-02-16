@@ -35,8 +35,8 @@ w_true_data = {}
 w_learned_data = {}
 
 for mid, slot in zip(MODEL_IDS, SLOTS):
-    dataset_dir = f'{DATA_DIR}/fly_N9_62_1_id_{mid}'
-    log_dir = f'{LOG_DIR}/fly_N9_62_1_understand_Claude_{slot:02d}'
+    dataset_dir = f'{DATA_DIR}/flyvis_62_1_id_{mid}'
+    log_dir = f'{LOG_DIR}/flyvis_62_1_understand_Claude_{slot:02d}'
 
     W_true = torch.load(f'{dataset_dir}/weights.pt', weights_only=True, map_location='cpu').numpy()
     w_true_data[mid] = W_true
@@ -119,8 +119,8 @@ print("\n\n=== V_REST COLLAPSE INVESTIGATION ===")
 print("Why do Models 011/041 have V_rest collapse while 003 doesn't?\n")
 
 for mid, slot in zip(MODEL_IDS, SLOTS):
-    dataset_dir = f'{DATA_DIR}/fly_N9_62_1_id_{mid}'
-    log_dir = f'{LOG_DIR}/fly_N9_62_1_understand_Claude_{slot:02d}'
+    dataset_dir = f'{DATA_DIR}/flyvis_62_1_id_{mid}'
+    log_dir = f'{LOG_DIR}/flyvis_62_1_understand_Claude_{slot:02d}'
 
     # Load true V_rest
     v_rest_path = f'{dataset_dir}/V_i_rest.pt'
@@ -161,7 +161,7 @@ for mid in MODEL_IDS:
     W = w_true_data[mid]
 
     # Reshape to matrix form using edge_index
-    edge_index_path = f'{DATA_DIR}/fly_N9_62_1_id_{mid}/edge_index.pt'
+    edge_index_path = f'{DATA_DIR}/flyvis_62_1_id_{mid}/edge_index.pt'
     if os.path.exists(edge_index_path):
         edge_index = torch.load(edge_index_path, weights_only=True, map_location='cpu').numpy()
 
@@ -213,7 +213,7 @@ for mid, slot in zip(MODEL_IDS, SLOTS):
     if mid not in w_learned_data:
         continue
 
-    dataset_dir = f'{DATA_DIR}/fly_N9_62_1_id_{mid}'
+    dataset_dir = f'{DATA_DIR}/flyvis_62_1_id_{mid}'
     edge_index = torch.load(f'{dataset_dir}/edge_index.pt', weights_only=True, map_location='cpu').numpy()
 
     try:

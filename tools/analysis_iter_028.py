@@ -26,7 +26,7 @@ SLOT_TO_MODEL = dict(zip(SLOTS, MODEL_IDS))
 
 def load_model_state(slot):
     """Load trained model state dict for a slot."""
-    path = f'log/fly/fly_N9_62_1_understand_Claude_{slot:02d}/models/best_model_with_0_graphs_0.pt'
+    path = f'log/fly/flyvis_62_1_understand_Claude_{slot:02d}/models/best_model_with_0_graphs_0.pt'
     try:
         sd = torch.load(path, map_location='cpu', weights_only=False)
         return sd['model_state_dict']
@@ -36,7 +36,7 @@ def load_model_state(slot):
 
 def load_ground_truth(model_id):
     """Load ground truth W for a model."""
-    path = f'graphs_data/fly/fly_N9_62_1_id_{model_id}/weights.pt'
+    path = f'graphs_data/fly/flyvis_62_1_id_{model_id}/weights.pt'
     try:
         W = torch.load(path, map_location='cpu', weights_only=True).numpy()
         return W

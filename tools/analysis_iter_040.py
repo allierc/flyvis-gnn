@@ -23,7 +23,7 @@ LOG_DIR = 'log/fly'
 
 def load_model_weights(slot):
     """Load trained model weights for a slot."""
-    log_path = f'{LOG_DIR}/fly_N9_62_1_understand_Claude_{slot:02d}'
+    log_path = f'{LOG_DIR}/flyvis_62_1_understand_Claude_{slot:02d}'
     model_path = f'{log_path}/models/best_model_with_0_graphs_0.pt'
     try:
         checkpoint = torch.load(model_path, map_location='cpu', weights_only=False)
@@ -33,7 +33,7 @@ def load_model_weights(slot):
 
 def load_true_weights(model_id):
     """Load ground truth weights for a model."""
-    data_path = f'{DATA_DIR}/fly_N9_62_1_id_{model_id}'
+    data_path = f'{DATA_DIR}/flyvis_62_1_id_{model_id}'
     W_true = torch.load(f'{data_path}/weights.pt', weights_only=True).cpu().numpy()
     return W_true
 
@@ -69,7 +69,7 @@ def compute_w_metrics(W_true, W_learned):
 
 def load_edge_index(model_id):
     """Load edge index for a model."""
-    data_path = f'{DATA_DIR}/fly_N9_62_1_id_{model_id}'
+    data_path = f'{DATA_DIR}/flyvis_62_1_id_{model_id}'
     edge_index = torch.load(f'{data_path}/edge_index.pt', weights_only=True).cpu().numpy()
     return edge_index
 

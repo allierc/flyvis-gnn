@@ -1,6 +1,6 @@
 """
-Test+plot fly_N9_62_1_opt at every epoch checkpoint (0..19)
-and append all results into fly_N9_62_1_opt_results.md
+Test+plot flyvis_62_1_opt at every epoch checkpoint (0..19)
+and append all results into flyvis_62_1_opt_results.md
 
 Usage:
     python run_fly_62_1_opt.py
@@ -21,8 +21,8 @@ from flyvis_gnn.config import NeuralGraphConfig
 from flyvis_gnn.utils import set_device, add_pre_folder
 from GNN_PlotFigure import data_plot
 
-CONFIG_NAME = 'fly_N9_62_1_opt'
-MD_FILE = 'fly_N9_62_1_opt_results.md'
+CONFIG_NAME = 'flyvis_62_1_opt'
+MD_FILE = 'flyvis_62_1_opt_results.md'
 
 
 def load_config():
@@ -81,7 +81,7 @@ def main():
 
     # Write markdown header
     with open(MD_FILE, 'w') as md:
-        md.write(f'# fly_N9_62_1_opt — epoch-by-epoch results\n\n')
+        md.write(f'# flyvis_62_1_opt — epoch-by-epoch results\n\n')
         md.write(f'Config: {CONFIG_NAME}, n_epochs={config.training.n_epochs}, ')
         md.write(f'batch_size={config.training.batch_size}, ')
         md.write(f'data_augmentation_loop={config.training.data_augmentation_loop}\n\n')

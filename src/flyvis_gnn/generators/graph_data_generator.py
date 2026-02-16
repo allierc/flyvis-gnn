@@ -904,7 +904,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     if visualize & (run == run_vizualized):
         print('generating lossless video ...')
 
-        output_name = dataset_name.split('fly_N9_')[1] if 'fly_N9_' in dataset_name else 'no_id'
+        output_name = dataset_name.split('flyvis_')[1] if 'flyvis_' in dataset_name else 'no_id'
         src = f"./graphs_data/{dataset_name}/Fig/Fig_0_000000.png"
         dst = f"./graphs_data/{dataset_name}/input_{output_name}.png"
         with open(src, "rb") as fsrc, open(dst, "wb") as fdst:

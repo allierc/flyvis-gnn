@@ -295,7 +295,7 @@ Three related issues in the model layer:
 
 1. **Magic names**: `PDE_N9` is a meaningless internal code (PDE variant #9). `Signal_Propagation_FlyVis` is an overly verbose class name inherited from the parent repo. Neither conveys what the code does.
 
-2. **Dead dispatch functions**: `choose_training_model()` in `models/utils.py` (85 lines) and `choose_model()` in `generators/utils.py` (45 lines) dispatched to model classes (`PDE_N2`–`PDE_N8`, `PDE_N11`, `Signal_Propagation_MLP`, etc.) that don't exist in this repo. `GNN_PlotFigure.py` called both functions, but `choose_model()` had no case for `PDE_N9_A` — it only covered PDE_N2–N7 and N11 — so the ground-truth plotting paths were silently broken for flyvis configs.
+2. **Dead dispatch functions**: `choose_training_model()` in `models/utils.py` (85 lines) and `choose_model()` in `generators/utils.py` (45 lines) dispatched to model classes (`PDE_N2`–`PDE_N8`, `PDE_N11`, `Signal_Propagation_MLP`, etc.) that don't exist in this repo. `GNN_PlotFigure.py` called both functions, but `choose_model()` had no case for `flyvis_A` — it only covered PDE_N2–N7 and N11 — so the ground-truth plotting paths were silently broken for flyvis configs.
 
 3. **If/elif model creation chains**: Three sites in `graph_trainer.py` used if/elif chains to instantiate models by checking `signal_model_name` strings against class names (`Signal_Propagation_Temporal`, `Signal_Propagation_MLP_ODE`, `Signal_Propagation_MLP`, `Signal_Propagation_FlyVis`). Only the last branch was ever reachable. Additionally, ~50 lines of try/except imports attempted to load non-existent model classes, a `data_train_zebra` branch called a non-existent function, and `GNN_PlotFigure.py` had dead branches for PDE_N2–N8/N11 plotting.
 
@@ -308,7 +308,7 @@ A decorator-based registry replaces scattered if/elif dispatch with a single loo
 ```python
 from flyvis_gnn.models.registry import register_model, create_model
 
-@register_model("PDE_N9_A", "PDE_N9_B", "PDE_N9_C", ...)
+@register_model("flyvis_A", "flyvis_B", "flyvis_C", ...)
 class FlyVisGNN(nn.Module):
     ...
 
@@ -329,7 +329,7 @@ The registry uses lazy auto-discovery: `_discover_models()` imports model module
 | `PDE_N9` (class) | `FlyVisODE` | Ground-truth ODE simulator |
 | `PDE_N9.py` (file) | `flyvis_ode.py` | ODE module |
 
-Config values (`PDE_N9_A`, `PDE_N9_A_tanh`, etc.) are preserved as-is — they are registry keys, not class names. Existing saved configs and checkpoints keep working without migration.
+Config values (`flyvis_A`, `flyvis_A_tanh`, etc.) are preserved as-is — they are registry keys, not class names. Existing saved configs and checkpoints keep working without migration.
 
 **Backward compatibility**: Old files (`Signal_Propagation_FlyVis.py`, `PDE_N9.py`) become one-line re-export stubs. Old class names are aliased at the bottom of the new modules:
 
@@ -377,7 +377,7 @@ def _create_true_model(config, W, device):
     return true_model, bc_pos, bc_dpos
 ```
 
-`_create_true_model` loads the ground-truth ODE parameters that were saved during data generation (`weights.pt`, `taus.pt`, `V_i_rest.pt`), constructing a `FlyVisODE` directly. The old `choose_model()` had no match case for `PDE_N9_A` and would have raised `UnboundLocalError` — this is the first working version for flyvis configs.
+`_create_true_model` loads the ground-truth ODE parameters that were saved during data generation (`weights.pt`, `taus.pt`, `V_i_rest.pt`), constructing a `FlyVisODE` directly. The old `choose_model()` had no match case for `flyvis_A` and would have raised `UnboundLocalError` — this is the first working version for flyvis configs.
 
 ### What was kept
 
@@ -400,3 +400,32 @@ def _create_true_model(config, W, device):
 | `GNN_PlotFigure.py` | Removed dead PDE_N2–N8/N11 branches; replaced `choose_training_model` / `choose_model` with registry-based helpers |
 | `src/flyvis_gnn/models/__init__.py` | Added `flyvis_gnn`, `registry` to exports |
 | `src/flyvis_gnn/generators/__init__.py` | Added `flyvis_ode` to exports |
+
+## 6. Rename PDE_N9 / fly_N9 → flyvis
+
+### The problem
+
+After the registry refactor (section 5), the legacy naming `PDE_N9` and `fly_N9` still permeated the codebase: config keys (`PDE_N9_A`), dataset names (`fly_N9_62_1`), config filenames (`fly_N9_62_1.yaml`), data directories, log directories, documentation, and instruction files. `PDE_N9` was a meaningless internal code from the parent repo (PDE variant #9), and `fly_N9` inherited from it.
+
+### The solution: Comprehensive rename
+
+Two systematic replacements:
+- `PDE_N9_` → `flyvis_` (model registry keys: `flyvis_A`, `flyvis_B`, etc.)
+- `fly_N9_` → `flyvis_` (dataset/experiment names: `flyvis_62_1`, `flyvis_62_1_gs`, etc.)
+
+**Safety**: `'fly' in config.dataset` still works (flyvis contains fly). Substring dispatches on `'RNN'`, `'LSTM'`, `'MLP'` still work since they check within the model name.
+
+### What changed
+
+| Category | Count | Pattern |
+|----------|-------|---------|
+| Model registry keys | 11 | `PDE_N9_A` → `flyvis_A`, `PDE_N9_B` → `flyvis_B`, etc. |
+| Config YAML content | 361 files | `signal_model_name` + `dataset` values |
+| Config YAML filenames | 361 files | `fly_N9_*.yaml` → `flyvis_*.yaml` |
+| Data directories | 16 dirs | `graphs_data/fly/fly_N9_*` → `flyvis_*` |
+| Log directories | 32 dirs | `log/fly/fly_N9_*` + `log/Claude_exploration/instruction_fly_N9_*` |
+| Root-level docs/outputs | 47 files | Instruction MDs, analysis MDs, logs, scores |
+| Python source files | ~15 files | String literals, conditionals, dataset name parsing |
+| Exploration config/protocol | 438 files | Inside `log/Claude_exploration/` |
+
+Backward compat stubs (`PDE_N9.py`, `Signal_Propagation_FlyVis.py`) and class aliases (`PDE_N9 = FlyVisODE`, `Signal_Propagation_FlyVis = FlyVisGNN`) were removed — the rename is complete, no transition period needed.

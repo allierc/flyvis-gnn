@@ -13,8 +13,8 @@ conda activate flyvis-gnn
 
 ```bash
 # Single training run
-python GNN_Main.py -o generate_train_test_plot fly_N9_62_0
+python GNN_Main.py -o generate_train_test_plot flyvis_62_0
 
 # LLM-guided parallel exploration
-python GNN_LLM_parallel_flyvis.py -o train_test_plot_Claude_cluster fly_N9_62_0 iterations=144 --resume
+python GNN_LLM_parallel_flyvis.py -o train_test_plot_Claude_cluster flyvis_62_0 iterations=144 --resume
 ```

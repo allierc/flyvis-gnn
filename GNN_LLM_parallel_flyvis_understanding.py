@@ -33,10 +33,10 @@ warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API
 
 MODEL_IDS = ['049', '011', '041', '003']
 MODEL_DATASETS = {
-    0: 'fly_N9_62_1_id_049',
-    1: 'fly_N9_62_1_id_011',
-    2: 'fly_N9_62_1_id_041',
-    3: 'fly_N9_62_1_id_003',
+    0: 'flyvis_62_1_id_049',
+    1: 'flyvis_62_1_id_011',
+    2: 'flyvis_62_1_id_041',
+    3: 'flyvis_62_1_id_003',
 }
 
 
@@ -359,12 +359,12 @@ if __name__ == "__main__":
     else:
         best_model = ''
         task = 'train_test_plot_Claude_cluster'
-        config_list = ['fly_N9_62_1_understand']
+        config_list = ['flyvis_62_1_understand']
         task_params = {'iterations': 48}
 
     n_iterations = task_params.get('iterations', 48)
-    base_config_name = config_list[0] if config_list else 'fly_N9_62_1_understand'
-    instruction_name = task_params.get('instruction', 'instruction_fly_N9_62_1_understanding')
+    base_config_name = config_list[0] if config_list else 'flyvis_62_1_understand'
+    instruction_name = task_params.get('instruction', 'instruction_flyvis_62_1_understanding')
     llm_task_name = task_params.get('llm_task', f'{base_config_name}_Claude')
 
     # -----------------------------------------------------------------------
@@ -408,7 +408,7 @@ if __name__ == "__main__":
         # Fall back to the base config template
         # Look for any of the slot configs or the base
         for fallback in [source_config_base,
-                         f"{config_root}/{pre}fly_N9_62_1_Claude_02.yaml"]:
+                         f"{config_root}/{pre}flyvis_62_1_Claude_02.yaml"]:
             if os.path.exists(fallback):
                 with open(fallback, 'r') as f:
                     source_data = yaml.safe_load(f)
@@ -1146,5 +1146,5 @@ revealed something about WHY a model is hard, design the next experiment to test
         print(f"\n\033[92mBatch {batch_first}-{batch_last} complete: {n_success} succeeded, {n_failed} failed\033[0m")
 
 
-# python GNN_LLM_parallel_flyvis_understanding.py -o train_test_plot_Claude_cluster fly_N9_62_1_understand iterations=144 --fresh
-# python GNN_LLM_parallel_flyvis_understanding.py -o train_test_plot_Claude_cluster fly_N9_62_1_understand iterations=144 --resume
+# python GNN_LLM_parallel_flyvis_understanding.py -o train_test_plot_Claude_cluster flyvis_62_1_understand iterations=144 --fresh
+# python GNN_LLM_parallel_flyvis_understanding.py -o train_test_plot_Claude_cluster flyvis_62_1_understand iterations=144 --resume

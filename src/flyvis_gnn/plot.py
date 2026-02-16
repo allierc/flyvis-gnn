@@ -177,7 +177,7 @@ def _plot_curves_fast(ax, rr, func, type_list, cmap, linewidth=1, alpha=0.1):
 
 def _build_lin_edge_features(rr_flat, emb_flat, signal_model_name):
     """Build input features for lin_edge MLP."""
-    if 'PDE_N9_B' in signal_model_name:
+    if 'flyvis_B' in signal_model_name:
         return torch.cat([rr_flat * 0, rr_flat, emb_flat, emb_flat], dim=1)
     else:
         return torch.cat([rr_flat, emb_flat], dim=1)
@@ -293,7 +293,7 @@ def compute_grad_msg(model, in_features, config):
     """Compute d(lin_phi)/d(msg) for each neuron from a forward-pass in_features.
 
     Args:
-        model: Signal_Propagation_FlyVis model.
+        model: FlyVisGNN model.
         in_features: (N, D) tensor from model(..., return_all=True).
             Layout: [v(1), embedding(E), msg(1), excitation(1)].
         config: config object with graph_model.embedding_dim.
@@ -378,7 +378,7 @@ def compute_all_corrected_weights(model, config, edges, x_list, device):
     and applies the correction formula.
 
     Args:
-        model: Signal_Propagation_FlyVis model.
+        model: FlyVisGNN model.
         config: full config object.
         edges: (2, E) edge index tensor.
         x_list: list of NeuronTimeSeries (training data).

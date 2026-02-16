@@ -26,8 +26,8 @@ MODEL_IDS = ['049', '011', '041', '003']
 SLOTS = [0, 1, 2, 3]
 
 # Data paths
-DATA_BASE = 'graphs_data/fly/fly_N9_62_1_id_{mid}/'
-LOG_BASE = 'log/fly/fly_N9_62_1_understand_Claude_{slot:02d}/'
+DATA_BASE = 'graphs_data/fly/flyvis_62_1_id_{mid}/'
+LOG_BASE = 'log/fly/flyvis_62_1_understand_Claude_{slot:02d}/'
 
 print("=" * 70)
 print("ANALYSIS ITER 048: lr_W Precision and Stochastic Variance")

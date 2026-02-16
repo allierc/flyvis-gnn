@@ -1,5 +1,5 @@
 """
-Neural ODE wrapper for Signal_Propagation_FlyVis.
+Neural ODE wrapper for FlyVisGNN.
 
 Uses torchdiffeq's adjoint method for memory-efficient training:
 - Memory O(1) in rollout steps L (vs O(L) for BPTT)
@@ -103,7 +103,7 @@ def integrate_neural_ode_FlyVis(model, v0, x_template, edge_index, data_id, time
     Integrate GNN dynamics using Neural ODE.
 
     args:
-        model: Signal_Propagation_FlyVis model
+        model: FlyVisGNN model
         v0: initial voltage state (B*N,)
         x_template: NeuronState used as template for ODE steps (batched, B*N neurons)
         edge_index: (2, B*E) batched edge index

@@ -45,8 +45,8 @@ if __name__ == "__main__":
             'signal_fig_supp_8_1', 'signal_fig_supp_8_1_W_init', 'signal_fig_supp_8_1_W_init_zeros', 'signal_fig_supp_8_1_clip', 'signal_fig_supp_8_1_clip_W_init',
         ],
         'flyvis_top5_bottom5': [
-            'fly_N9_62_1_id_006', 'fly_N9_62_1_id_029', 'fly_N9_62_1_id_001', 'fly_N9_62_1_id_000', 'fly_N9_62_1_id_037',
-            'fly_N9_62_1_id_011', 'fly_N9_62_1_id_036', 'fly_N9_62_1_id_003', 'fly_N9_62_1_id_041', 'fly_N9_62_1_id_049',
+            'flyvis_62_1_id_006', 'flyvis_62_1_id_029', 'flyvis_62_1_id_001', 'flyvis_62_1_id_000', 'flyvis_62_1_id_037',
+            'flyvis_62_1_id_011', 'flyvis_62_1_id_036', 'flyvis_62_1_id_003', 'flyvis_62_1_id_041', 'flyvis_62_1_id_049',
         ],
     }
 
@@ -64,8 +64,8 @@ if __name__ == "__main__":
                 best_model = None
     else:
         best_model = ''
-        task = task = 'test'
-        config_list = ['fly_N9_44_6_opt']
+        task = task = 'train'
+        config_list = ['flyvis_62_1_gs']
 
     for config_file_ in config_list:
         print(" ")
@@ -112,7 +112,7 @@ if __name__ == "__main__":
             )
 
         if "test" in task:
-            # config.simulation.noise_model_level = 0.0
+            config.simulation.noise_model_level = 0.0
 
             # if 'fly' in config_file_:
             #     config.simulation.visual_input_type = 'optical_flow'
@@ -124,7 +124,7 @@ if __name__ == "__main__":
                 verbose=False,
                 best_model='best',
                 run=0,
-                test_mode="test_ablation_50",   # test_ablation_50
+                test_mode="",   # test_ablation_50
                 sample_embedding=False,
                 step=1000,
                 n_rollout_frames=10000,

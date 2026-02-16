@@ -49,7 +49,7 @@ from flyvis_gnn.utils import (
     choose_boundary_values,
 )
 from flyvis_gnn.models.Siren_Network import Siren, Siren_Network
-from flyvis_gnn.models.Signal_Propagation_FlyVis import Signal_Propagation_FlyVis
+from flyvis_gnn.models.flyvis_gnn import FlyVisGNN
 from flyvis_gnn.models.graph_trainer import data_test
 from flyvis_gnn.plot import (
     get_model_W,
@@ -2579,7 +2579,7 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
     sim = config.simulation
     model_config = config.graph_model
     tc = config.training
-    config_indices = config.dataset.split('fly_N9_')[1] if 'fly_N9_' in config.dataset else 'evolution'
+    config_indices = config.dataset.split('flyvis_')[1] if 'flyvis_' in config.dataset else 'evolution'
 
 
     colors_65 = sns.color_palette("Set3", 12) * 6  # pastel, repeat until 65
@@ -2682,7 +2682,7 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
         analyze_ising_model(x_list, sim.delta_t, log_dir, logger, to_numpy(edges))
 
     # Activity plots
-    config_indices = config.dataset.split('fly_N9_')[1] if 'fly_N9_' in config.dataset else 'evolution'
+    config_indices = config.dataset.split('flyvis_')[1] if 'flyvis_' in config.dataset else 'evolution'
     neuron_types = to_numpy(type_list).astype(int).squeeze()
 
     # Get activity traces for all frames — voltage is (T, N), transpose to (N, T)
@@ -2749,13 +2749,13 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
         plt.close()
 
     if epoch_list[0] != 'all':
-        config_indices = config.dataset.split('fly_N9_')[1] if 'fly_N9_' in config.dataset else 'evolution'
+        config_indices = config.dataset.split('flyvis_')[1] if 'flyvis_' in config.dataset else 'evolution'
         files, file_id_list = get_training_files(log_dir, tc.n_runs)
 
         for epoch in epoch_list:
 
             net = f'{log_dir}/models/best_model_with_{tc.n_runs - 1}_graphs_{epoch}.pt'
-            model = Signal_Propagation_FlyVis(aggr_type=model_config.aggr_type, config=config, device=device)
+            model = FlyVisGNN(aggr_type=model_config.aggr_type, config=config, device=device)
             state_dict = torch.load(net, map_location=device)
             model.load_state_dict(state_dict['model_state_dict'])
             model.edges = edges
@@ -4009,7 +4009,7 @@ def collect_gnn_results_multimodel(config_list, varied_parameter=None):
     Parameters
     ----------
     config_list : list[str]
-        Base config names, e.g. ['fly_N9_22_10', 'fly_N9_44_24'].
+        Base config names, e.g. ['flyvis_22_10', 'flyvis_44_24'].
         These are the same strings you pass to GNN_Main_multimodel.py.
     varied_parameter : str or None
         Optional 'section.parameter' name inside NeuralGraphConfig to treat
@@ -4074,7 +4074,7 @@ def collect_gnn_results_multimodel(config_list, varied_parameter=None):
             continue
 
         for entry in os.listdir(pre_log_root):
-            # Expect entries like 'fly_N9_22_10__mid_000'
+            # Expect entries like 'flyvis_22_10__mid_000'
             if not entry.startswith(base_config + "__mid_"):
                 continue
 
@@ -4736,7 +4736,7 @@ def plot_results_figure(config_file_, config_indices, panel_suffix='domain'):
     Generate a 2x3 figure panel for a given configuration.
 
     Args:
-        config_file_: Config file name (e.g., 'fly_N9_44_24')
+        config_file_: Config file name (e.g., 'flyvis_44_24')
         config_indices: Index string for specific plots (e.g., '44_6')
         panel_suffix: Suffix for edge_functions panel ('domain' or 'all')
     """
@@ -4789,14 +4789,14 @@ def get_figures(index):
     match index:
 
         case 'results_44_6':
-             plot_results_figure('fly_N9_44_24', '44_6', 'domain')
+             plot_results_figure('flyvis_44_24', '44_6', 'domain')
         case 'results_51_2':
-             plot_results_figure('fly_N9_51_2', '37_2', 'domain')
+             plot_results_figure('flyvis_51_2', '37_2', 'domain')
         case 'results_22_10':
-             plot_results_figure('fly_N9_22_10', '18_4_0', 'domain')
+             plot_results_figure('flyvis_22_10', '18_4_0', 'domain')
 
         case 'extra_edges':
-            config_list = ['fly_N9_51_9', 'fly_N9_51_10', 'fly_N9_51_11', 'fly_N9_51_12']
+            config_list = ['flyvis_51_9', 'flyvis_51_10', 'flyvis_51_11', 'flyvis_51_12']
 
             for config_file_ in config_list:
                 config_file, pre_folder = add_pre_folder(config_file_)
@@ -4833,7 +4833,7 @@ def get_figures(index):
                 60: 'TmY18', 61: 'TmY3', 62: 'TmY4', 63: 'TmY5a', 64: 'TmY9'}
 
             print('plot figure 1...')
-            x = np.load('graphs_data/fly/fly_N9_18_4_0/x_list_0.npy')
+            x = np.load('graphs_data/fly/flyvis_18_4_0/x_list_0.npy')
             type_list = x[-1,:, 6].astype(int)
             len(type_list)
 
@@ -4850,9 +4850,9 @@ def get_figures(index):
             print(f"Found {len(neuron_indices)} neurons out of {len(selected_types)}")
             print(f"Unique types in type_list: {np.unique(type_list)}")
 
-            logdirs = {'a': 'log/fly/fly_N9_22_10',
-                    'b': 'log/fly/fly_N9_22_10',
-                    'c': 'log/fly/fly_N9_44_6'}
+            logdirs = {'a': 'log/fly/flyvis_22_10',
+                    'b': 'log/fly/flyvis_22_10',
+                    'c': 'log/fly/flyvis_44_6'}
 
             start_frame = 88000
             end_frame = 88500
@@ -4921,13 +4921,13 @@ def get_figures(index):
             plt.savefig('./fig_paper/Fig1.png', dpi=400, bbox_inches='tight')
             plt.close()
 
-        case 'N9_44_6':
-            config_file_ = 'fly_N9_44_6'
+        case 'flyvis_44_6':
+            config_file_ = 'flyvis_44_6'
             config_file, pre_folder = add_pre_folder(config_file_)
             config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
             config.dataset = pre_folder + config.dataset
             config.config_file = pre_folder + config_file_
-            logdir = 'log/fly/fly_N9_44_6'
+            logdir = 'log/fly/flyvis_44_6'
 
             # config.simulation.noise_model_level = 0.0
             config.simulation.visual_input_type = "DAVIS"
@@ -5000,13 +5000,13 @@ def get_figures(index):
 
             os.remove(f'./{logdir}/results/activity_8x8_panel_comparison.png')
 
-        case 'N9_51_2':
-            config_file_ = 'fly_N9_51_2'
+        case 'flyvis_51_2':
+            config_file_ = 'flyvis_51_2'
             config_file, pre_folder = add_pre_folder(config_file_)
             config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
             config.dataset = pre_folder + config.dataset
             config.config_file = pre_folder + config_file_
-            logdir = 'log/fly/fly_N9_51_2'
+            logdir = 'log/fly/flyvis_51_2'
 
             data_test(
                 config,
@@ -5089,13 +5089,13 @@ def get_figures(index):
                      f'./{logdir}/results/activity_8x8_panel_comparison_signal_pred_optical_flow.png')
             os.remove(f'./{logdir}/results/activity_8x8_panel_comparison.png')
 
-        case 'N9_22_10':
-            config_file_ = 'fly_N9_22_10'
+        case 'flyvis_22_10':
+            config_file_ = 'flyvis_22_10'
             config_file, pre_folder = add_pre_folder(config_file_)
             config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
             config.dataset = pre_folder + config.dataset
             config.config_file = pre_folder + config_file_
-            logdir = 'log/fly/fly_N9_22_10'
+            logdir = 'log/fly/flyvis_22_10'
             config.simulation.visual_input_type = "DAVIS"
             data_test(
                 config,
@@ -5364,7 +5364,7 @@ def get_figures(index):
 
         case 'weight_vs_noise':
 
-            config_list = ['fly_N9_44_15', 'fly_N9_44_16', 'fly_N9_44_17', 'fly_N9_44_18', 'fly_N9_44_19', 'fly_N9_44_20', 'fly_N9_44_21', 'fly_N9_44_22', 'fly_N9_44_23', 'fly_N9_44_24', 'fly_N9_44_25', 'fly_N9_44_26']
+            config_list = ['flyvis_44_15', 'flyvis_44_16', 'flyvis_44_17', 'flyvis_44_18', 'flyvis_44_19', 'flyvis_44_20', 'flyvis_44_21', 'flyvis_44_22', 'flyvis_44_23', 'flyvis_44_24', 'flyvis_44_25', 'flyvis_44_26']
             compare_experiments(config_list,'simulation.noise_model_level')
 
             # copy file ising_comparison_noise level.png
@@ -5373,7 +5373,7 @@ def get_figures(index):
 
         case 'correction_weight':
 
-            config_file_ = 'fly_N9_22_10'
+            config_file_ = 'flyvis_22_10'
             config_file, pre_folder = add_pre_folder(config_file_)
             config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
             config.dataset = pre_folder + config.dataset
@@ -5382,7 +5382,7 @@ def get_figures(index):
 
             data_plot(config=config, config_file=config_file, epoch_list=['best'], style='white color', extended='plots', device=device)
 
-            log_dir = 'log/fly/fly_N9_22_10'
+            log_dir = 'log/fly/flyvis_22_10'
             config_indices = '18_4_0'
 
             fig = plt.figure(figsize=(12, 10))
@@ -5468,7 +5468,7 @@ def get_figures(index):
 
         case 'correction_weight_noise':
 
-            config_file_ = 'fly_N9_44_6'
+            config_file_ = 'flyvis_44_6'
             config_file, pre_folder = add_pre_folder(config_file_)
             config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
             config.dataset = pre_folder + config.dataset
@@ -5477,7 +5477,7 @@ def get_figures(index):
 
             data_plot(config=config, config_file=config_file, epoch_list=['best'], style='black color', extended='plots', device=device)
 
-            log_dir = 'log/fly/fly_N9_44_6'
+            log_dir = 'log/fly/flyvis_44_6'
             config_indices = '44_6'
 
             fig = plt.figure(figsize=(10, 9))

@@ -24,12 +24,12 @@ LOG_DIR = 'log/fly'
 
 def load_W_true(model_id):
     """Load ground truth connectivity weights."""
-    path = f'{DATA_DIR}/fly_N9_62_1_id_{model_id}/weights.pt'
+    path = f'{DATA_DIR}/flyvis_62_1_id_{model_id}/weights.pt'
     return torch.load(path, weights_only=True, map_location='cpu').numpy()
 
 def load_W_learned(slot):
     """Load learned connectivity weights from trained model."""
-    model_path = f'{LOG_DIR}/fly_N9_62_1_understand_Claude_{slot:02d}/models/best_model_with_0_graphs_0.pt'
+    model_path = f'{LOG_DIR}/flyvis_62_1_understand_Claude_{slot:02d}/models/best_model_with_0_graphs_0.pt'
     try:
         sd = torch.load(model_path, map_location='cpu', weights_only=False)
         return sd['model_state_dict']['W'].numpy().flatten()
@@ -39,7 +39,7 @@ def load_W_learned(slot):
 
 def load_embeddings(slot):
     """Load learned neuron embeddings."""
-    model_path = f'{LOG_DIR}/fly_N9_62_1_understand_Claude_{slot:02d}/models/best_model_with_0_graphs_0.pt'
+    model_path = f'{LOG_DIR}/flyvis_62_1_understand_Claude_{slot:02d}/models/best_model_with_0_graphs_0.pt'
     try:
         sd = torch.load(model_path, map_location='cpu', weights_only=False)
         return sd['model_state_dict']['a'].numpy()
@@ -48,7 +48,7 @@ def load_embeddings(slot):
 
 def load_edge_index(model_id):
     """Load edge connectivity (source, target neuron indices)."""
-    path = f'{DATA_DIR}/fly_N9_62_1_id_{model_id}/edge_index.pt'
+    path = f'{DATA_DIR}/flyvis_62_1_id_{model_id}/edge_index.pt'
     return torch.load(path, weights_only=True, map_location='cpu').numpy()
 
 def compute_per_neuron_W(W, edge_index, n_neurons=13741):
@@ -99,7 +99,7 @@ def analyze_W_recovery(W_true, W_learned):
 
 def analyze_lin_edge_mlp(slot):
     """Analyze lin_edge MLP structure and activations."""
-    model_path = f'{LOG_DIR}/fly_N9_62_1_understand_Claude_{slot:02d}/models/best_model_with_0_graphs_0.pt'
+    model_path = f'{LOG_DIR}/flyvis_62_1_understand_Claude_{slot:02d}/models/best_model_with_0_graphs_0.pt'
     try:
         sd = torch.load(model_path, map_location='cpu', weights_only=False)
 

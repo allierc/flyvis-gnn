@@ -20,8 +20,8 @@ import torch
 # Configuration
 MODEL_IDS = ['049', '011', '041', '003']
 SLOTS = [0, 1, 2, 3]
-DATA_BASE = 'graphs_data/fly/fly_N9_62_1_id_{}'
-LOG_BASE = 'log/fly/fly_N9_62_1_understand_Claude_{:02d}'
+DATA_BASE = 'graphs_data/fly/flyvis_62_1_id_{}'
+LOG_BASE = 'log/fly/flyvis_62_1_understand_Claude_{:02d}'
 
 # Historical R² values for variance analysis
 HISTORICAL_R2 = {

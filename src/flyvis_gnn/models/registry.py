@@ -1,14 +1,14 @@
 """Model registry for flyvis-gnn.
 
-Maps config signal_model_name strings (e.g. 'PDE_N9_A') to model classes.
+Maps config signal_model_name strings (e.g. 'flyvis_A') to model classes.
 Replaces scattered if/elif dispatch chains with a single lookup.
 
 Usage:
-    @register_model("PDE_N9_A", "PDE_N9_B", "PDE_N9_C")
+    @register_model("flyvis_A", "flyvis_B", "flyvis_C")
     class FlyVisGNN(nn.Module):
         ...
 
-    model = create_model("PDE_N9_A", config=config, device=device)
+    model = create_model("flyvis_A", config=config, device=device)
 """
 
 _REGISTRY: dict[str, type] = {}

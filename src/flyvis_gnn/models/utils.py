@@ -202,12 +202,12 @@ def get_in_features_lin_edge(x, model, model_config, xnorm, n_neurons, device):
     voltage_all = x.voltage.unsqueeze(-1)
     signal_model_name = model_config.signal_model_name
 
-    if signal_model_name == 'PDE_N9_B':
+    if signal_model_name == 'flyvis_B':
         perm_indices = torch.randperm(n_neurons, device=model.a.device)
         in_features = torch.cat((voltage_all, voltage_all, model.a, model.a[perm_indices]), dim=1)
         in_features_next = torch.cat((voltage_all, voltage_all * 1.05, model.a, model.a[perm_indices]), dim=1)
     else:
-        # PDE_N9_A, PDE_N9_C, PDE_N9_D, and default
+        # flyvis_A, flyvis_C, flyvis_D, and default
         in_features = torch.cat((voltage_all, model.a), dim=1)
         in_features_next = torch.cat((voltage_all * 1.05, model.a), dim=1)
 
@@ -1169,7 +1169,7 @@ def save_exploration_artifacts_flyvis(root_dir, exploration_dir, config, config_
 
     # Extract config indices for filename matching
     dataset = config.dataset if hasattr(config, 'dataset') else config_file_
-    config_indices = dataset.split('fly_N9_')[1] if 'fly_N9_' in dataset else 'evolution'
+    config_indices = dataset.split('flyvis_')[1] if 'flyvis_' in dataset else 'evolution'
 
     # --- Per-iteration panels ---
 

@@ -2138,7 +2138,7 @@ def data_test_flyvis(
     if visualize:
         print('generating lossless video ...')
 
-        output_name = config.dataset.split('fly_N9_')[1] if 'fly_N9_' in config.dataset else 'no_id'
+        output_name = config.dataset.split('flyvis_')[1] if 'flyvis_' in config.dataset else 'no_id'
         src = f"./{log_dir}/tmp_recons/Fig_0_000000.png"
         dst = f"./{log_dir}/results/input_{output_name}.png"
         with open(src, "rb") as fsrc, open(dst, "wb") as fdst:
@@ -2202,7 +2202,7 @@ def data_test_flyvis(
         if len(selected_neuron_ids)==1:
             pred_slice = pred_slice[None,:]
 
-        filename_ = config.dataset.split('fly_N9_')[1] if 'fly_N9_' in config.dataset else 'no_id'
+        filename_ = config.dataset.split('flyvis_')[1] if 'flyvis_' in config.dataset else 'no_id'
 
         # Determine which figures to create
         if len(selected_neuron_ids) > 50:
@@ -2288,7 +2288,7 @@ def data_test_flyvis(
             log_file.write(f"test_R2: {np.nanmean(r2_all):.4f}\n")
             log_file.write(f"test_pearson: {np.nanmean(pearson_all):.4f}\n")
 
-        filename_ = config.dataset.split('fly_N9_')[1] if 'fly_N9_' in config.dataset else 'no_id'
+        filename_ = config.dataset.split('flyvis_')[1] if 'flyvis_' in config.dataset else 'no_id'
 
         # Create two figures with different neuron type selections
         for fig_name, selected_types in [

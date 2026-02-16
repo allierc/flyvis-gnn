@@ -184,7 +184,3 @@ class FlyVisODE(nn.Module):
                 return (-u + v_rest + s * torch.tanh(u)) / tau
             else:
                 return (-u + v_rest) / tau
-
-
-# Backward compatibility alias
-PDE_N9 = FlyVisODE
