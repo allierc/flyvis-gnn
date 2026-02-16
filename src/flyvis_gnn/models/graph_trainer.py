@@ -178,7 +178,7 @@ def data_train(config=None, erase=False, best_model=None, style=None, device=Non
 
     # torch.autograd.set_detect_anomaly(True)
 
-    print(f"\033[94mdataset_name: {dataset_name}\033[0m")
+    print(f"\033[94mdataset: {config.dataset}\033[0m")
     print(f"\033[92m{config.description}\033[0m")
 
     if 'fly' in config.dataset:
