@@ -94,7 +94,8 @@ x.voltage = x.voltage + dt * y.squeeze(-1)
   - Activity traces: `to_numpy(x0.voltage).T`, `to_numpy(x0.stimulus).T`
   - Baseline checks: `type_list[n].item()` (not `x_list[0][100][n, 6]`)
   - Batch building: `x0.frame(k).to(device).to_packed()` (not `torch.tensor(x_list[0][k])`)
-  - Other functions (`plot_signal`, `plot_synaptic_CElegans`, `plot_synaptic_zebra`) still use `load_simulation_data_raw` (raw numpy) — these are for non-flyvis datasets
+- `GNN_PlotFigure.py` — `plot_signal()` fully migrated (same pattern as flyvis)
+- `plot_synaptic_CElegans` and `plot_synaptic_zebra` removed (non-flyvis datasets)
 
 ### Shape considerations
 
