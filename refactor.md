@@ -247,8 +247,4 @@ A single module used by both the training loop and post-training analysis, elimi
 - `plot_synaptic_flyvis()` in `GNN_PlotFigure.py` calls the vectorized helpers directly for MLP evaluation and slope extraction
 - `generators/plots.py` uses `FigureStyle` for generation-time plots (connectivity matrices, spatial layouts)
 
-**Removed code:**
-- `plot_synaptic3` — deleted (unused PDE_N3 model)
-- Movie generation functions (`movie_synaptic_flyvis`, `create_combined_movie`, `create_individual_movies`) — deleted. GNN_PlotFigure generates static figures only; movies are handled separately for visual stimuli reconstruction with SIREN
-- Thin subplot wrappers (`create_weight_subplot`, `create_embedding_subplot`, etc.) — deleted, were only used by movie functions
-- `analyze_model_functions` and `load_model_for_epoch` — deleted, were only used by movie functions
+**Design principle:** `GNN_PlotFigure.py` generates static figures only. Movie generation is handled separately (e.g. visual stimuli reconstruction with SIREN).
