@@ -391,7 +391,8 @@ def plot_lin_edge(ax, model, config, n_neurons, type_list, cmap, device, step=20
 
 
 def plot_weight_scatter(ax, gt_weights, learned_weights, corrected=False,
-                        xlim=None, ylim=None):
+                        xlim=None, ylim=None, mc=None, scatter_size=0.5,
+                        outlier_threshold=None):
     """Plot true vs learned weight scatter with R² and slope.
 
     Args:
@@ -401,16 +402,25 @@ def plot_weight_scatter(ax, gt_weights, learned_weights, corrected=False,
         corrected: if True, use W* label; if False, use W label.
         xlim: optional (lo, hi) for x-axis.
         ylim: optional (lo, hi) for y-axis.
+        mc: per-edge color array; if None, uses black.
+        scatter_size: scatter point size (default 0.5).
+        outlier_threshold: if set, remove points with |residual| > threshold.
     """
-    # Outlier removal: keep residuals within 5
-    residuals = learned_weights - gt_weights
-    mask = np.abs(residuals) <= 5
-    true_in = gt_weights[mask]
-    learned_in = learned_weights[mask]
+    if outlier_threshold is not None:
+        residuals = learned_weights - gt_weights
+        mask = np.abs(residuals) <= outlier_threshold
+        true_in = gt_weights[mask]
+        learned_in = learned_weights[mask]
+        mc_in = mc[mask] if mc is not None else None
+    else:
+        true_in = gt_weights
+        learned_in = learned_weights
+        mc_in = mc
 
     r_squared, slope = compute_r_squared(true_in, learned_in)
 
-    ax.scatter(true_in, learned_in, s=0.5, c='k', alpha=0.1)
+    scatter_color = mc_in if mc_in is not None else 'k'
+    ax.scatter(true_in, learned_in, s=scatter_size, c=scatter_color, alpha=0.1)
     ax.text(0.05, 0.95,
             f'$R^2$: {r_squared:.3f}\nslope: {slope:.2f}\nN: {len(true_in)}',
             transform=ax.transAxes, verticalalignment='top', fontsize=24)

@@ -419,9 +419,10 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
         Niter = int(n_frames * data_augmentation_loop // batch_size * 0.2)
         plot_frequency = int(Niter // 20)
+        connectivity_plot_frequency = int(Niter // 10)
         n_plots_per_epoch = 4
         plot_iterations = set(int(x) for x in np.linspace(Niter // n_plots_per_epoch, Niter - 1, n_plots_per_epoch))
-        print(f'{Niter} iterations per epoch, plot at iterations {sorted(plot_iterations)}')
+        print(f'{Niter} iterations per epoch, plot every {connectivity_plot_frequency} iterations')
 
         total_loss = 0
         total_loss_regul = 0
@@ -650,24 +651,23 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                                    current_loss=current_loss / n_neurons, current_regul=regul_total_this_iter / n_neurons,
                                    total_loss=total_loss, total_loss_regul=total_loss_regul)
 
-                    if (not(test_neural_field)) & (not('MLP' in signal_model_name)):
-                        last_connectivity_r2 = plot_training_flyvis(x_list, model, config, epoch, N, log_dir, device, cmap, type_list, gt_weights, edges, n_neurons=n_neurons, n_neuron_types=n_neuron_types)
-
-                    if last_connectivity_r2 is not None:
-                        # color code: green (>0.9), yellow (0.7-0.9), orange (0.3-0.7), red (<0.3)
-                        if last_connectivity_r2 > 0.9:
-                            r2_color = '\033[92m'  # green
-                        elif last_connectivity_r2 > 0.7:
-                            r2_color = '\033[93m'  # yellow
-                        elif last_connectivity_r2 > 0.3:
-                            r2_color = '\033[38;5;208m'  # orange
-                        else:
-                            r2_color = '\033[91m'  # red
-                        pbar.set_postfix_str(f'{r2_color}R²={last_connectivity_r2:.3f}\033[0m')
-
                     torch.save(
                         {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
                         os.path.join(log_dir, 'models', f'best_model_with_{n_runs - 1}_graphs_{epoch}_{N}.pt'))
+
+                if (N > 0) & (N % connectivity_plot_frequency == 0) & (not test_neural_field) & (not ('MLP' in signal_model_name)):
+                    last_connectivity_r2 = plot_training_flyvis(x_list, model, config, epoch, N, log_dir, device, cmap, type_list, gt_weights, edges, n_neurons=n_neurons, n_neuron_types=n_neuron_types)
+
+                if last_connectivity_r2 is not None:
+                    if last_connectivity_r2 > 0.9:
+                        r2_color = '\033[92m'  # green
+                    elif last_connectivity_r2 > 0.7:
+                        r2_color = '\033[93m'  # yellow
+                    elif last_connectivity_r2 > 0.3:
+                        r2_color = '\033[38;5;208m'  # orange
+                    else:
+                        r2_color = '\033[91m'  # red
+                    pbar.set_postfix_str(f'{r2_color}R²={last_connectivity_r2:.3f}\033[0m')
 
 
                 if (has_visual_field) & (N in plot_iterations):

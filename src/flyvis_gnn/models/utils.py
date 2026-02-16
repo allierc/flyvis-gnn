@@ -303,6 +303,7 @@ def plot_training_flyvis(x_list, model, config, epoch, N, log_dir, device, cmap,
         corrected=True,
         xlim=[-1, 2],
         ylim=[-1, 2],
+        outlier_threshold=5,
     )
     plt.tight_layout()
     plt.savefig(f"./{log_dir}/tmp_training/matrix/comparison_{epoch}_{N}.png",

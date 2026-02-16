@@ -6224,6 +6224,8 @@ def create_weight_subplot(fig, model, gt_weights, mc, rows, cols, pos):
         corrected=False,
         xlim=[-2, 2],
         ylim=[-8, 8],
+        mc=mc,
+        scatter_size=0.1,
     )
 
 
