@@ -3738,37 +3738,41 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
             print('alternative clustering methods...')
 
 
-            # compute connectivity statistics for true weights
+            # compute connectivity statistics (vectorized via bincount)
             print('computing connectivity statistics...')
-            w = true_weights.flatten()
-            w_in_mean_true = np.zeros(n_neurons)
-            w_in_std_true = np.zeros(n_neurons)
-            w_out_mean_true = np.zeros(n_neurons)
-            w_out_std_true = np.zeros(n_neurons)
             edges_np = to_numpy(edges)
+            src, dst = edges_np[0], edges_np[1]
 
-            for i in trange(n_neurons, ncols=90):
-                in_w = w[edges_np[1] == i]
-                out_w = w[edges_np[0] == i]
-                w_in_mean_true[i] = in_w.mean() if len(in_w) > 0 else 0
-                w_in_std_true[i] = in_w.std() if len(in_w) > 0 else 0
-                w_out_mean_true[i] = out_w.mean() if len(out_w) > 0 else 0
-                w_out_std_true[i] = out_w.std() if len(out_w) > 0 else 0
+            def _connectivity_stats(w, src, dst, n):
+                """Per-neuron mean/std of in-weights and out-weights."""
+                # counts
+                in_count = np.bincount(dst, minlength=n).astype(np.float64)
+                out_count = np.bincount(src, minlength=n).astype(np.float64)
+                # sums
+                in_sum = np.bincount(dst, weights=w, minlength=n)
+                out_sum = np.bincount(src, weights=w, minlength=n)
+                # sum of squares
+                in_sq = np.bincount(dst, weights=w ** 2, minlength=n)
+                out_sq = np.bincount(src, weights=w ** 2, minlength=n)
+                # mean (0 where no edges)
+                safe_in = np.where(in_count > 0, in_count, 1)
+                safe_out = np.where(out_count > 0, out_count, 1)
+                in_mean = in_sum / safe_in
+                out_mean = out_sum / safe_out
+                # std = sqrt(E[x^2] - E[x]^2), clamped to avoid negative from fp noise
+                in_std = np.sqrt(np.maximum(in_sq / safe_in - in_mean ** 2, 0))
+                out_std = np.sqrt(np.maximum(out_sq / safe_out - out_mean ** 2, 0))
+                # zero out neurons with no edges
+                in_mean[in_count == 0] = 0
+                out_mean[out_count == 0] = 0
+                in_std[in_count == 0] = 0
+                out_std[out_count == 0] = 0
+                return in_mean, in_std, out_mean, out_std
 
-            # compute connectivity statistics for learned weights
-            w = learned_weights.flatten()
-            w_in_mean_learned = np.zeros(n_neurons)
-            w_in_std_learned = np.zeros(n_neurons)
-            w_out_mean_learned = np.zeros(n_neurons)
-            w_out_std_learned = np.zeros(n_neurons)
-
-            for i in trange(n_neurons, ncols=90):
-                in_w = w[edges_np[1] == i]
-                out_w = w[edges_np[0] == i]
-                w_in_mean_learned[i] = in_w.mean() if len(in_w) > 0 else 0
-                w_in_std_learned[i] = in_w.std() if len(in_w) > 0 else 0
-                w_out_mean_learned[i] = out_w.mean() if len(out_w) > 0 else 0
-                w_out_std_learned[i] = out_w.std() if len(out_w) > 0 else 0
+            w_in_mean_true, w_in_std_true, w_out_mean_true, w_out_std_true = \
+                _connectivity_stats(true_weights.flatten(), src, dst, n_neurons)
+            w_in_mean_learned, w_in_std_learned, w_out_mean_learned, w_out_std_learned = \
+                _connectivity_stats(learned_weights.flatten(), src, dst, n_neurons)
 
             # all 4 connectivity stats combined
             W_learned = np.column_stack([w_in_mean_learned, w_in_std_learned,
