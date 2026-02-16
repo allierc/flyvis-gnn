@@ -372,7 +372,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
     regularizer = LossRegularizer(
         train_config=tc,
-        model_config=mc,
+        model_config=model_config,
         activity_column=3,  # flyvis uses column 3 for activity
         plot_frequency=1,   # will be updated per epoch
         n_neurons=n_neurons,
