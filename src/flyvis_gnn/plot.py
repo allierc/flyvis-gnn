@@ -4,6 +4,7 @@ Used by both the training loop (graph_trainer.py / utils.py) and
 post-training analysis (GNN_PlotFigure.py).
 """
 import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection
 from matplotlib.ticker import FormatStrFormatter
 import numpy as np
 import torch
@@ -38,6 +39,157 @@ def compute_r_squared(true, learned):
 
 
 # ------------------------------------------------------------------ #
+#  Vectorized helpers
+# ------------------------------------------------------------------ #
+
+def _vectorized_linspace(starts, ends, n_pts, device):
+    """Create (N, n_pts) tensor where row n spans [starts[n], ends[n]].
+
+    Instead of calling torch.linspace N times, we parameterize with
+    t in [0, 1] and broadcast:  rr[n, i] = start[n] + t[i] * (end[n] - start[n])
+    """
+    t = torch.linspace(0, 1, n_pts, device=device)                   # (n_pts,)
+    starts_t = torch.as_tensor(starts, dtype=torch.float32, device=device)  # (N,)
+    ends_t = torch.as_tensor(ends, dtype=torch.float32, device=device)      # (N,)
+    return starts_t[:, None] + t[None, :] * (ends_t - starts_t)[:, None]    # (N, n_pts)
+
+
+def _batched_mlp_eval(mlp, model_a, rr, build_features_fn,
+                      device, chunk_size=2000, post_fn=None):
+    """Evaluate an MLP for all neurons at once, in chunks.
+
+    Instead of N individual forward passes on (1000, D) inputs, we
+    stack all neurons into (N*1000, D) and run one pass per chunk.
+
+    Args:
+        mlp: nn.Module — the MLP to evaluate (model.lin_edge or model.lin_phi).
+        model_a: (N, emb_dim) embedding tensor.
+        rr: (N, n_pts) tensor of input values per neuron.
+        build_features_fn: callable(rr_flat, emb_flat) -> (chunk*n_pts, D)
+            Builds the MLP input features from flattened rr and embeddings.
+        device: torch device.
+        chunk_size: number of neurons per chunk (limits GPU memory).
+        post_fn: optional callable applied to MLP output (e.g. lambda x: x**2).
+
+    Returns:
+        (N, n_pts) tensor of MLP outputs.
+    """
+    N, n_pts = rr.shape
+    emb_dim = model_a.shape[1]
+    results = []
+
+    for i in range(0, N, chunk_size):
+        chunk_rr = rr[i:i + chunk_size]                        # (C, n_pts)
+        chunk_a = model_a[i:i + chunk_size]                     # (C, emb_dim)
+        C = chunk_rr.shape[0]
+
+        # Flatten: repeat each neuron's values n_pts times
+        rr_flat = chunk_rr.reshape(-1, 1)                       # (C*n_pts, 1)
+        emb_flat = chunk_a[:, None, :].expand(-1, n_pts, -1)    # (C, n_pts, emb_dim)
+        emb_flat = emb_flat.reshape(-1, emb_dim)                 # (C*n_pts, emb_dim)
+
+        in_features = build_features_fn(rr_flat, emb_flat)       # (C*n_pts, D)
+
+        with torch.no_grad():
+            out = mlp(in_features.float())                       # (C*n_pts, 1)
+            if post_fn is not None:
+                out = post_fn(out)
+
+        results.append(out.squeeze(-1).reshape(C, n_pts))        # (C, n_pts)
+
+    return torch.cat(results, dim=0)                              # (N, n_pts)
+
+
+def _vectorized_linear_fit(x, y):
+    """Vectorized least-squares linear regression across rows.
+
+    Fits y[n] = slope[n] * x[n] + offset[n] for all N rows in parallel,
+    replacing N individual scipy.curve_fit calls.
+
+    Uses the closed-form solution:
+        slope  = (n·Σxy − Σx·Σy) / (n·Σx² − (Σx)²)
+        offset = (Σy − slope·Σx) / n
+
+    Args:
+        x: (N, n_pts) numpy array or tensor.
+        y: (N, n_pts) numpy array or tensor.
+
+    Returns:
+        slopes: (N,) numpy array.
+        offsets: (N,) numpy array.
+    """
+    if isinstance(x, torch.Tensor):
+        x = to_numpy(x)
+    if isinstance(y, torch.Tensor):
+        y = to_numpy(y)
+
+    n_pts = x.shape[1]
+    sx = x.sum(axis=1)
+    sy = y.sum(axis=1)
+    sxy = (x * y).sum(axis=1)
+    sxx = (x * x).sum(axis=1)
+
+    denom = n_pts * sxx - sx * sx
+    # Guard against degenerate cases (constant x)
+    safe = np.abs(denom) > 1e-12
+    slopes = np.where(safe, (n_pts * sxy - sx * sy) / np.where(safe, denom, 1.0), 0.0)
+    offsets = np.where(safe, (sy - slopes * sx) / n_pts, 0.0)
+
+    return slopes, offsets
+
+
+def _plot_curves_fast(ax, rr, func, type_list, cmap, linewidth=1, alpha=0.1):
+    """Plot per-neuron curves using LineCollection (single draw call).
+
+    Instead of N individual ax.plot() calls (high matplotlib overhead),
+    build an (N, n_pts, 2) segments array and add one LineCollection.
+
+    Args:
+        ax: matplotlib Axes.
+        rr: (N, n_pts) or (n_pts,) numpy array of x-values.
+        func: (N, n_pts) numpy array of y-values.
+        type_list: (N,) int array of neuron type indices.
+        cmap: CustomColorMap with .color(int) method.
+        linewidth: line width.
+        alpha: transparency.
+    """
+    N, n_pts = func.shape
+
+    # If rr is 1D (shared range), broadcast to (N, n_pts)
+    if rr.ndim == 1:
+        rr = np.broadcast_to(rr[None, :], (N, n_pts))
+
+    # Build (N, n_pts, 2) segments array: each row is [(x0,y0), (x1,y1), ...]
+    segments = np.stack([rr, func], axis=-1)                  # (N, n_pts, 2)
+
+    # Build per-neuron RGBA color array
+    type_np = np.asarray(type_list).astype(int).ravel()
+    colors = [(*cmap.color(type_np[n])[:3], alpha) for n in range(N)]
+
+    lc = LineCollection(segments, colors=colors, linewidths=linewidth)
+    ax.add_collection(lc)
+    ax.autoscale_view()
+
+
+# ------------------------------------------------------------------ #
+#  Feature-building helpers for the two MLPs
+# ------------------------------------------------------------------ #
+
+def _build_lin_edge_features(rr_flat, emb_flat, signal_model_name):
+    """Build input features for lin_edge MLP."""
+    if 'PDE_N9_B' in signal_model_name:
+        return torch.cat([rr_flat * 0, rr_flat, emb_flat, emb_flat], dim=1)
+    else:
+        return torch.cat([rr_flat, emb_flat], dim=1)
+
+
+def _build_lin_phi_features(rr_flat, emb_flat):
+    """Build input features for lin_phi MLP: (v, embedding, msg=0, exc=0)."""
+    zeros = torch.zeros_like(rr_flat)
+    return torch.cat([rr_flat, emb_flat, zeros, zeros], dim=1)
+
+
+# ------------------------------------------------------------------ #
 #  Activity statistics
 # ------------------------------------------------------------------ #
 
@@ -65,87 +217,72 @@ def compute_activity_stats(x_list, device=None):
 # ------------------------------------------------------------------ #
 
 def extract_lin_edge_slopes(model, config, n_neurons, mu_activity, sigma_activity, device):
-    """Extract linear slope of lin_edge for each neuron j.
+    """Extract linear slope of lin_edge for each neuron j (vectorized).
 
-    Evaluates lin_edge(a_j, v) over the neuron's activity range and fits
-    a linear model to extract the slope r_j.
+    Evaluates lin_edge(a_j, v) over each neuron's activity range [mu-2σ, mu+2σ]
+    in one batched forward pass, then fits all slopes with vectorized regression.
 
     Returns:
         slopes: (n_neurons,) numpy array of lin_edge slopes.
     """
     signal_model_name = config.graph_model.signal_model_name
-    emb_dim = config.graph_model.embedding_dim
     lin_edge_positive = config.graph_model.lin_edge_positive
-    slopes = []
+    n_pts = 1000
 
-    for n in range(n_neurons):
-        # Only fit if activity range includes positive values
-        if mu_activity[n] + sigma_activity[n] > 0:
-            lo = max(float(mu_activity[n] - 2 * sigma_activity[n]), 0.0)
-            hi = float(mu_activity[n] + 2 * sigma_activity[n])
-            rr = torch.linspace(lo, hi, 1000, device=device)
-            embedding_ = model.a[n, :] * torch.ones((1000, emb_dim), device=device)
+    mu = np.asarray(mu_activity, dtype=np.float32)
+    sigma = np.asarray(sigma_activity, dtype=np.float32)
 
-            if 'PDE_N9_B' in signal_model_name:
-                in_features = torch.cat((rr[:, None] * 0, rr[:, None], embedding_, embedding_), dim=1)
-            else:
-                in_features = torch.cat((rr[:, None], embedding_), dim=1)
+    # Neurons where activity range includes positive values
+    valid = (mu + sigma) > 0
+    starts = np.maximum(mu - 2 * sigma, 0.0)
+    ends = mu + 2 * sigma
 
-            with torch.no_grad():
-                func = model.lin_edge(in_features.float())
-                if lin_edge_positive:
-                    func = func ** 2
+    # For invalid neurons, set dummy range (won't be used)
+    starts[~valid] = 0.0
+    ends[~valid] = 1.0
 
-            rr_np = to_numpy(rr)
-            func_np = to_numpy(func.squeeze())
-            try:
-                fit, _ = curve_fit(linear_model, rr_np, func_np)
-                slopes.append(fit[0])
-            except Exception:
-                coeffs = np.polyfit(rr_np, func_np, 1)
-                slopes.append(coeffs[0])
-        else:
-            slopes.append(1.0)
+    rr = _vectorized_linspace(starts, ends, n_pts, device)  # (N, n_pts)
 
-    return np.array(slopes)
+    post_fn = (lambda x: x ** 2) if lin_edge_positive else None
+    build_fn = lambda rr_f, emb_f: _build_lin_edge_features(rr_f, emb_f, signal_model_name)
+
+    func = _batched_mlp_eval(model.lin_edge, model.a[:n_neurons], rr,
+                             build_fn, device, post_fn=post_fn)  # (N, n_pts)
+
+    slopes, _ = _vectorized_linear_fit(rr, func)
+
+    # Invalid neurons get slope = 1.0
+    slopes[~valid] = 1.0
+
+    return slopes
 
 
 def extract_lin_phi_slopes(model, config, n_neurons, mu_activity, sigma_activity, device):
-    """Extract linear slope and offset of lin_phi for each neuron i.
+    """Extract linear slope and offset of lin_phi for each neuron i (vectorized).
 
-    Evaluates lin_phi(a_i, v_i, msg=0, exc=0) over the neuron's activity
-    range and fits a linear model.
+    Evaluates lin_phi(a_i, v_i, msg=0, exc=0) over each neuron's activity range
+    in one batched forward pass, then fits all slopes/offsets with vectorized regression.
 
     Returns:
         slopes: (n_neurons,) numpy array — slope relates to 1/tau.
         offsets: (n_neurons,) numpy array — offset relates to V_rest.
     """
-    emb_dim = config.graph_model.embedding_dim
-    slopes = []
-    offsets = []
+    n_pts = 1000
+    mu = np.asarray(mu_activity, dtype=np.float32)
+    sigma = np.asarray(sigma_activity, dtype=np.float32)
 
-    for n in range(n_neurons):
-        lo = float(mu_activity[n] - 2 * sigma_activity[n])
-        hi = float(mu_activity[n] + 2 * sigma_activity[n])
-        rr = torch.linspace(lo, hi, 1000, device=device)
-        embedding_ = model.a[n, :] * torch.ones((1000, emb_dim), device=device)
-        in_features = torch.cat((rr[:, None], embedding_, rr[:, None] * 0, torch.zeros_like(rr[:, None])), dim=1)
+    starts = mu - 2 * sigma
+    ends = mu + 2 * sigma
 
-        with torch.no_grad():
-            func = model.lin_phi(in_features.float())
+    rr = _vectorized_linspace(starts, ends, n_pts, device)  # (N, n_pts)
 
-        rr_np = to_numpy(rr)
-        func_np = to_numpy(func.squeeze())
-        try:
-            fit, _ = curve_fit(linear_model, rr_np, func_np)
-            slopes.append(fit[0])
-            offsets.append(fit[1])
-        except Exception:
-            coeffs = np.polyfit(rr_np, func_np, 1)
-            slopes.append(coeffs[0])
-            offsets.append(coeffs[1])
+    func = _batched_mlp_eval(model.lin_phi, model.a[:n_neurons], rr,
+                             lambda rr_f, emb_f: _build_lin_phi_features(rr_f, emb_f),
+                             device)  # (N, n_pts)
 
-    return np.array(slopes), np.array(offsets)
+    slopes, offsets = _vectorized_linear_fit(rr, func)
+
+    return slopes, offsets
 
 
 # ------------------------------------------------------------------ #
@@ -317,32 +454,34 @@ def plot_embedding(ax, model, type_list, n_types, cmap):
 
 
 def plot_lin_phi(ax, model, config, n_neurons, type_list, cmap, device, step=20):
-    """Plot lin_phi function curves colored by neuron type.
+    """Plot lin_phi function curves colored by neuron type (vectorized).
 
-    Args:
-        ax: matplotlib Axes.
-        model: model with .a, .lin_phi.
-        config: config with plotting.xlim, plotting.ylim, graph_model.embedding_dim.
-        n_neurons: number of neurons.
-        type_list: (N,) type indices.
-        cmap: CustomColorMap.
-        device: torch device.
-        step: plot every step-th neuron (default 20).
+    Evaluates all selected neurons in one batched MLP pass and draws
+    all curves with a single LineCollection.
     """
-    emb_dim = config.graph_model.embedding_dim
-    rr = torch.linspace(config.plotting.xlim[0], config.plotting.xlim[1], 1000, device=device)
+    n_pts = 1000
+    xlim = config.plotting.xlim
+
+    # Select every step-th neuron
+    neuron_ids = np.arange(0, n_neurons, step)
+    n_sel = len(neuron_ids)
+
+    # Shared x-range, expanded to (n_sel, n_pts)
+    rr_1d = torch.linspace(xlim[0], xlim[1], n_pts, device=device)
+    rr = rr_1d.unsqueeze(0).expand(n_sel, -1)  # (n_sel, n_pts)
+
+    # Batched MLP evaluation
+    func = _batched_mlp_eval(
+        model.lin_phi, model.a[neuron_ids], rr,
+        lambda rr_f, emb_f: _build_lin_phi_features(rr_f, emb_f),
+        device)
+
+    # Fast plot with LineCollection
     type_np = to_numpy(type_list).astype(int)
+    _plot_curves_fast(ax, to_numpy(rr_1d), to_numpy(func),
+                      type_np[neuron_ids], cmap, linewidth=1, alpha=0.2)
 
-    for n in range(n_neurons):
-        if n % step == 0:
-            embedding_ = model.a[n, :] * torch.ones((1000, emb_dim), device=device)
-            in_features = torch.cat((rr[:, None], embedding_, rr[:, None] * 0, torch.zeros_like(rr[:, None])), dim=1)
-            with torch.no_grad():
-                func = model.lin_phi(in_features.float())
-            ax.plot(to_numpy(rr), to_numpy(func), color=cmap.color(type_np[n]),
-                    linewidth=1, alpha=0.2)
-
-    ax.set_xlim(config.plotting.xlim)
+    ax.set_xlim(xlim)
     ax.set_ylim(config.plotting.ylim)
     ax.set_xlabel('$v_i$', fontsize=32)
     ax.set_ylabel(r'learned $\mathrm{MLP_0}(\mathbf{a}_i, v_i)$', fontsize=32)
@@ -350,41 +489,35 @@ def plot_lin_phi(ax, model, config, n_neurons, type_list, cmap, device, step=20)
 
 
 def plot_lin_edge(ax, model, config, n_neurons, type_list, cmap, device, step=20):
-    """Plot lin_edge function curves colored by neuron type.
+    """Plot lin_edge function curves colored by neuron type (vectorized).
 
-    Args:
-        ax: matplotlib Axes.
-        model: model with .a, .lin_edge.
-        config: config with plotting.xlim, graph_model.*.
-        n_neurons: number of neurons.
-        type_list: (N,) type indices.
-        cmap: CustomColorMap.
-        device: torch device.
-        step: plot every step-th neuron (default 20).
+    Evaluates all selected neurons in one batched MLP pass and draws
+    all curves with a single LineCollection.
     """
     signal_model_name = config.graph_model.signal_model_name
-    emb_dim = config.graph_model.embedding_dim
     lin_edge_positive = config.graph_model.lin_edge_positive
-    rr = torch.linspace(config.plotting.xlim[0], config.plotting.xlim[1], 1000, device=device)
+    xlim = config.plotting.xlim
+    n_pts = 1000
+
+    neuron_ids = np.arange(0, n_neurons, step)
+    n_sel = len(neuron_ids)
+
+    rr_1d = torch.linspace(xlim[0], xlim[1], n_pts, device=device)
+    rr = rr_1d.unsqueeze(0).expand(n_sel, -1)
+
+    post_fn = (lambda x: x ** 2) if lin_edge_positive else None
+    build_fn = lambda rr_f, emb_f: _build_lin_edge_features(rr_f, emb_f, signal_model_name)
+
+    func = _batched_mlp_eval(
+        model.lin_edge, model.a[neuron_ids], rr,
+        build_fn, device, post_fn=post_fn)
+
     type_np = to_numpy(type_list).astype(int)
+    _plot_curves_fast(ax, to_numpy(rr_1d), to_numpy(func),
+                      type_np[neuron_ids], cmap, linewidth=1, alpha=0.2)
 
-    for n in range(n_neurons):
-        if n % step == 0:
-            embedding_ = model.a[n, :] * torch.ones((1000, emb_dim), device=device)
-            if 'PDE_N9_B' in signal_model_name:
-                in_features = torch.cat((rr[:, None] * 0, rr[:, None], embedding_, embedding_), dim=1)
-            else:
-                in_features = torch.cat((rr[:, None], embedding_), dim=1)
-
-            with torch.no_grad():
-                func = model.lin_edge(in_features.float())
-                if lin_edge_positive:
-                    func = func ** 2
-            ax.plot(to_numpy(rr), to_numpy(func), color=cmap.color(type_np[n]),
-                    linewidth=1, alpha=0.2)
-
-    ax.set_xlim(config.plotting.xlim)
-    ax.set_ylim([-config.plotting.xlim[1] / 10, config.plotting.xlim[1] * 1.2])
+    ax.set_xlim(xlim)
+    ax.set_ylim([-xlim[1] / 10, xlim[1] * 1.2])
     ax.set_xlabel('$v_j$', fontsize=32)
     ax.set_ylabel(r'learned $\mathrm{MLP_1}(\mathbf{a}_j, v_j)$', fontsize=32)
     ax.tick_params(axis='both', which='major', labelsize=24)
