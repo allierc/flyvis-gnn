@@ -229,8 +229,8 @@ def extract_lin_edge_slopes(model, config, n_neurons, mu_activity, sigma_activit
     lin_edge_positive = config.graph_model.lin_edge_positive
     n_pts = 1000
 
-    mu = np.asarray(mu_activity, dtype=np.float32)
-    sigma = np.asarray(sigma_activity, dtype=np.float32)
+    mu = to_numpy(mu_activity).astype(np.float32) if torch.is_tensor(mu_activity) else np.asarray(mu_activity, dtype=np.float32)
+    sigma = to_numpy(sigma_activity).astype(np.float32) if torch.is_tensor(sigma_activity) else np.asarray(sigma_activity, dtype=np.float32)
 
     # Neurons where activity range includes positive values
     valid = (mu + sigma) > 0
@@ -268,8 +268,8 @@ def extract_lin_phi_slopes(model, config, n_neurons, mu_activity, sigma_activity
         offsets: (n_neurons,) numpy array — offset relates to V_rest.
     """
     n_pts = 1000
-    mu = np.asarray(mu_activity, dtype=np.float32)
-    sigma = np.asarray(sigma_activity, dtype=np.float32)
+    mu = to_numpy(mu_activity).astype(np.float32) if torch.is_tensor(mu_activity) else np.asarray(mu_activity, dtype=np.float32)
+    sigma = to_numpy(sigma_activity).astype(np.float32) if torch.is_tensor(sigma_activity) else np.asarray(sigma_activity, dtype=np.float32)
 
     starts = mu - 2 * sigma
     ends = mu + 2 * sigma

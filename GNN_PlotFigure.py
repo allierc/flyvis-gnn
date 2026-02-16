@@ -4759,8 +4759,8 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
 
 
             # lin_edge domain range: evaluate + slope extraction (vectorized)
-            mu = np.asarray(mu_activity, dtype=np.float32)
-            sigma = np.asarray(sigma_activity, dtype=np.float32)
+            mu = to_numpy(mu_activity).astype(np.float32)
+            sigma = to_numpy(sigma_activity).astype(np.float32)
             valid_edge = (mu + sigma) > 0
             starts_edge = np.maximum(mu - 2 * sigma, 0.0)
             ends_edge = mu + 2 * sigma
