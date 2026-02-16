@@ -25,16 +25,9 @@ import copy
 import numpy as np
 
 from flyvis_gnn.models.utils import (
-    choose_training_model,
-    increasing_batch_size,
-    constant_batch_size,
     set_trainable_parameters,
-    get_in_features_update,
-    analyze_edge_function,
-    plot_training_signal_visual_input,
     plot_training_flyvis,
     plot_weight_comparison,
-    get_index_particles,
     analyze_data_svd,
     LossRegularizer,
 )
