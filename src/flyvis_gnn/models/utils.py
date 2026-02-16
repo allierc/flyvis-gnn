@@ -266,7 +266,7 @@ def plot_training_flyvis(x_list, model, config, epoch, N, log_dir, device, cmap,
                          gt_weights, edges, n_neurons=None, n_neuron_types=None):
     from flyvis_gnn.plot import (
         plot_embedding, plot_lin_edge, plot_lin_phi, plot_weight_scatter,
-        compute_all_corrected_weights,
+        compute_all_corrected_weights, get_model_W,
     )
 
     if n_neurons is None:
@@ -281,11 +281,26 @@ def plot_training_flyvis(x_list, model, config, epoch, N, log_dir, device, cmap,
     plt.savefig(f"./{log_dir}/tmp_training/embedding/{epoch}_{N}.png", dpi=87)
     plt.close()
 
+    # Plot 2: Raw W scatter (no correction)
+    fig, ax = plt.subplots(figsize=(8, 8))
+    raw_W = to_numpy(get_model_W(model).squeeze())
+    r_squared_raw, _ = plot_weight_scatter(
+        ax,
+        gt_weights=to_numpy(gt_weights),
+        learned_weights=raw_W,
+        corrected=False,
+        outlier_threshold=5,
+    )
+    plt.tight_layout()
+    plt.savefig(f"./{log_dir}/tmp_training/matrix/raw_{epoch}_{N}.png",
+                dpi=87, bbox_inches='tight', pad_inches=0)
+    plt.close()
+
     # Compute corrected weights
     corrected_W, _, _, _ = compute_all_corrected_weights(
         model, config, edges, x_list, device)
 
-    # Plot 2: Corrected weight comparison scatter plot
+    # Plot 3: Corrected weight comparison scatter plot
     fig, ax = plt.subplots(figsize=(8, 8))
     r_squared, _ = plot_weight_scatter(
         ax,
@@ -301,14 +316,14 @@ def plot_training_flyvis(x_list, model, config, epoch, N, log_dir, device, cmap,
                 dpi=87, bbox_inches='tight', pad_inches=0)
     plt.close()
 
-    # Plot 3: Edge function visualization (lin_edge / MLP1)
+    # Plot 4: Edge function visualization (lin_edge / MLP1)
     fig, ax = plt.subplots(figsize=(8, 8))
     plot_lin_edge(ax, model, config, n_neurons, type_list, cmap, device)
     plt.tight_layout()
     plt.savefig(f"./{log_dir}/tmp_training/function/MLP1/func_{epoch}_{N}.png", dpi=87)
     plt.close()
 
-    # Plot 4: Phi function visualization (lin_phi / MLP0)
+    # Plot 5: Phi function visualization (lin_phi / MLP0)
     fig, ax = plt.subplots(figsize=(8, 8))
     plot_lin_phi(ax, model, config, n_neurons, type_list, cmap, device)
     plt.tight_layout()
