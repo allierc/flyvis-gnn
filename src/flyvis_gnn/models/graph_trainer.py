@@ -276,10 +276,13 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         x_list.append(x)
         y_list.append(y)
 
+    # Move all timeseries to GPU to avoid per-iteration CPU→GPU transfers
+    x_list = [ts.to(device) for ts in x_list]
+
     print(f'dataset: {len(x_list)} run, {x_list[0].n_frames} frames')
     x = x_list[0].frame(n_frames - 10)
 
-    activity = x_list[0].voltage.to(device)
+    activity = x_list[0].voltage
     distrib = activity.flatten()
     valid_distrib = distrib[~torch.isnan(distrib)]
     if len(valid_distrib) > 0:
@@ -458,10 +461,10 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                 if recurrent_training or neural_ODE_training:
                     k = k - k % time_step
 
-                x = x_list[run].frame(k).to(device)
+                x = x_list[run].frame(k)
 
                 if time_window > 0:
-                    x_temporal = x_list[run].voltage[k - time_window + 1: k + 1].T.float().to(device)
+                    x_temporal = x_list[run].voltage[k - time_window + 1: k + 1].T
                     # x stays as NeuronState; x_temporal passed separately to temporal model
 
                 if has_visual_field:
@@ -472,11 +475,10 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                 loss = torch.zeros(1, device=device)
                 regularizer.reset_iteration()
 
-                x_packed = x.to_packed()
-                if not (torch.isnan(x_packed).any()):
+                if not (torch.isnan(x.voltage).any()):
                     regul_loss = regularizer.compute(
                         model=model,
-                        x=x_packed,
+                        x=x,
                         in_features=None,
                         ids=ids,
                         ids_batch=None,
@@ -487,9 +489,9 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                     loss = loss + regul_loss
 
                     if recurrent_training or neural_ODE_training:
-                        y = x_list[run].voltage[k + time_step].unsqueeze(-1).float().to(device).detach()
+                        y = x_list[run].voltage[k + time_step].unsqueeze(-1)
                     elif test_neural_field:
-                        y = x_list[run].stimulus[k, :n_input_neurons].unsqueeze(-1).float().to(device)
+                        y = x_list[run].stimulus[k, :n_input_neurons].unsqueeze(-1)
                     else:
                         y = torch.tensor(y_list[run][k], device=device) / ynorm     # loss on activity derivative
 
@@ -608,7 +610,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                                         state_batch[b].stimulus[:model.n_input_neurons] = visual_input_next.squeeze(-1)
                                         state_batch[b].stimulus[model.n_input_neurons:] = 0
                                     else:
-                                        x_next = x_list[run].frame(k_current).to(device)
+                                        x_next = x_list[run].frame(k_current)
                                         state_batch[b].stimulus = x_next.stimulus
 
                                 batched_state, batched_edges = _batch_frames(state_batch, edges)
@@ -715,7 +717,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                         all_gt = []
                         all_pred = []
                         for k_fit in range(0, 800, step_video):
-                            x_fit = x_list[run].frame(k_fit).to(device)
+                            x_fit = x_list[run].frame(k_fit)
                             pred_fit = to_numpy(model.forward_visual(x_fit, k_fit)).squeeze()
                             gt_fit = to_numpy(x_list[0].stimulus[k_fit, :n_input_neurons]).squeeze()
                             all_gt.append(gt_fit)
@@ -745,7 +747,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
                             for k in trange(0, 800, step_video, ncols=100):
                                 # inputs and predictions
-                                x = x_list[run].frame(k).to(device)
+                                x = x_list[run].frame(k)
                                 pred = to_numpy(model.forward_visual(x, k))
                                 pred_vec = np.asarray(pred).squeeze()  # (n_input_neurons,)
                                 pred_corrected = a_coeff * pred_vec # + b_coeff  # corrected to GT scale

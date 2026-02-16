@@ -77,7 +77,7 @@ class GNNODEFunc_FlyVis(nn.Module):
                 n_frames = x_ts.n_frames if isinstance(x_ts, NeuronTimeSeries) else len(x_ts)
                 if k_current < n_frames:
                     if isinstance(x_ts, NeuronTimeSeries):
-                        state.stimulus[start_idx:end_idx] = x_ts.stimulus[k_current].float().to(self.device)
+                        state.stimulus[start_idx:end_idx] = x_ts.stimulus[k_current]
                     else:
                         x_next = torch.tensor(x_ts[k_current], dtype=torch.float32, device=self.device)
                         state.stimulus[start_idx:end_idx] = x_next[:, 4]

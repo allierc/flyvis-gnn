@@ -245,48 +245,52 @@ def get_in_features_update(rr=None, model=None, embedding = None, device=None):
     return in_features
 
 def get_in_features_lin_edge(x, model, model_config, xnorm, n_neurons, device):
+    """Build lin_edge input features from voltage and embeddings.
+
+    Args:
+        x: NeuronState — uses x.voltage.
+    """
+    voltage = x.voltage[:n_neurons].unsqueeze(-1)
 
     signal_model_name = model_config.signal_model_name
 
     if signal_model_name in ['PDE_N4', 'PDE_N7', 'PDE_N11']:
-        # in_features for lin_edge: [u_j, embedding_j] where u is x[:,3:4]
-        in_features_prev = torch.cat((x[:n_neurons, 3:4] - xnorm / 150, model.a[:n_neurons]), dim=1)
-        in_features = torch.cat((x[:n_neurons, 3:4], model.a[:n_neurons]), dim=1)
-        in_features_next = torch.cat((x[:n_neurons, 3:4] + xnorm / 150, model.a[:n_neurons]), dim=1)
+        in_features_prev = torch.cat((voltage - xnorm / 150, model.a[:n_neurons]), dim=1)
+        in_features = torch.cat((voltage, model.a[:n_neurons]), dim=1)
+        in_features_next = torch.cat((voltage + xnorm / 150, model.a[:n_neurons]), dim=1)
         if model.embedding_trial:
             in_features_prev = torch.cat((in_features_prev, model.b[0].repeat(n_neurons, 1)), dim=1)
             in_features = torch.cat((in_features, model.b[0].repeat(n_neurons, 1)), dim=1)
             in_features_next = torch.cat((in_features_next, model.b[0].repeat(n_neurons, 1)), dim=1)
     elif signal_model_name == 'PDE_N5':
-        # in_features for lin_edge: [u_j, embedding_i, embedding_j] where u is x[:,3:4]
         if model.embedding_trial:
-            in_features = torch.cat((x[:n_neurons, 3:4], model.a[:n_neurons], model.b[0].repeat(n_neurons, 1), model.a[:n_neurons], model.b[0].repeat(n_neurons, 1)), dim=1)
-            in_features_next = torch.cat((x[:n_neurons, 3:4] + xnorm / 150, model.a[:n_neurons], model.b[0].repeat(n_neurons, 1), model.a[:n_neurons], model.b[0].repeat(n_neurons, 1)), dim=1)
+            in_features = torch.cat((voltage, model.a[:n_neurons], model.b[0].repeat(n_neurons, 1), model.a[:n_neurons], model.b[0].repeat(n_neurons, 1)), dim=1)
+            in_features_next = torch.cat((voltage + xnorm / 150, model.a[:n_neurons], model.b[0].repeat(n_neurons, 1), model.a[:n_neurons], model.b[0].repeat(n_neurons, 1)), dim=1)
         else:
-            in_features = torch.cat((x[:n_neurons, 3:4], model.a[:n_neurons], model.a[:n_neurons]), dim=1)
-            in_features_next = torch.cat((x[:n_neurons, 3:4] + xnorm / 150, model.a[:n_neurons], model.a[:n_neurons]), dim=1)
+            in_features = torch.cat((voltage, model.a[:n_neurons], model.a[:n_neurons]), dim=1)
+            in_features_next = torch.cat((voltage + xnorm / 150, model.a[:n_neurons], model.a[:n_neurons]), dim=1)
     elif ('PDE_N9_A' in signal_model_name) | (signal_model_name == 'PDE_N9_C') | (signal_model_name == 'PDE_N9_D') :
-        in_features = torch.cat((x[:, 3:4], model.a), dim=1)
-        in_features_next = torch.cat((x[:,3:4] * 1.05, model.a), dim=1)
+        voltage_all = x.voltage.unsqueeze(-1)
+        in_features = torch.cat((voltage_all, model.a), dim=1)
+        in_features_next = torch.cat((voltage_all * 1.05, model.a), dim=1)
     elif signal_model_name == 'PDE_N9_B':
+        voltage_all = x.voltage.unsqueeze(-1)
         perm_indices = torch.randperm(n_neurons, device=model.a.device)
-        in_features = torch.cat((x[:, 3:4], x[:, 3:4], model.a, model.a[perm_indices]), dim=1)
-        in_features_next = torch.cat((x[:, 3:4], x[:, 3:4] * 1.05, model.a, model.a[perm_indices]), dim=1)
+        in_features = torch.cat((voltage_all, voltage_all, model.a, model.a[perm_indices]), dim=1)
+        in_features_next = torch.cat((voltage_all, voltage_all * 1.05, model.a, model.a[perm_indices]), dim=1)
     elif signal_model_name == 'PDE_N8':
-        # in_features for lin_edge: [u_i, u_j, embedding_i, embedding_j] where u is x[:,3:4]
         if model.embedding_trial:
             perm_indices = torch.randperm(n_neurons, device=model.a.device)
-            in_features = torch.cat((x[:n_neurons, 3:4], x[:n_neurons, 3:4], model.a[:n_neurons], model.b[0].repeat(n_neurons, 1), model.a[perm_indices[:n_neurons]], model.b[0].repeat(n_neurons, 1)), dim=1)
-            in_features_next = torch.cat((x[:n_neurons, 3:4], x[:n_neurons, 3:4]*1.05, model.a[:n_neurons], model.b[0].repeat(n_neurons, 1), model.a[perm_indices[:n_neurons]], model.b[0].repeat(n_neurons, 1)), dim=1)
+            in_features = torch.cat((voltage, voltage, model.a[:n_neurons], model.b[0].repeat(n_neurons, 1), model.a[perm_indices[:n_neurons]], model.b[0].repeat(n_neurons, 1)), dim=1)
+            in_features_next = torch.cat((voltage, voltage*1.05, model.a[:n_neurons], model.b[0].repeat(n_neurons, 1), model.a[perm_indices[:n_neurons]], model.b[0].repeat(n_neurons, 1)), dim=1)
         else:
             perm_indices = torch.randperm(n_neurons, device=model.a.device)
-            in_features = torch.cat((x[:n_neurons, 3:4], x[:n_neurons, 3:4], model.a[:n_neurons], model.a[perm_indices[:n_neurons]]), dim=1)
-            in_features_next = torch.cat((x[:n_neurons, 3:4], x[:n_neurons, 3:4] * 1.05, model.a[:n_neurons], model.a[perm_indices[:n_neurons]]), dim=1)
+            in_features = torch.cat((voltage, voltage, model.a[:n_neurons], model.a[perm_indices[:n_neurons]]), dim=1)
+            in_features_next = torch.cat((voltage, voltage * 1.05, model.a[:n_neurons], model.a[perm_indices[:n_neurons]]), dim=1)
     else:
-        # default: just u (signal) where u is x[:,3:4]
-        in_features = x[:n_neurons, 3:4]
-        in_features_next = x[:n_neurons, 3:4] + xnorm / 150
-        in_features_prev = x[:n_neurons, 3:4] - xnorm / 150
+        in_features = voltage
+        in_features_next = voltage + xnorm / 150
+        in_features_prev = voltage - xnorm / 150
 
     return in_features, in_features_next
 
@@ -465,7 +469,7 @@ def plot_training_signal(config, model, x, connectivity, log_dir, epoch, N, n_ne
     else:
         fig = plt.figure(figsize=(8, 8))
         for n in range(n_neurons):
-            if x[n, 3] != config.simulation.baseline_value:
+            if x.voltage[n] != config.simulation.baseline_value:
                 plt.scatter(to_numpy(model.a[n, 0]), to_numpy(model.a[n, 1]), s=100,
                             color=cmap.color(int(type_list[n])), alpha=1.0, edgecolors='none')
 
@@ -699,10 +703,8 @@ def plot_training_signal(config, model, x, connectivity, log_dir, epoch, N, n_ne
 def plot_training_signal_visual_input(x, n_input_neurons, external_input_type, log_dir, epoch, N):
 
     n_input_neurons_per_axis = int(np.sqrt(n_input_neurons))
-    if 'visual' in external_input_type:
-        tmp = torch.reshape(x[:n_input_neurons, 4:5], (n_input_neurons_per_axis, n_input_neurons_per_axis))
-    else:
-        tmp = torch.reshape(x[:, 4:5], (n_input_neurons_per_axis, n_input_neurons_per_axis))
+    stimulus = x.stimulus[:n_input_neurons] if 'visual' in external_input_type else x.stimulus
+    tmp = torch.reshape(stimulus, (n_input_neurons_per_axis, n_input_neurons_per_axis))
     tmp = to_numpy(tmp)
 
     # compute stats for sanity check
@@ -1105,10 +1107,7 @@ def set_trainable_division_parameters(model, lr):
 def get_index_particles(x, n_neuron_types, dimension):
     index_particles = []
     for n in range(n_neuron_types):
-        if dimension == 2:
-            index = np.argwhere(x[:, 6].detach().cpu().numpy() == n)
-        elif dimension == 3:
-            index = np.argwhere(x[:, 7].detach().cpu().numpy() == n)
+        index = np.argwhere(x.neuron_type.detach().cpu().numpy() == n)
         index_particles.append(index.squeeze())
     return index_particles
 
@@ -2659,7 +2658,7 @@ class LossRegularizer:
 
         Args:
             model: The neural network model
-            x: Input tensor
+            x: NeuronState — only voltage is used
             in_features: Features for lin_phi (from model forward pass, can be None)
             ids: Sample indices for regularization
             ids_batch: Batch indices

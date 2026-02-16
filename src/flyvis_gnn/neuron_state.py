@@ -191,6 +191,19 @@ class NeuronTimeSeries:
             fluorescence=self.fluorescence[t],
         )
 
+    def to(self, device: torch.device) -> NeuronTimeSeries:
+        """Move all tensors to device."""
+        return NeuronTimeSeries(
+            index=self.index.to(device),
+            pos=self.pos.to(device),
+            group_type=self.group_type.to(device),
+            neuron_type=self.neuron_type.to(device),
+            voltage=self.voltage.to(device),
+            stimulus=self.stimulus.to(device),
+            calcium=self.calcium.to(device),
+            fluorescence=self.fluorescence.to(device),
+        )
+
     def subset_neurons(self, ids: np.ndarray | torch.Tensor) -> NeuronTimeSeries:
         """Select a subset of neurons by index."""
         return NeuronTimeSeries(
@@ -311,15 +324,15 @@ class NeuronTimeSeries:
         full = np.empty((T, N, 9), dtype=np.float32)
 
         # static — broadcast from (N,) to (T, N)
-        full[:, :, 0] = self.index.numpy()
-        full[:, :, 1:3] = self.pos.numpy()
-        full[:, :, 5] = self.group_type.numpy()
-        full[:, :, 6] = self.neuron_type.numpy()
+        full[:, :, 0] = self.index.cpu().numpy()
+        full[:, :, 1:3] = self.pos.cpu().numpy()
+        full[:, :, 5] = self.group_type.cpu().numpy()
+        full[:, :, 6] = self.neuron_type.cpu().numpy()
 
         # dynamic
-        full[:, :, 3] = self.voltage.numpy()
-        full[:, :, 4] = self.stimulus.numpy()
-        full[:, :, 7] = self.calcium.numpy()
-        full[:, :, 8] = self.fluorescence.numpy()
+        full[:, :, 3] = self.voltage.cpu().numpy()
+        full[:, :, 4] = self.stimulus.cpu().numpy()
+        full[:, :, 7] = self.calcium.cpu().numpy()
+        full[:, :, 8] = self.fluorescence.cpu().numpy()
 
         return full
