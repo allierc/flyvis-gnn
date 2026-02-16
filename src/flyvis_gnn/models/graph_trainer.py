@@ -308,7 +308,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     # SVD analysis of activity and visual stimuli (skip if already exists)
     svd_plot_path = os.path.join(log_dir, 'results', 'svd_analysis.png')
     if not os.path.exists(svd_plot_path):
-        analyze_data_svd(x_list[0].to_packed(), log_dir, config=config, logger=logger, is_flyvis=True)
+        analyze_data_svd(x_list[0], log_dir, config=config, logger=logger, is_flyvis=True)
     else:
         print(f'svd analysis already exists: {svd_plot_path}')
 

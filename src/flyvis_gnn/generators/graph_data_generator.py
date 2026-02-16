@@ -507,7 +507,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
 
     with torch.no_grad():
         for pass_num in range(num_passes_needed):
-            for data_idx, data in enumerate(tqdm(stimulus_dataset, desc="processing stimulus data"), ncols=100):
+            for data_idx, data in enumerate(tqdm(stimulus_dataset, desc="processing stimulus data", ncols=100)):
                 if simulation_config.simulation_initial_state:
                     x.voltage[:] = initial_state
                     if only_noise_visual_input > 0:
@@ -804,8 +804,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     print('svd analysis ...')
     from flyvis_gnn.models.utils import analyze_data_svd
     folder = f'./graphs_data/{dataset_name}'
-    x_list_packed = x_ts.to_packed()  # (T, N, 9) numpy for legacy functions
-    svd_results = analyze_data_svd(x_list_packed, folder, config=config, is_flyvis=True,
+    svd_results = analyze_data_svd(x_ts, folder, config=config, is_flyvis=True,
                                    save_in_subfolder=False)
 
     # Save ranks to log file

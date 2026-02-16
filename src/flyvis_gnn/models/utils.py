@@ -1897,15 +1897,14 @@ def check_dales_law(edges, weights, type_list=None, n_neurons=None, verbose=True
     }
 
 
-def analyze_data_svd(x_list, output_folder, config=None, max_components=100, logger=None, max_data_size=10_000_000, max_neurons=1024, is_flyvis=False, style=None, save_in_subfolder=True, log_file=None):
+def analyze_data_svd(data, output_folder, config=None, max_components=100, logger=None, max_data_size=10_000_000, max_neurons=1024, is_flyvis=False, style=None, save_in_subfolder=True, log_file=None):
     """
     Perform SVD analysis on activity data and external_input/visual stimuli (if present).
     Uses randomized SVD for large datasets for efficiency.
     Subsamples frames if data is too large.
 
     Args:
-        x_list: numpy array of shape (n_frames, n_neurons, n_features)
-                features: [id, x, y, u, external_input, ...]
+        data: NeuronTimeSeries (uses .voltage and .stimulus) or legacy (T, N, 9) numpy array.
         output_folder: path to save plots
         config: config object (optional, for metadata)
         max_components: maximum number of SVD components to compute
@@ -1921,8 +1920,19 @@ def analyze_data_svd(x_list, output_folder, config=None, max_components=100, log
         dict with SVD analysis results
     """
     from sklearn.utils.extmath import randomized_svd
+    from flyvis_gnn.neuron_state import NeuronTimeSeries
 
-    n_frames, n_neurons, n_features = x_list.shape
+    # Extract activity and stimulus as (T, N) numpy arrays
+    if isinstance(data, NeuronTimeSeries):
+        activity_full = data.voltage.cpu().numpy()      # (T, N)
+        stimulus_full = data.stimulus.cpu().numpy()      # (T, N)
+    else:
+        # Legacy packed (T, N, 9) numpy array
+        activity_full = data[:, :, 3]
+        stimulus_full = data[:, :, 4] if data.shape[2] > 4 else None
+
+    n_frames, n_neurons = activity_full.shape
+    has_stimulus = stimulus_full is not None
     results = {}
 
     import re
@@ -1938,7 +1948,9 @@ def analyze_data_svd(x_list, output_folder, config=None, max_components=100, log
     if n_neurons > max_neurons:
         neuron_subsample = int(np.ceil(n_neurons / max_neurons))
         neuron_indices = np.arange(0, n_neurons, neuron_subsample)
-        x_list = x_list[:, neuron_indices, :]
+        activity_full = activity_full[:, neuron_indices]
+        if has_stimulus:
+            stimulus_full = stimulus_full[:, neuron_indices]
         n_neurons_sampled = len(neuron_indices)
         log_print(f"subsampling neurons: {n_neurons} -> {n_neurons_sampled} (every {neuron_subsample}th)")
         n_neurons = n_neurons_sampled
@@ -1948,12 +1960,14 @@ def analyze_data_svd(x_list, output_folder, config=None, max_components=100, log
     if data_size > max_data_size:
         subsample_factor = int(np.ceil(data_size / max_data_size))
         frame_indices = np.arange(0, n_frames, subsample_factor)
-        x_list_sampled = x_list[frame_indices]
+        activity_sampled = activity_full[frame_indices]
+        stimulus_sampled = stimulus_full[frame_indices] if has_stimulus else None
         n_frames_sampled = len(frame_indices)
         log_print(f"subsampling frames: {n_frames} -> {n_frames_sampled} (every {subsample_factor}th)")
         data_size_sampled = n_frames_sampled * n_neurons
     else:
-        x_list_sampled = x_list
+        activity_sampled = activity_full
+        stimulus_sampled = stimulus_full
         n_frames_sampled = n_frames
         data_size_sampled = data_size
         subsample_factor = 1
@@ -1987,8 +2001,8 @@ def analyze_data_svd(x_list, output_folder, config=None, max_components=100, log
     for ax in axes.flat:
         ax.set_facecolor(bg_color)
 
-    # 1. analyze activity (u) - column 3
-    activity = x_list_sampled[:, :, 3]  # shape: (n_frames_sampled, n_neurons)
+    # 1. analyze activity (u)
+    activity = activity_sampled  # shape: (n_frames_sampled, n_neurons)
     log_print("--- activity ---")
     log_print(f"  shape: {activity.shape}")
     log_print(f"  range: [{activity.min():.3f}, {activity.max():.3f}]")
@@ -2052,13 +2066,13 @@ def analyze_data_svd(x_list, output_folder, config=None, max_components=100, log
         n_input_neurons = getattr(config.simulation, 'n_input_neurons', None) if config else None
     input_label = "visual stimuli" if is_flyvis else "external input"
 
-    if n_features > 4:
+    if has_stimulus:
         # for visual stimuli, only analyze input neurons (first n_input_neurons)
         if is_flyvis and n_input_neurons is not None and n_input_neurons < n_neurons:
-            external_input = x_list_sampled[:, :n_input_neurons, 4]  # shape: (n_frames_sampled, n_input_neurons)
+            external_input = stimulus_sampled[:, :n_input_neurons]
             log_print(f"--- {input_label} (first {n_input_neurons} input neurons) ---")
         else:
-            external_input = x_list_sampled[:, :, 4]  # shape: (n_frames_sampled, n_neurons)
+            external_input = stimulus_sampled
 
         # check if external_input has actual signal
         ext_range = external_input.max() - external_input.min()
