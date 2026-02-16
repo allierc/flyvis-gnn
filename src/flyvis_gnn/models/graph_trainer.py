@@ -2302,6 +2302,7 @@ def data_test_flyvis(
     x_generated_modified_list = np.array(x_generated_modified_list)
     y_list = np.array(y_list)
 
+    neuron_types = node_types_int
 
     if calcium_type != "none":
         # Use calcium (index 7)
