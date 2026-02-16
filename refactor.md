@@ -249,3 +249,40 @@ A single module used by both the training loop and post-training analysis, elimi
 - `generators/plots.py` uses `FigureStyle` for generation-time plots (connectivity matrices, spatial layouts)
 
 **Design principle:** `GNN_PlotFigure.py` generates static figures only. Movie generation is handled separately (e.g. visual stimuli reconstruction with SIREN).
+
+
+## 4. Eliminating Config Variable Unpacking
+
+### The problem
+
+Every major function started with 20–54 lines of `variable = config.section.field` boilerplate, duplicated across 6 functions in `graph_trainer.py` and `GNN_PlotFigure.py`:
+
+```python
+n_neurons = simulation_config.n_neurons
+n_input_neurons = simulation_config.n_input_neurons
+delta_t = simulation_config.delta_t
+dataset_name = config.dataset
+n_runs = train_config.n_runs
+...  # 20-50 more lines
+```
+
+The same variables were unpacked identically in `data_train_flyvis`, `data_test_flyvis`, `data_train_flyvis_RNN`, `plot_signal`, and `plot_synaptic_flyvis`.
+
+### The solution: use Pydantic config objects directly
+
+Each function keeps three short section aliases:
+
+```python
+sim = config.simulation
+tc = config.training
+model_config = config.graph_model
+```
+
+Then uses `sim.n_neurons`, `tc.batch_size`, `model_config.signal_model_name` directly throughout. The provenance of each value is explicit at the point of use.
+
+### What changed
+
+~88 lines of pure assignment removed. ~300 variable references rewritten from local names to config-prefixed forms. Computed or conditional values kept as locals:
+- `n_neurons` in `data_test_flyvis` (conditional on `training_selected_neurons`)
+- `replace_with_cluster = 'replace' in tc.sparsity` (derived)
+- `getattr()` calls in `data_train_INR` (provide defaults for optional fields)
