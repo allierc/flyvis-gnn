@@ -178,7 +178,6 @@ def data_train(config=None, erase=False, best_model=None, style=None, device=Non
 
     # torch.autograd.set_detect_anomaly(True)
 
-    dataset_name = config.dataset
     print(f"\033[94mdataset_name: {dataset_name}\033[0m")
     print(f"\033[92m{config.description}\033[0m")
 
@@ -196,40 +195,11 @@ def data_train(config=None, erase=False, best_model=None, style=None, device=Non
 
 
 def data_train_flyvis(config, erase, best_model, device, log_file=None):
-    simulation_config = config.simulation
-    train_config = config.training
+    sim = config.simulation
+    tc = config.training
     model_config = config.graph_model
 
-    signal_model_name = model_config.signal_model_name
-
-    n_epochs = train_config.n_epochs
-    n_neurons = simulation_config.n_neurons
-    n_input_neurons = simulation_config.n_input_neurons
-    n_neuron_types = simulation_config.n_neuron_types
-    delta_t = simulation_config.delta_t
-
-    dataset_name = config.dataset
-    n_runs = train_config.n_runs
-    n_frames = simulation_config.n_frames
-
-    data_augmentation_loop = train_config.data_augmentation_loop
-    recurrent_training = train_config.recurrent_training
-    noise_recurrent_level = train_config.noise_recurrent_level
-    neural_ODE_training = train_config.neural_ODE_training
-    ode_method = train_config.ode_method
-    ode_rtol = train_config.ode_rtol
-    ode_atol = train_config.ode_atol
-    ode_adjoint = train_config.ode_adjoint
-    batch_size = train_config.batch_size
-    time_window = train_config.time_window
-    training_selected_neurons = train_config.training_selected_neurons
-
-    field_type = model_config.field_type
-    time_step = train_config.time_step
-
-    replace_with_cluster = 'replace' in train_config.sparsity
-    sparsity_freq = train_config.sparsity_freq
-
+    replace_with_cluster = 'replace' in tc.sparsity
 
     if config.training.seed != 42:
         torch.random.fork_rng(devices=device)
@@ -239,15 +209,15 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     plt.style.use('default')
     mc = 'k'
 
-    if 'visual' in field_type:
+    if 'visual' in model_config.field_type:
         has_visual_field = True
-        if 'instantNGP' in field_type:
+        if 'instantNGP' in model_config.field_type:
             print('train with visual field instantNGP')
         else:
             print('train with visual field NNR')
     else:
         has_visual_field = False
-    if 'test' in field_type:
+    if 'test' in model_config.field_type:
         test_neural_field = True
         print('train with test field NNR')
     else:
@@ -257,12 +227,12 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
     x_list = []
     y_list = []
-    for run in trange(0, n_runs, ncols=50):
-        x = load_simulation_data(f'graphs_data/{dataset_name}/x_list_{run}')
-        y = load_simulation_data_raw(f'graphs_data/{dataset_name}/y_list_{run}')
+    for run in trange(0, tc.n_runs, ncols=50):
+        x = load_simulation_data(f'graphs_data/{config.dataset}/x_list_{run}')
+        y = load_simulation_data_raw(f'graphs_data/{config.dataset}/y_list_{run}')
 
-        if training_selected_neurons:
-            selected_neuron_ids = np.array(train_config.selected_neuron_ids).astype(int)
+        if tc.training_selected_neurons:
+            selected_neuron_ids = np.array(tc.selected_neuron_ids).astype(int)
             x = x.subset_neurons(selected_neuron_ids)
             y = y[:, selected_neuron_ids, :]
 
@@ -272,8 +242,8 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     # Move all timeseries to GPU to avoid per-iteration CPU→GPU transfers
     x_list = [ts.to(device) for ts in x_list]
 
-    print(f'dataset: {len(x_list)} run, {x_list[0].n_frames} frames')
-    x = x_list[0].frame(n_frames - 10)
+    print(f'dataset: {len(x_list)} run, {x_list[0].sim.n_frames} frames')
+    x = x_list[0].frame(sim.n_frames - 10)
 
     activity = x_list[0].voltage
     distrib = activity.flatten()
@@ -306,11 +276,11 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         print(f'svd analysis already exists: {svd_plot_path}')
 
     print('create models ...')
-    if time_window >0:
+    if tc.time_window >0:
         model = Signal_Propagation_Temporal(aggr_type=model_config.aggr_type, config=config, device=device)
-    elif 'MLP_ODE' in signal_model_name:
+    elif 'MLP_ODE' in model_config.signal_model_name:
         model = Signal_Propagation_MLP_ODE(aggr_type=model_config.aggr_type, config=config, device=device)
-    elif 'MLP' in signal_model_name:
+    elif 'MLP' in model_config.signal_model_name:
         model = Signal_Propagation_MLP(aggr_type=model_config.aggr_type, config=config, device=device)
     else:
         model = Signal_Propagation_FlyVis(aggr_type=model_config.aggr_type, config=config, device=device)
@@ -319,18 +289,18 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     model = model.to(device)
 
     # W init mode info
-    w_init_mode = getattr(train_config, 'w_init_mode', 'randn')
+    w_init_mode = getattr(tc, 'w_init_mode', 'randn')
     if w_init_mode != 'randn':
-        w_init_scale = getattr(train_config, 'w_init_scale', 1.0)
+        w_init_scale = getattr(tc, 'w_init_scale', 1.0)
         print(f'W init mode: {w_init_mode}' + (f' (scale={w_init_scale})' if w_init_mode == 'randn_scaled' else ''))
 
     # proximal L1 info
-    coeff_proximal = getattr(train_config, 'coeff_W_L1_proximal', 0.0)
+    coeff_proximal = getattr(tc, 'coeff_W_L1_proximal', 0.0)
     if coeff_proximal > 0:
         print(f'proximal L1 soft-thresholding on W: coeff={coeff_proximal}')
 
     # lin_edge mode bypass
-    lin_edge_mode = getattr(train_config, 'lin_edge_mode', 'mlp')
+    lin_edge_mode = getattr(tc, 'lin_edge_mode', 'mlp')
     if lin_edge_mode != 'mlp':
         print(f'lin_edge mode: {lin_edge_mode} (MLP bypassed)')
 
@@ -340,14 +310,14 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     start_epoch = 0
     list_loss = []
     if (best_model != None) & (best_model != '') & (best_model != '') & (best_model != 'None'):
-        net = f"{log_dir}/models/best_model_with_{n_runs - 1}_graphs_{best_model}.pt"
+        net = f"{log_dir}/models/best_model_with_{tc.n_runs - 1}_graphs_{best_model}.pt"
         print(f'loading state_dict from {net} ...')
         state_dict = torch.load(net, map_location=device)
         model.load_state_dict(state_dict['model_state_dict'])
         start_epoch = int(best_model.split('_')[0])
         print(f'state_dict loaded: best_model={best_model}, start_epoch={start_epoch}')
-    elif  train_config.pretrained_model !='':
-        net = train_config.pretrained_model
+    elif  tc.pretrained_model !='':
+        net = tc.pretrained_model
         print(f'loading pretrained state_dict from {net} ...')
         state_dict = torch.load(net, map_location=device)
         model.load_state_dict(state_dict['model_state_dict'])
@@ -356,15 +326,15 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     else:
         print('no state_dict loaded - using freshly initialized model')
 
-    lr = train_config.learning_rate_start
-    if train_config.learning_rate_update_start == 0:
-        lr_update = train_config.learning_rate_start
+    lr = tc.learning_rate_start
+    if tc.learning_rate_update_start == 0:
+        lr_update = tc.learning_rate_start
     else:
-        lr_update = train_config.learning_rate_update_start
-    lr_embedding = train_config.learning_rate_embedding_start
-    lr_W = train_config.learning_rate_W_start
-    learning_rate_NNR = train_config.learning_rate_NNR
-    learning_rate_NNR_f = train_config.learning_rate_NNR_f
+        lr_update = tc.learning_rate_update_start
+    lr_embedding = tc.learning_rate_embedding_start
+    lr_W = tc.learning_rate_W_start
+    learning_rate_NNR = tc.learning_rate_NNR
+    learning_rate_NNR_f = tc.learning_rate_NNR_f
 
     print(f'learning rates: lr_W {lr_W}, lr {lr}, lr_update {lr_update}, lr_embedding {lr_embedding}, learning_rate_NNR {learning_rate_NNR}')
 
@@ -372,26 +342,26 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                                                          lr_update=lr_update, lr_W=lr_W, learning_rate_NNR=learning_rate_NNR, learning_rate_NNR_f = learning_rate_NNR_f)
     model.train()
 
-    net = f"{log_dir}/models/best_model_with_{n_runs - 1}_graphs.pt"
+    net = f"{log_dir}/models/best_model_with_{tc.n_runs - 1}_graphs.pt"
     print(f'network: {net}')
-    print(f'initial batch_size: {batch_size}')
+    print(f'initial tc.batch_size: {tc.batch_size}')
 
-    # connectivity = torch.load(f'./graphs_data/{dataset_name}/connectivity.pt', map_location=device)
-    gt_weights = torch.load(f'./graphs_data/{dataset_name}/weights.pt', map_location=device)
-    edges = torch.load(f'./graphs_data/{dataset_name}/edge_index.pt', map_location=device)
+    # connectivity = torch.load(f'./graphs_data/{config.dataset}/connectivity.pt', map_location=device)
+    gt_weights = torch.load(f'./graphs_data/{config.dataset}/weights.pt', map_location=device)
+    edges = torch.load(f'./graphs_data/{config.dataset}/edge_index.pt', map_location=device)
     print(f'{edges.shape[1]} edges')
 
     ids = np.arange(n_neurons)
 
-    if train_config.coeff_W_sign > 0:
+    if tc.coeff_W_sign > 0:
         index_weight = []
         for i in range(n_neurons):
             # get source neurons that connect to neuron i
             mask = edges[1] == i
             index_weight.append(edges[0][mask])
 
-    logger.info(f'coeff_W_L1: {train_config.coeff_W_L1} coeff_edge_diff: {train_config.coeff_edge_diff} coeff_update_diff: {train_config.coeff_update_diff}')
-    print(f'coeff_W_L1: {train_config.coeff_W_L1} coeff_edge_diff: {train_config.coeff_edge_diff} coeff_update_diff: {train_config.coeff_update_diff}')
+    logger.info(f'coeff_W_L1: {tc.coeff_W_L1} coeff_edge_diff: {tc.coeff_edge_diff} coeff_update_diff: {tc.coeff_update_diff}')
+    print(f'coeff_W_L1: {tc.coeff_W_L1} coeff_edge_diff: {tc.coeff_edge_diff} coeff_update_diff: {tc.coeff_update_diff}')
 
     print("start training ...")
 
@@ -401,8 +371,8 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     list_loss_regul = []
 
     regularizer = LossRegularizer(
-        train_config=train_config,
-        model_config=model_config,
+        train_config=tc,
+        model_config=mc,
         activity_column=3,  # flyvis uses column 3 for activity
         plot_frequency=1,   # will be updated per epoch
         n_neurons=n_neurons,
@@ -415,9 +385,9 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
     training_start_time = time.time()
 
-    for epoch in range(start_epoch, n_epochs):
+    for epoch in range(start_epoch, tc.n_epochs):
 
-        Niter = int(n_frames * data_augmentation_loop // batch_size * 0.2)
+        Niter = int(sim.n_frames * tc.data_augmentation_loop // tc.batch_size * 0.2)
         plot_frequency = int(Niter // 20)
         connectivity_plot_frequency = int(Niter // 10)
         n_plots_per_epoch = 4
@@ -428,7 +398,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         total_loss_regul = 0
         k = 0
 
-        loss_noise_level = train_config.loss_noise_level * (0.95 ** epoch)
+        loss_noise_level = tc.loss_noise_level * (0.95 ** epoch)
         regularizer.set_epoch(epoch, plot_frequency)
 
         last_connectivity_r2 = None
@@ -446,19 +416,19 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
             ids_index = 0
 
             loss = 0
-            run = np.random.randint(n_runs)
+            run = np.random.randint(tc.n_runs)
 
-            for batch in range(batch_size):
+            for batch in range(tc.batch_size):
 
-                k = np.random.randint(n_frames - 4 - time_step - time_window) + time_window
+                k = np.random.randint(sim.n_frames - 4 - tc.time_step - tc.time_window) + tc.time_window
 
-                if recurrent_training or neural_ODE_training:
-                    k = k - k % time_step
+                if tc.recurrent_training or tc.neural_ODE_training:
+                    k = k - k % tc.time_step
 
                 x = x_list[run].frame(k)
 
-                if time_window > 0:
-                    x_temporal = x_list[run].voltage[k - time_window + 1: k + 1].T
+                if tc.time_window > 0:
+                    x_temporal = x_list[run].voltage[k - tc.time_window + 1: k + 1].T
                     # x stays as NeuronState; x_temporal passed separately to temporal model
 
                 if has_visual_field:
@@ -482,10 +452,10 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                     )
                     loss = loss + regul_loss
 
-                    if recurrent_training or neural_ODE_training:
-                        y = x_list[run].voltage[k + time_step].unsqueeze(-1)
+                    if tc.recurrent_training or tc.neural_ODE_training:
+                        y = x_list[run].voltage[k + tc.time_step].unsqueeze(-1)
                     elif test_neural_field:
-                        y = x_list[run].stimulus[k, :n_input_neurons].unsqueeze(-1)
+                        y = x_list[run].stimulus[k, :sim.n_input_neurons].unsqueeze(-1)
                     else:
                         y = torch.tensor(y_list[run][k], device=device) / ynorm     # loss on activity derivative
 
@@ -527,15 +497,14 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                     loss = loss + (visual_input_batch - y_batch).norm(2)
 
 
-
-                elif 'MLP_ODE' in signal_model_name:
+                elif 'MLP_ODE' in model_config.signal_model_name:
                     batched_state, _ = _batch_frames(state_batch, edges)
                     batched_x = batched_state.to_packed()
                     pred = model(batched_x, data_id=data_id, return_all=False)
 
                     loss = loss + (pred[ids_batch] - y_batch[ids_batch]).norm(2)
 
-                elif 'MLP' in signal_model_name:
+                elif 'MLP' in model_config.signal_model_name:
                     batched_state, _ = _batch_frames(state_batch, edges)
                     batched_x = batched_state.to_packed()
                     pred = model(batched_x, data_id=data_id, return_all=False)
@@ -551,10 +520,10 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                     loss = loss + update_regul
 
 
-                    if neural_ODE_training:
+                    if tc.neural_ODE_training:
 
-                        ode_state_clamp = getattr(train_config, 'ode_state_clamp', 10.0)
-                        ode_stab_lambda = getattr(train_config, 'ode_stab_lambda', 0.0)
+                        ode_state_clamp = getattr(tc, 'ode_state_clamp', 10.0)
+                        ode_stab_lambda = getattr(tc, 'ode_stab_lambda', 0.0)
                         ode_loss, pred_x = neural_ode_loss_FlyVis(
                             model=model,
                             dataset_batch=state_batch,
@@ -562,20 +531,20 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                             x_list=x_list,
                             run=run,
                             k_batch=k_batch,
-                            time_step=time_step,
-                            batch_size=batch_size,
+                            time_step=tc.time_step,
+                            batch_size=tc.batch_size,
                             n_neurons=n_neurons,
                             ids_batch=ids_batch,
-                            delta_t=delta_t,
+                            delta_t=sim.delta_t,
                             device=device,
                             data_id=data_id,
                             has_visual_field=has_visual_field,
                             y_batch=y_batch,
-                            noise_level=noise_recurrent_level,
-                            ode_method=ode_method,
-                            rtol=ode_rtol,
-                            atol=ode_atol,
-                            adjoint=ode_adjoint,
+                            noise_level=tc.noise_recurrent_level,
+                            ode_method=tc.ode_method,
+                            rtol=tc.ode_rtol,
+                            atol=tc.ode_atol,
+                            adjoint=tc.ode_adjoint,
                             iteration=N,
                             state_clamp=ode_state_clamp,
                             stab_lambda=ode_stab_lambda
@@ -583,15 +552,15 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                         loss = loss + ode_loss
 
 
-                    elif recurrent_training:
+                    elif tc.recurrent_training:
 
-                        pred_x = v_batch + delta_t * pred + noise_recurrent_level * torch.randn_like(pred)
+                        pred_x = v_batch + sim.delta_t * pred + tc.noise_recurrent_level * torch.randn_like(pred)
 
-                        if time_step > 1:
-                            for step in range(time_step - 1):
+                        if tc.time_step > 1:
+                            for step in range(tc.time_step - 1):
                                 neurons_per_sample = state_batch[0].n_neurons
 
-                                for b in range(batch_size):
+                                for b in range(tc.batch_size):
                                     start_idx = b * neurons_per_sample
                                     end_idx = (b + 1) * neurons_per_sample
 
@@ -610,9 +579,9 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                                 batched_state, batched_edges = _batch_frames(state_batch, edges)
                                 pred, in_features, msg = model(batched_state, batched_edges, data_id=data_id, return_all=True)
 
-                                pred_x = pred_x + delta_t * pred + noise_recurrent_level * torch.randn_like(pred)
+                                pred_x = pred_x + sim.delta_t * pred + tc.noise_recurrent_level * torch.randn_like(pred)
 
-                        loss = loss + ((pred_x[ids_batch] - y_batch[ids_batch]) / (delta_t * time_step)).norm(2)
+                        loss = loss + ((pred_x[ids_batch] - y_batch[ids_batch]) / (sim.delta_t * tc.time_step)).norm(2)
 
 
                     else:
@@ -625,7 +594,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
 
                 # debug gradient check for neural ODE training
-                if DEBUG_ODE and neural_ODE_training and (N % 500 == 0):
+                if DEBUG_ODE and tc.neural_ODE_training and (N % 500 == 0):
                     debug_check_gradients(model, loss, N)
 
                 optimizer.step()
@@ -653,10 +622,10 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
                     torch.save(
                         {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
-                        os.path.join(log_dir, 'models', f'best_model_with_{n_runs - 1}_graphs_{epoch}_{N}.pt'))
+                        os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs - 1}_graphs_{epoch}_{N}.pt'))
 
-                if (N > 0) & (N % connectivity_plot_frequency == 0) & (not test_neural_field) & (not ('MLP' in signal_model_name)):
-                    last_connectivity_r2 = plot_training_flyvis(x_list, model, config, epoch, N, log_dir, device, cmap, type_list, gt_weights, edges, n_neurons=n_neurons, n_neuron_types=n_neuron_types)
+                if (N > 0) & (N % connectivity_plot_frequency == 0) & (not test_neural_field) & (not ('MLP' in model_config.signal_model_name)):
+                    last_connectivity_r2 = plot_training_flyvis(x_list, model, config, epoch, N, log_dir, device, cmap, type_list, gt_weights, edges, n_neurons=n_neurons, n_neuron_types=sim.n_neuron_types)
 
                 if last_connectivity_r2 is not None:
                     if last_connectivity_r2 > 0.9:
@@ -675,12 +644,12 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                         plt.style.use('default')
 
                         # Static XY locations (take from first frame of this run)
-                        X1 = to_numpy(x_list[run].pos[:n_input_neurons])
+                        X1 = to_numpy(x_list[run].pos[:sim.n_input_neurons])
 
                         # group-based selection of 10 traces
                         groups = 217
-                        group_size = n_input_neurons // groups  # expect 8
-                        assert groups * group_size == n_input_neurons, "Unexpected packing of input neurons"
+                        group_size = sim.n_input_neurons // groups  # expect 8
+                        assert groups * group_size == sim.n_input_neurons, "Unexpected packing of input neurons"
                         picked_groups = np.linspace(0, groups - 1, 10, dtype=int)
                         member_in_group = group_size // 2
                         trace_ids = (picked_groups * group_size + member_in_group).astype(int)
@@ -712,7 +681,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                         for k_fit in range(0, 800, step_video):
                             x_fit = x_list[run].frame(k_fit)
                             pred_fit = to_numpy(model.forward_visual(x_fit, k_fit)).squeeze()
-                            gt_fit = to_numpy(x_list[0].stimulus[k_fit, :n_input_neurons]).squeeze()
+                            gt_fit = to_numpy(x_list[0].stimulus[k_fit, :sim.n_input_neurons]).squeeze()
                             all_gt.append(gt_fit)
                             all_pred.append(pred_fit)
                         all_gt = np.concatenate(all_gt)
@@ -742,10 +711,10 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                                 # inputs and predictions
                                 x = x_list[run].frame(k)
                                 pred = to_numpy(model.forward_visual(x, k))
-                                pred_vec = np.asarray(pred).squeeze()  # (n_input_neurons,)
+                                pred_vec = np.asarray(pred).squeeze()  # (sim.n_input_neurons,)
                                 pred_corrected = a_coeff * pred_vec # + b_coeff  # corrected to GT scale
 
-                                gt_vec = to_numpy(x_list[0].stimulus[k, :n_input_neurons]).squeeze()
+                                gt_vec = to_numpy(x_list[0].stimulus[k, :sim.n_input_neurons]).squeeze()
 
                                 # update rolling traces (store corrected predictions)
                                 hist_t.append(k)
@@ -811,11 +780,9 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                         pbar.set_postfix_str(f'{r2_color}R²={last_connectivity_r2:.3f}\033[0m')
                     torch.save(
                         {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
-                        os.path.join(log_dir, 'models', f'best_model_with_{n_runs - 1}_graphs_{epoch}_{N}.pt'))
+                        os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs - 1}_graphs_{epoch}_{N}.pt'))
 
             # check_and_clear_memory(device=device, iteration_number=N, every_n_iterations=Niter // 50, memory_percentage_threshold=0.6)
-
-
 
 
         # Calculate epoch-level losses
@@ -829,7 +796,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
             epoch, epoch_total_loss, epoch_pred_loss, epoch_regul_loss))
         torch.save({'model_state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict()},
-                   os.path.join(log_dir, 'models', f'best_model_with_{n_runs - 1}_graphs_{epoch}.pt'))
+                   os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs - 1}_graphs_{epoch}.pt'))
 
         list_loss.append(epoch_pred_loss)
         list_loss_regul.append(epoch_regul_loss)
@@ -841,7 +808,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         # Plot 1: Loss
         fig.add_subplot(2, 3, 1)
         plt.plot(list_loss, color=mc, linewidth=1) # noqa F821
-        plt.xlim([0, n_epochs])
+        plt.xlim([0, tc.n_epochs])
         plt.ylabel('loss', fontsize=12)
         plt.xlabel('epochs', fontsize=12)
 
@@ -886,9 +853,9 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
         if replace_with_cluster:
 
-            if (epoch % sparsity_freq == sparsity_freq - 1) & (epoch < n_epochs - sparsity_freq):
+            if (epoch % tc.sparsity_freq == tc.sparsity_freq - 1) & (epoch < tc.n_epochs - tc.sparsity_freq):
                 print('replace embedding with clusters ...')
-                eps = train_config.cluster_distance_threshold
+                eps = tc.cluster_distance_threshold
                 results = clustering_evaluation(to_numpy(model.a), type_list, eps=eps)
                 print(f"eps={eps}: {results['n_clusters_found']} clusters, "
                       f"accuracy={results['accuracy']:.3f}")
@@ -904,7 +871,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                             model.a[indices, :] = torch.mean(model.a[indices, :], dim=0, keepdim=True)
 
                 fig.add_subplot(2, 3, 6)
-                for n in range(n_neuron_types):
+                for n in range(sim.n_neuron_types):
                     pos = torch.argwhere(type_list == n)
                     plt.scatter(to_numpy(model.a[pos, 0]), to_numpy(model.a[pos, 1]), s=5, color=cmap.color(n),
                                 alpha=0.7, edgecolors='none')
@@ -914,15 +881,15 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                 plt.yticks([])
                 plt.text(0.5, 0.9, f"eps={eps}: {results['n_clusters_found']} clusters, accuracy={results['accuracy']:.3f}")
 
-                if train_config.fix_cluster_embedding:
+                if tc.fix_cluster_embedding:
                     lr_embedding = 1.0E-10
                     # the embedding is fixed for 1 epoch
 
             else:
-                lr = train_config.learning_rate_start
-                lr_embedding = train_config.learning_rate_embedding_start
-                lr_W = train_config.learning_rate_W_start
-                learning_rate_NNR = train_config.learning_rate_NNR
+                lr = tc.learning_rate_start
+                lr_embedding = tc.learning_rate_embedding_start
+                lr_W = tc.learning_rate_W_start
+                learning_rate_NNR = tc.learning_rate_NNR
 
             logger.info(f'learning rates: lr_W {lr_W}, lr {lr}, lr_update {lr_update}, lr_embedding {lr_embedding}, learning_rate_NNR {learning_rate_NNR}')
             optimizer, n_total_params = set_trainable_parameters(model=model, lr_embedding=lr_embedding, lr=lr, lr_update=lr_update, lr_W=lr_W,
@@ -940,19 +907,19 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
     if log_file is not None:
         log_file.write(f"training_time_min: {training_time_min:.1f}\n")
-        log_file.write(f"n_epochs: {n_epochs}\n")
-        log_file.write(f"data_augmentation_loop: {data_augmentation_loop}\n")
-        log_file.write(f"recurrent_training: {recurrent_training}\n")
-        log_file.write(f"batch_size: {batch_size}\n")
-        log_file.write(f"learning_rate_W: {train_config.learning_rate_W_start}\n")
-        log_file.write(f"learning_rate: {train_config.learning_rate_start}\n")
-        log_file.write(f"learning_rate_embedding: {train_config.learning_rate_embedding_start}\n")
-        log_file.write(f"coeff_edge_diff: {train_config.coeff_edge_diff}\n")
-        log_file.write(f"coeff_edge_norm: {train_config.coeff_edge_norm}\n")
-        log_file.write(f"coeff_edge_weight_L1: {train_config.coeff_edge_weight_L1}\n")
-        log_file.write(f"coeff_phi_weight_L1: {train_config.coeff_phi_weight_L1}\n")
-        log_file.write(f"coeff_phi_weight_L2: {train_config.coeff_phi_weight_L2}\n")
-        log_file.write(f"coeff_W_L1: {train_config.coeff_W_L1}\n")
+        log_file.write(f"n_epochs: {tc.n_epochs}\n")
+        log_file.write(f"data_augmentation_loop: {tc.data_augmentation_loop}\n")
+        log_file.write(f"recurrent_training: {tc.recurrent_training}\n")
+        log_file.write(f"batch_size: {tc.batch_size}\n")
+        log_file.write(f"learning_rate_W: {tc.learning_rate_W_start}\n")
+        log_file.write(f"learning_rate: {tc.learning_rate_start}\n")
+        log_file.write(f"learning_rate_embedding: {tc.learning_rate_embedding_start}\n")
+        log_file.write(f"coeff_edge_diff: {tc.coeff_edge_diff}\n")
+        log_file.write(f"coeff_edge_norm: {tc.coeff_edge_norm}\n")
+        log_file.write(f"coeff_edge_weight_L1: {tc.coeff_edge_weight_L1}\n")
+        log_file.write(f"coeff_phi_weight_L1: {tc.coeff_phi_weight_L1}\n")
+        log_file.write(f"coeff_phi_weight_L2: {tc.coeff_phi_weight_L2}\n")
+        log_file.write(f"coeff_W_L1: {tc.coeff_W_L1}\n")
         if field_R2 is not None:
             log_file.write(f"field_R2: {field_R2:.4f}\n")
             log_file.write(f"field_slope: {field_slope:.4f}\n")
@@ -961,20 +928,13 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 def data_train_flyvis_RNN(config, erase, best_model, device):
     """RNN training with sequential processing through time"""
 
-    simulation_config = config.simulation
-    train_config = config.training
+    sim = config.simulation
+    tc = config.training
     model_config = config.graph_model
 
-    signal_model_name = model_config.signal_model_name
-    n_epochs = train_config.n_epochs
-    dataset_name = config.dataset
-    n_runs = train_config.n_runs
-    n_frames = simulation_config.n_frames
-    data_augmentation_loop = train_config.data_augmentation_loop
-    training_selected_neurons = train_config.training_selected_neurons
 
-    warm_up_length = train_config.warm_up_length  # e.g., 10
-    sequence_length = train_config.sequence_length  # e.g., 32
+    warm_up_length = tc.warm_up_length  # e.g., 10
+    sequence_length = tc.sequence_length  # e.g., 32
     total_length = warm_up_length + sequence_length
 
     seed = config.training.seed
@@ -984,15 +944,15 @@ def data_train_flyvis_RNN(config, erase, best_model, device):
 
     log_dir, logger = create_log_dir(config, erase)
 
-    print(f"Loading data from {dataset_name}...")
+    print(f"Loading data from {config.dataset}...")
     x_list = []
     y_list = []
-    for run in trange(0, n_runs, ncols=50):
-        x = np.load(f'graphs_data/{dataset_name}/x_list_{run}.npy')
-        y = np.load(f'graphs_data/{dataset_name}/y_list_{run}.npy')
+    for run in trange(0, tc.n_runs, ncols=50):
+        x = np.load(f'graphs_data/{config.dataset}/x_list_{run}.npy')
+        y = np.load(f'graphs_data/{config.dataset}/y_list_{run}.npy')
 
-        if training_selected_neurons:
-            selected_neuron_ids = np.array(train_config.selected_neuron_ids).astype(int)
+        if tc.training_selected_neurons:
+            selected_neuron_ids = np.array(tc.selected_neuron_ids).astype(int)
             x = x[:, selected_neuron_ids, :]
             y = y[:, selected_neuron_ids, :]
 
@@ -1022,7 +982,7 @@ def data_train_flyvis_RNN(config, erase, best_model, device):
     logger.info(f'ynorm: {ynorm.item():.3f}')
 
     # Create model
-    if 'LSTM' in signal_model_name:
+    if 'LSTM' in model_config.signal_model_name:
         model = Signal_Propagation_LSTM(aggr_type=model_config.aggr_type, config=config, device=device)
         use_lstm = True
     else:  # GRU/RNN
@@ -1035,7 +995,7 @@ def data_train_flyvis_RNN(config, erase, best_model, device):
     logger.info(f'Total parameters: {n_total_params:,}')
 
     # Optimizer
-    lr = train_config.learning_rate_start
+    lr = tc.learning_rate_start
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
 
     print(f'learning rate: {lr}')
@@ -1046,10 +1006,10 @@ def data_train_flyvis_RNN(config, erase, best_model, device):
 
     list_loss = []
 
-    for epoch in range(n_epochs):
+    for epoch in range(tc.n_epochs):
 
         # Number of sequences per epoch
-        n_sequences = (n_frames - total_length) // 10 * data_augmentation_loop
+        n_sequences = (sim.n_frames - total_length) // 10 * tc.data_augmentation_loop
         plot_frequency = int(n_sequences // 10) # Sample ~10% of possible sequences
         if epoch == 0:
             print(f'{n_sequences} sequences per epoch, plot every {plot_frequency} sequences')
@@ -1063,8 +1023,8 @@ def data_train_flyvis_RNN(config, erase, best_model, device):
             optimizer.zero_grad()
 
             # Sample random sequence
-            run = np.random.randint(n_runs)
-            k_start = np.random.randint(0, n_frames - total_length)
+            run = np.random.randint(tc.n_runs)
+            k_start = np.random.randint(0, sim.n_frames - total_length)
 
             # Initialize hidden state to None (GRU will initialize to zeros)
             h = None
@@ -1112,7 +1072,7 @@ def data_train_flyvis_RNN(config, erase, best_model, device):
                 torch.save({
                     'model_state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict()
-                }, os.path.join(log_dir, 'models', f'best_model_with_{n_runs-1}_graphs_{epoch}_{seq_idx}.pt'))
+                }, os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs-1}_graphs_{epoch}_{seq_idx}.pt'))
 
         # Epoch statistics
         avg_loss = total_loss / n_sequences
@@ -1123,7 +1083,7 @@ def data_train_flyvis_RNN(config, erase, best_model, device):
         torch.save({
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict()
-        }, os.path.join(log_dir, 'models', f'best_model_with_{n_runs-1}_graphs_{epoch}.pt'))
+        }, os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs-1}_graphs_{epoch}.pt'))
 
         list_loss.append(avg_loss)
         torch.save(list_loss, os.path.join(log_dir, 'loss.pt'))
@@ -1201,6 +1161,7 @@ def data_train_INR(config=None, device=None, total_steps=5000, erase=False):
     neuron_ids = x_list[0, :, 0]  # shape: (n_neurons,)
 
     # get nnr_f config parameters
+    sim = config.simulation
     model_config = config.graph_model
     hidden_dim_nnr_f = getattr(model_config, 'hidden_dim_nnr_f', 1024)
     n_layers_nnr_f = getattr(model_config, 'n_layers_nnr_f', 3)
@@ -1209,14 +1170,13 @@ def data_train_INR(config=None, device=None, total_steps=5000, erase=False):
     nnr_f_T_period = getattr(model_config, 'nnr_f_T_period', 10000)
 
     # get training config parameters
-    training_config = config.training
-    batch_size = getattr(training_config, 'batch_size', 8)
-    learning_rate = getattr(training_config, 'learning_rate_NNR_f', 1e-6)
+    tc = config.training
+    batch_size = getattr(tc, 'batch_size', 8)
+    learning_rate = getattr(tc, 'learning_rate_NNR_f', 1e-6)
 
     # get simulation config for calculation check
-    sim_config = config.simulation
-    delta_t = getattr(sim_config, 'delta_t', 0.01)
-    oscillation_frequency = getattr(sim_config, 'oscillation_frequency', 0.1)
+    delta_t = getattr(sim, 'delta_t', 0.01)
+    oscillation_frequency = getattr(sim, 'oscillation_frequency', 0.1)
 
     # calculation check
     total_sim_time = n_frames * delta_t
@@ -1377,7 +1337,7 @@ def data_train_INR(config=None, device=None, total_steps=5000, erase=False):
 
     # Separate omega parameters from other parameters for different learning rates
     omega_f_learning = getattr(model_config, 'omega_f_learning', False)
-    learning_rate_omega_f = getattr(training_config, 'learning_rate_omega_f', learning_rate)
+    learning_rate_omega_f = getattr(tc, 'learning_rate_omega_f', learning_rate)
     omega_params = [p for name, p in nnr_f.named_parameters() if 'omega' in name]
     other_params = [p for name, p in nnr_f.named_parameters() if 'omega' not in name]
     if omega_params and omega_f_learning:
@@ -1450,7 +1410,7 @@ def data_train_INR(config=None, device=None, total_steps=5000, erase=False):
             loss = ((pred - gt_batch) ** 2).mean()
 
         # omega L2 regularization for learnable omega in SIREN (encourages smaller omega)
-        coeff_omega_f_L2 = getattr(training_config, 'coeff_omega_f_L2', 0.0)
+        coeff_omega_f_L2 = getattr(tc, 'coeff_omega_f_L2', 0.0)
         if omega_f_learning and coeff_omega_f_L2 > 0 and hasattr(nnr_f, 'get_omega_L2_loss'):
             omega_L2_loss = nnr_f.get_omega_L2_loss()
             loss = loss + coeff_omega_f_L2 * omega_L2_loss
@@ -1578,11 +1538,6 @@ def data_train_INR(config=None, device=None, total_steps=5000, erase=False):
     return nnr_f, loss_list
 
 
-
-
-
-
-
 def data_test(config=None, config_file=None, visualize=False, style='color frame', verbose=True, best_model=20, step=15, n_rollout_frames=600,
               ratio=1, run=0, test_mode='', sample_embedding=False, particle_of_interest=1, new_params = None, device=[],
               rollout_without_noise: bool = False, log_file=None):
@@ -1636,59 +1591,30 @@ def data_test_flyvis(
         plt.style.use("default")
         mc = 'black'
 
-    simulation_config = config.simulation
-    training_config = config.training
+    sim = config.simulation
+    tc = config.training
     model_config = config.graph_model
 
     log_dir = 'log/' + config.config_file
 
     torch.random.fork_rng(devices=device)
-    if simulation_config.seed is not None:
-        torch.random.manual_seed(simulation_config.seed)
-        np.random.seed(simulation_config.seed)
+    if sim.seed is not None:
+        torch.random.manual_seed(sim.seed)
+        np.random.seed(sim.seed)
 
     print(
-        f"testing... {model_config.particle_model_name} {model_config.mesh_model_name} seed: {simulation_config.seed}")
+        f"testing... {model_config.particle_model_name} {model_config.mesh_model_name} seed: {sim.seed}")
 
-    dataset_name = config.dataset
 
-    training_selected_neurons = training_config.training_selected_neurons
-    if training_selected_neurons:
+    if tc.training_selected_neurons:
         n_neurons = 13741
         n_neuron_types = 1736
     else:
-        n_neurons = simulation_config.n_neurons
-        n_neuron_types = simulation_config.n_neuron_types
-    n_input_neurons = simulation_config.n_input_neurons
-    delta_t = simulation_config.delta_t
-    field_type = model_config.field_type
-    signal_model_name = model_config.signal_model_name
+        n_neurons = sim.n_neurons
+        n_neuron_types = sim.n_neuron_types
 
-    neural_ODE_training = training_config.neural_ODE_training
-    ode_method = training_config.ode_method
-    ode_rtol = training_config.ode_rtol
-    ode_atol = training_config.ode_atol
-    ode_adjoint = training_config.ode_adjoint
-    time_step = training_config.time_step
-
-    ensemble_id = simulation_config.ensemble_id
-    model_id = simulation_config.model_id
-
-    noise_model_level = simulation_config.noise_model_level
-    print(f"noise_model_level: {noise_model_level}")
+    print(f"noise_model_level: {sim.noise_model_level}")
     warm_up_length = 100
-
-    n_extra_null_edges = simulation_config.n_extra_null_edges
-
-    noise_visual_input = simulation_config.noise_visual_input
-    only_noise_visual_input = simulation_config.only_noise_visual_input
-    visual_input_type = simulation_config.visual_input_type
-
-    calcium_type = simulation_config.calcium_type  # "none", "leaky"
-    calcium_activation = simulation_config.calcium_activation  # "softplus", "relu", "tanh", "identity"
-    calcium_tau = simulation_config.calcium_tau  # time constant for calcium dynamics
-    calcium_alpha = simulation_config.calcium_alpha
-    calcium_beta = simulation_config.calcium_beta
 
     run = 0
 
@@ -1701,10 +1627,10 @@ def data_test_flyvis(
     from flyvis_gnn.generators.PDE_N9 import PDE_N9, get_photoreceptor_positions_from_net, \
         group_by_direction_and_function
     # Initialize datasets
-    if "DAVIS" in visual_input_type or "mixed" in visual_input_type:
+    if "DAVIS" in sim.visual_input_type or "mixed" in sim.visual_input_type:
         # determine dataset roots: use config list if provided, otherwise fall back to default
-        if simulation_config.datavis_roots:
-            datavis_root_list = [os.path.join(r, "JPEGImages/480p") for r in simulation_config.datavis_roots]
+        if sim.datavis_roots:
+            datavis_root_list = [os.path.join(r, "JPEGImages/480p") for r in sim.datavis_roots]
         else:
             datavis_root_list = [os.path.join(get_datavis_root_dir(), "JPEGImages/480p")]
 
@@ -1717,7 +1643,7 @@ def data_test_flyvis(
             "flip_axes": [0, 1],
             "n_rotations": [0, 90, 180, 270],
             "temporal_split": True,
-            "dt": delta_t,
+            "dt": sim.delta_t,
             "interpolate": True,
             "boxfilter": dict(extent=extent, kernel_size=13),
             "vertical_splits": 1,
@@ -1736,7 +1662,7 @@ def data_test_flyvis(
     else:
         davis_dataset = None
 
-    if "DAVIS" in visual_input_type:
+    if "DAVIS" in sim.visual_input_type:
         stimulus_dataset = davis_dataset
     else:
         sintel_config = {
@@ -1745,7 +1671,7 @@ def data_test_flyvis(
             "flip_axes": [0, 1],
             "n_rotations": [0, 1, 2, 3, 4, 5],
             "temporal_split": True,
-            "dt": delta_t,
+            "dt": sim.delta_t,
             "interpolate": True,
             "boxfilter": dict(extent=extent, kernel_size=13),
             "vertical_splits": 3,
@@ -1757,7 +1683,7 @@ def data_test_flyvis(
     config_net = get_default_config(overrides=[], path=f"{CONFIG_PATH}/network/network.yaml")
     config_net.connectome.extent = extent
     net = Network(**config_net)
-    nnv = NetworkView(f"flow/{ensemble_id}/{model_id}")
+    nnv = NetworkView(f"flow/{sim.ensemble_id}/{sim.model_id}")
     trained_net = nnv.init_network(checkpoint=0)
     net.load_state_dict(trained_net.state_dict())
     torch.set_grad_enabled(False)
@@ -1769,14 +1695,14 @@ def data_test_flyvis(
         [torch.tensor(net.connectome.edges.source_index[:]), torch.tensor(net.connectome.edges.target_index[:])],
         dim=0).to(device)
 
-    if n_extra_null_edges > 0:
-        print(f"adding {n_extra_null_edges} extra null edges...")
+    if sim.n_extra_null_edges > 0:
+        print(f"adding {sim.n_extra_null_edges} extra null edges...")
         existing_edges = set(zip(edge_index[0].cpu().numpy(), edge_index[1].cpu().numpy()))
         import random
         extra_edges = []
-        max_attempts = n_extra_null_edges * 10
+        max_attempts = sim.n_extra_null_edges * 10
         attempts = 0
-        while len(extra_edges) < n_extra_null_edges and attempts < max_attempts:
+        while len(extra_edges) < sim.n_extra_null_edges and attempts < max_attempts:
             source = random.randint(0, n_neurons - 1)
             target = random.randint(0, n_neurons - 1)
             if (source, target) not in existing_edges and source != target:
@@ -1787,17 +1713,17 @@ def data_test_flyvis(
             edge_index = torch.cat([edge_index, extra_edge_index], dim=1)
             p["w"] = torch.cat([p["w"], torch.zeros(len(extra_edges), device=device)])
 
-    pde = PDE_N9(p=p, f=torch.nn.functional.relu, params=simulation_config.params, model_type=model_config.signal_model_name, n_neuron_types=n_neuron_types, device=device)
-    pde_modified = PDE_N9(p=copy.deepcopy(p), f=torch.nn.functional.relu, params=simulation_config.params, model_type=model_config.signal_model_name, n_neuron_types=n_neuron_types, device=device)
+    pde = PDE_N9(p=p, f=torch.nn.functional.relu, params=sim.params, model_type=model_config.model_config.signal_model_name, n_neuron_types=n_neuron_types, device=device)
+    pde_modified = PDE_N9(p=copy.deepcopy(p), f=torch.nn.functional.relu, params=sim.params, model_type=model_config.model_config.signal_model_name, n_neuron_types=n_neuron_types, device=device)
 
 
-    if 'RNN' in signal_model_name:
+    if 'RNN' in model_config.signal_model_name:
         model = Signal_Propagation_RNN(aggr_type=model_config.aggr_type, config=config, device=device)
-    elif 'LSTM' in signal_model_name:
+    elif 'LSTM' in model_config.signal_model_name:
         model = Signal_Propagation_LSTM(aggr_type=model_config.aggr_type, config=config, device=device)
-    elif 'MLP_ODE' in signal_model_name:
+    elif 'MLP_ODE' in model_config.signal_model_name:
         model = Signal_Propagation_MLP_ODE(aggr_type=model_config.aggr_type, config=config, device=device)
-    elif 'MLP' in signal_model_name:
+    elif 'MLP' in model_config.signal_model_name:
         model = Signal_Propagation_MLP(aggr_type=model_config.aggr_type, config=config, device=device)
     else:
         model = Signal_Propagation_FlyVis(aggr_type=model_config.aggr_type, config=config, device=device)
@@ -1830,7 +1756,7 @@ def data_test_flyvis(
     pos = torch.tensor(np.stack((xc, yc), axis=1), dtype=torch.float32, device=device) / 2
     X1 = torch.cat((X1, pos[torch.randperm(pos.size(0), device=device)]), dim=0)
 
-    state = net.steady_state(t_pre=2.0, dt=delta_t, batch_size=1)
+    state = net.steady_state(t_pre=2.0, dt=sim.delta_t, batch_size=1)
     initial_state = state.nodes.activity.squeeze()
     n_neurons = len(initial_state)
 
@@ -1847,17 +1773,17 @@ def data_test_flyvis(
         voltage=initial_state,
         stimulus=net.stimulus().squeeze(),
         calcium=calcium_init,
-        fluorescence=calcium_alpha * calcium_init + calcium_beta,
+        fluorescence=sim.calcium_alpha * calcium_init + sim.calcium_beta,
     )
 
-    if training_selected_neurons:
-        selected_neuron_ids = training_config.selected_neuron_ids
+    if tc.training_selected_neurons:
+        selected_neuron_ids = tc.selected_neuron_ids
         selected_neuron_ids = np.array(selected_neuron_ids).astype(int)
         print(f'testing single neuron id {selected_neuron_ids} ...')
         x_selected = x.subset(selected_neuron_ids)
 
     # Mixed sequence setup
-    if "mixed" in visual_input_type:
+    if "mixed" in sim.visual_input_type:
         mixed_types = ["sintel", "davis", "blank", "noise"]
         mixed_cycle_lengths = [60, 60, 30, 60]  # Different lengths for each type
         mixed_current_type = 0
@@ -1869,7 +1795,7 @@ def data_test_flyvis(
                 "flip_axes": [0, 1],
                 "n_rotations": [0, 1, 2, 3, 4, 5],
                 "temporal_split": True,
-                "dt": delta_t,
+                "dt": sim.delta_t,
                 "interpolate": True,
                 "boxfilter": dict(extent=extent, kernel_size=13),
                 "vertical_splits": 3,
@@ -1886,7 +1812,7 @@ def data_test_flyvis(
     target_frames = n_rollout_frames
 
     if 'full' in test_mode:
-        target_frames = simulation_config.n_frames
+        target_frames = sim.n_frames
         step = 25000
     else:
         step = 10
@@ -1906,26 +1832,26 @@ def data_test_flyvis(
     x_generated_modified = x.clone()
 
     # Initialize RNN hidden state
-    if 'RNN' in signal_model_name:
+    if 'RNN' in model_config.signal_model_name:
         h_state = None
-    if 'LSTM' in signal_model_name:
+    if 'LSTM' in model_config.signal_model_name:
         h_state = None
         c_state = None
 
-    it = simulation_config.start_frame
+    it = sim.start_frame
     id_fig = 0
 
     tile_labels = None
     tile_codes_torch = None
     tile_period = None
     tile_idx = 0
-    tile_contrast = simulation_config.tile_contrast
-    n_columns = n_input_neurons // 8
-    tile_seed = simulation_config.seed
+    tile_contrast = sim.tile_contrast
+    n_columns = sim.n_input_neurons // 8
+    tile_seed = sim.seed
 
-    edges = torch.load(f'./graphs_data/{dataset_name}/edge_index.pt', map_location=device)
+    edges = torch.load(f'./graphs_data/{config.dataset}/edge_index.pt', map_location=device)
 
-    if ('test_ablation' in test_mode) & (not('MLP' in signal_model_name)) & (not('RNN' in signal_model_name)) & (not('LSTM' in signal_model_name)):
+    if ('test_ablation' in test_mode) & (not('MLP' in model_config.signal_model_name)) & (not('RNN' in model_config.signal_model_name)) & (not('LSTM' in model_config.signal_model_name)):
         #  test_mode="test_ablation_100"
         ablation_ratio = int(test_mode.split('_')[-1]) / 100
         if ablation_ratio > 0:
@@ -1960,15 +1886,15 @@ def data_test_flyvis(
 
                 sequences = data["lum"]
                 # Sample flash parameters for each subsequence if flash stimulus is requested
-                if "flash" in visual_input_type:
+                if "flash" in sim.visual_input_type:
                     # Sample flash duration from specific values: 1, 2, 5, 10, 20 frames
                     flash_duration_options = [1, 2, 5] #, 10, 20]
                     flash_cycle_frames = flash_duration_options[
                         torch.randint(0, len(flash_duration_options), (1,), device=device).item()
                     ]
 
-                    flash_intensity = torch.abs(torch.rand(n_input_neurons, device=device) * 0.5 + 0.5)
-                if "mixed" in visual_input_type:
+                    flash_intensity = torch.abs(torch.rand(sim.n_input_neurons, device=device) * 0.5 + 0.5)
+                if "mixed" in sim.visual_input_type:
                     if mixed_frame_count >= current_cycle_length:
                         mixed_current_type = (mixed_current_type + 1) % 4
                         mixed_frame_count = 0
@@ -2000,27 +1926,27 @@ def data_test_flyvis(
                     else:
                         start_frame = 0
                 # Determine sequence length based on stimulus type
-                if "flash" in visual_input_type:
+                if "flash" in sim.visual_input_type:
                     sequence_length = 60  # Fixed 60 frames for flash sequences
                 else:
                     sequence_length = sequences.shape[0]
 
                 for frame_id in range(sequence_length):
 
-                    if "flash" in visual_input_type:
+                    if "flash" in sim.visual_input_type:
                         # Generate repeating flash stimulus
                         current_flash_frame = frame_id % (flash_cycle_frames * 2)  # Create on/off cycle
                         x.stimulus[:] = 0
                         if current_flash_frame < flash_cycle_frames:
-                            x.stimulus[:n_input_neurons] = flash_intensity
-                    elif "mixed" in visual_input_type:
+                            x.stimulus[:sim.n_input_neurons] = flash_intensity
+                    elif "mixed" in sim.visual_input_type:
                         current_type = mixed_types[mixed_current_type]
 
                         if current_type == "blank":
                             x.stimulus[:] = 0
                         elif current_type == "noise":
-                            x.stimulus[:n_input_neurons] = torch.relu(
-                                0.5 + torch.rand(n_input_neurons, dtype=torch.float32, device=device) * 0.5)
+                            x.stimulus[:sim.n_input_neurons] = torch.relu(
+                                0.5 + torch.rand(sim.n_input_neurons, dtype=torch.float32, device=device) * 0.5)
                         else:
                             actual_frame_id = (start_frame + frame_id) % sequences.shape[0]
                             frame = sequences[actual_frame_id][None, None]
@@ -2031,12 +1957,12 @@ def data_test_flyvis(
                             elif current_type == "davis":
                                 davis_frame_idx += 1
                         mixed_frame_count += 1
-                    elif "tile_mseq" in visual_input_type:
+                    elif "tile_mseq" in sim.visual_input_type:
                         if tile_codes_torch is None:
                             # 1) Cluster photoreceptors into columns based on (u,v)
                             tile_labels_np = assign_columns_from_uv(
                                 u_coords, v_coords, n_columns, random_state=tile_seed
-                            )  # shape: (n_input_neurons,)
+                            )  # shape: (sim.n_input_neurons,)
 
                             # 2) Build per-column m-sequences (±1) with random phase per column
                             base = mseq_bits(p=8, seed=tile_seed).astype(np.float32)  # ±1, shape (255,)
@@ -2048,7 +1974,7 @@ def data_test_flyvis(
                             tile_codes_torch = torch.from_numpy(tile_codes_np).to(x.device,
                                                                                   dtype=torch.float32)  # (n_columns, 255), ±1
                             tile_labels = torch.from_numpy(tile_labels_np).to(x.device,
-                                                                              dtype=torch.long)  # (n_input_neurons,)
+                                                                              dtype=torch.long)  # (sim.n_input_neurons,)
                             tile_period = tile_codes_torch.shape[1]
                             tile_idx = 0
 
@@ -2058,16 +1984,16 @@ def data_test_flyvis(
                         # Apply the two simple knobs per frame on ±1 codes
                         col_vals_pm1 = apply_pairwise_knobs_torch(
                             code_pm1=col_vals_pm1,
-                            corr_strength=float(simulation_config.tile_corr_strength),
-                            flip_prob=float(simulation_config.tile_flip_prob),
-                            seed=int(simulation_config.seed) + int(tile_idx)
+                            corr_strength=float(sim.tile_corr_strength),
+                            flip_prob=float(sim.tile_flip_prob),
+                            seed=int(sim.seed) + int(tile_idx)
                         )
                         # Map to [0,1] with your contrast convention and broadcast via labels
                         col_vals_01 = 0.5 + (tile_contrast * 0.5) * col_vals_pm1
-                        x.stimulus[:n_input_neurons] = col_vals_01[tile_labels]
+                        x.stimulus[:sim.n_input_neurons] = col_vals_01[tile_labels]
 
                         tile_idx += 1
-                    elif "tile_blue_noise" in visual_input_type:
+                    elif "tile_blue_noise" in sim.visual_input_type:
                         if tile_codes_torch is None:
                             # Label columns and build neighborhood graph
                             tile_labels_np, col_centers = compute_column_labels(u_coords, v_coords, n_columns, seed=tile_seed)
@@ -2101,36 +2027,36 @@ def data_test_flyvis(
                         # Apply the two simple knobs per frame on ±1 codes
                         col_vals_pm1 = apply_pairwise_knobs_torch(
                             code_pm1=col_vals_pm1,
-                            corr_strength=float(simulation_config.tile_corr_strength),
-                            flip_prob=float(simulation_config.tile_flip_prob),
-                            seed=int(simulation_config.seed) + int(tile_idx)
+                            corr_strength=float(sim.tile_corr_strength),
+                            flip_prob=float(sim.tile_flip_prob),
+                            seed=int(sim.seed) + int(tile_idx)
                         )
 
                         # Map to [0,1] with contrast and broadcast via labels
                         col_vals_01 = 0.5 + (tile_contrast * 0.5) * col_vals_pm1
-                        x.stimulus[:n_input_neurons] = col_vals_01[tile_labels]
+                        x.stimulus[:sim.n_input_neurons] = col_vals_01[tile_labels]
 
                         tile_idx += 1
                     else:
                         frame = sequences[frame_id][None, None]
                         net.stimulus.add_input(frame)
-                        if (only_noise_visual_input > 0):
-                            if (visual_input_type == "") | (it == 0) | ("50/50" in visual_input_type):
-                                x.stimulus[:n_input_neurons] = torch.relu(
-                                    0.5 + torch.rand(n_input_neurons, dtype=torch.float32,
-                                                     device=device) * only_noise_visual_input / 2)
+                        if (sim.only_noise_visual_input > 0):
+                            if (sim.visual_input_type == "") | (it == 0) | ("50/50" in sim.visual_input_type):
+                                x.stimulus[:sim.n_input_neurons] = torch.relu(
+                                    0.5 + torch.rand(sim.n_input_neurons, dtype=torch.float32,
+                                                     device=device) * sim.only_noise_visual_input / 2)
                         else:
-                            if 'blank' in visual_input_type:
-                                if (data_idx % simulation_config.blank_freq > 0):
+                            if 'blank' in sim.visual_input_type:
+                                if (data_idx % sim.blank_freq > 0):
                                     x.stimulus = net.stimulus().squeeze()
                                 else:
                                     x.stimulus[:] = 0
                             else:
                                 x.stimulus = net.stimulus().squeeze()
-                            if noise_visual_input > 0:
-                                x.stimulus[:n_input_neurons] = x.stimulus[:n_input_neurons] + torch.randn(n_input_neurons,
+                            if sim.noise_visual_input > 0:
+                                x.stimulus[:sim.n_input_neurons] = x.stimulus[:sim.n_input_neurons] + torch.randn(sim.n_input_neurons,
                                                                                                   dtype=torch.float32,
-                                                                                                  device=device) * noise_visual_input
+                                                                                                  device=device) * sim.noise_visual_input
 
                     x_generated.stimulus = x.stimulus.clone()
                     y_generated = pde(x_generated, edge_index, has_field=False)
@@ -2138,37 +2064,37 @@ def data_test_flyvis(
                     x_generated_modified.stimulus = x.stimulus.clone()
                     y_generated_modified = pde_modified(x_generated_modified, edge_index, has_field=False)
 
-                    if 'visual' in field_type:
+                    if 'visual' in model_config.field_type:
                         visual_input = model.forward_visual(x, it)
                         x.stimulus[:model.n_input_neurons] = visual_input.squeeze(-1)
                         x.stimulus[model.n_input_neurons:] = 0
 
                     # Prediction step
-                    if training_selected_neurons:
+                    if tc.training_selected_neurons:
                         x_selected.stimulus = x.stimulus[selected_neuron_ids].clone().detach()
-                        if 'RNN' in signal_model_name:
+                        if 'RNN' in model_config.signal_model_name:
                             y, h_state = model(x_selected.to_packed(), h=h_state, return_all=True)
-                        elif 'LSTM' in signal_model_name:
+                        elif 'LSTM' in model_config.signal_model_name:
                             y, h_state, c_state = model(x_selected.to_packed(), h=h_state, c=c_state, return_all=True)
-                        elif 'MLP_ODE' in signal_model_name:
+                        elif 'MLP_ODE' in model_config.signal_model_name:
                             v = x_selected.voltage.unsqueeze(-1)
                             I = x_selected.stimulus.unsqueeze(-1)
-                            y = model.rollout_step(v, I, dt=delta_t, method='rk4') - v  # Return as delta
-                        elif 'MLP' in signal_model_name:
+                            y = model.rollout_step(v, I, dt=sim.delta_t, method='rk4') - v  # Return as delta
+                        elif 'MLP' in model_config.signal_model_name:
                             y = model(x_selected.to_packed(), data_id=None, return_all=False)
 
                     else:
-                        if 'RNN' in signal_model_name:
+                        if 'RNN' in model_config.signal_model_name:
                             y, h_state = model(x.to_packed(), h=h_state, return_all=True)
-                        elif 'LSTM' in signal_model_name:
+                        elif 'LSTM' in model_config.signal_model_name:
                             y, h_state, c_state = model(x.to_packed(), h=h_state, c=c_state, return_all=True)
-                        elif 'MLP_ODE' in signal_model_name:
+                        elif 'MLP_ODE' in model_config.signal_model_name:
                             v = x.voltage.unsqueeze(-1)
-                            I = x.stimulus[:n_input_neurons].unsqueeze(-1)
-                            y = model.rollout_step(v, I, dt=delta_t, method='rk4') - v  # Return as delta
-                        elif 'MLP' in signal_model_name:
+                            I = x.stimulus[:sim.n_input_neurons].unsqueeze(-1)
+                            y = model.rollout_step(v, I, dt=sim.delta_t, method='rk4') - v  # Return as delta
+                        elif 'MLP' in model_config.signal_model_name:
                             y = model(x.to_packed(), data_id=None, return_all=False)
-                        elif neural_ODE_training:
+                        elif tc.neural_ODE_training:
                             data_id = torch.zeros((x.n_neurons, 1), dtype=torch.int, device=device)
                             v0 = x.voltage.flatten()
                             v_final, _ = integrate_neural_ode_FlyVis(
@@ -2178,21 +2104,21 @@ def data_test_flyvis(
                                 edge_index=edge_index,
                                 data_id=data_id,
                                 time_steps=1,
-                                delta_t=delta_t,
+                                delta_t=sim.delta_t,
                                 neurons_per_sample=n_neurons,
                                 batch_size=1,
-                                has_visual_field='visual' in field_type,
+                                has_visual_field='visual' in model_config.field_type,
                                 x_list=None,
                                 run=0,
                                 device=device,
                                 k_batch=torch.tensor([it], device=device),
-                                ode_method=ode_method,
-                                rtol=ode_rtol,
-                                atol=ode_atol,
+                                ode_method=tc.ode_method,
+                                rtol=tc.ode_rtol,
+                                atol=tc.ode_atol,
                                 adjoint=False,
                                 noise_level=0.0
                             )
-                            y = (v_final.view(-1, 1) - x.voltage.unsqueeze(-1)) / delta_t
+                            y = (v_final.view(-1, 1) - x.voltage.unsqueeze(-1)) / sim.delta_t
                         else:
                             data_id = torch.zeros((x.n_neurons, 1), dtype=torch.int, device=device)
                             y = model(x, edge_index, data_id=data_id, return_all=False)
@@ -2201,70 +2127,70 @@ def data_test_flyvis(
                     x_generated_list.append(to_numpy(x_generated.to_packed().clone().detach()))
                     x_generated_modified_list.append(to_numpy(x_generated_modified.to_packed().clone().detach()))
 
-                    if training_selected_neurons:
+                    if tc.training_selected_neurons:
                         x_list.append(to_numpy(x_selected.to_packed().clone().detach()))
                     else:
                         x_list.append(to_numpy(x.to_packed().clone().detach()))
 
                     # Integration step
                     # Optionally disable process noise at test time, even if model was trained with noise
-                    effective_noise_level = 0.0 if rollout_without_noise else noise_model_level
+                    effective_noise_level = 0.0 if rollout_without_noise else sim.noise_model_level
                     if effective_noise_level > 0:
-                        x_generated.voltage = x_generated.voltage + delta_t * y_generated.squeeze(-1) + torch.randn(
+                        x_generated.voltage = x_generated.voltage + sim.delta_t * y_generated.squeeze(-1) + torch.randn(
                             n_neurons, dtype=torch.float32, device=device
                         ) * effective_noise_level
-                        x_generated_modified.voltage = x_generated_modified.voltage + delta_t * y_generated_modified.squeeze(-1) + torch.randn(
+                        x_generated_modified.voltage = x_generated_modified.voltage + sim.delta_t * y_generated_modified.squeeze(-1) + torch.randn(
                             n_neurons, dtype=torch.float32, device=device
                         ) * effective_noise_level
                     else:
-                        x_generated.voltage = x_generated.voltage + delta_t * y_generated.squeeze(-1)
-                        x_generated_modified.voltage = x_generated_modified.voltage + delta_t * y_generated_modified.squeeze(-1)
+                        x_generated.voltage = x_generated.voltage + sim.delta_t * y_generated.squeeze(-1)
+                        x_generated_modified.voltage = x_generated_modified.voltage + sim.delta_t * y_generated_modified.squeeze(-1)
 
-                    if training_selected_neurons:
-                        if 'MLP_ODE' in signal_model_name:
+                    if tc.training_selected_neurons:
+                        if 'MLP_ODE' in model_config.signal_model_name:
                             x_selected.voltage = x_selected.voltage + y.squeeze(-1)  # y already contains full update
                         else:
-                            x_selected.voltage = x_selected.voltage + delta_t * y.squeeze(-1)
-                        if (it <= warm_up_length) and ('RNN' in signal_model_name or 'LSTM' in signal_model_name):
+                            x_selected.voltage = x_selected.voltage + sim.delta_t * y.squeeze(-1)
+                        if (it <= warm_up_length) and ('RNN' in model_config.signal_model_name or 'LSTM' in model_config.signal_model_name):
                             x_selected.voltage = x_generated.voltage[selected_neuron_ids].clone()
                     else:
-                        if 'MLP_ODE' in signal_model_name:
+                        if 'MLP_ODE' in model_config.signal_model_name:
                             x.voltage = x.voltage + y.squeeze(-1)  # y already contains full update
                         else:
-                            x.voltage = x.voltage + delta_t * y.squeeze(-1)
-                        if (it <= warm_up_length) and ('RNN' in signal_model_name):
+                            x.voltage = x.voltage + sim.delta_t * y.squeeze(-1)
+                        if (it <= warm_up_length) and ('RNN' in model_config.signal_model_name):
                             x.voltage = x_generated.voltage.clone()
 
-                    if calcium_type == "leaky":
+                    if sim.calcium_type == "leaky":
                         # Voltage-driven activation
-                        if calcium_activation == "softplus":
+                        if sim.calcium_activation == "softplus":
                             u = torch.nn.functional.softplus(x.voltage)
-                        elif calcium_activation == "relu":
+                        elif sim.calcium_activation == "relu":
                             u = torch.nn.functional.relu(x.voltage)
-                        elif calcium_activation == "tanh":
+                        elif sim.calcium_activation == "tanh":
                             u = torch.tanh(x.voltage)
-                        elif calcium_activation == "identity":
+                        elif sim.calcium_activation == "identity":
                             u = x.voltage.clone()
 
-                        x.calcium = x.calcium + (delta_t / calcium_tau) * (-x.calcium + u)
+                        x.calcium = x.calcium + (sim.delta_t / sim.calcium_tau) * (-x.calcium + u)
                         x.calcium = torch.clamp(x.calcium, min=0.0)
-                        x.fluorescence = calcium_alpha * x.calcium + calcium_beta
+                        x.fluorescence = sim.calcium_alpha * x.calcium + sim.calcium_beta
 
-                        y = (x.calcium - torch.tensor(x_list[-1][:, 7], dtype=torch.float32, device=device)).unsqueeze(-1) / delta_t
+                        y = (x.calcium - torch.tensor(x_list[-1][:, 7], dtype=torch.float32, device=device)).unsqueeze(-1) / sim.delta_t
 
                     y_list.append(to_numpy(y.clone().detach()))
 
-                    if (it > 0) & (it < 100) & (it % step == 0) & visualize & (not training_selected_neurons):
+                    if (it > 0) & (it < 100) & (it % step == 0) & visualize & (not tc.training_selected_neurons):
                         num = f"{id_fig:06}"
                         id_fig += 1
                         plot_spatial_activity_grid(
                             positions=to_numpy(x.pos),
                             voltages=to_numpy(x.voltage),
-                            stimulus=to_numpy(x.stimulus[:n_input_neurons]),
+                            stimulus=to_numpy(x.stimulus[:sim.n_input_neurons]),
                             neuron_types=to_numpy(x.neuron_type).astype(int),
                             output_path=f"./{log_dir}/tmp_recons/Fig_{run}_{num}.png",
-                            calcium=to_numpy(x.calcium) if calcium_type != "none" else None,
-                            n_input_neurons=n_input_neurons,
+                            calcium=to_numpy(x.calcium) if sim.calcium_type != "none" else None,
+                            n_input_neurons=sim.n_input_neurons,
                             style=fig_style,
                         )
 
@@ -2279,11 +2205,10 @@ def data_test_flyvis(
     print(f"generated {len(x_list)} frames total")
 
 
-
     if visualize:
         print('generating lossless video ...')
 
-        output_name = dataset_name.split('fly_N9_')[1] if 'fly_N9_' in dataset_name else 'no_id'
+        output_name = config.dataset.split('fly_N9_')[1] if 'fly_N9_' in config.dataset else 'no_id'
         src = f"./{log_dir}/tmp_recons/Fig_0_000000.png"
         dst = f"./{log_dir}/results/input_{output_name}.png"
         with open(src, "rb") as fsrc, open(dst, "wb") as fdst:
@@ -2304,7 +2229,7 @@ def data_test_flyvis(
 
     neuron_types = node_types_int
 
-    if calcium_type != "none":
+    if sim.calcium_type != "none":
         # Use calcium (index 7)
         activity_true = x_generated_list[:, :, 7].squeeze().T  # (n_neurons, n_frames)
         activity_pred = x_list[:, :, 7].squeeze().T
@@ -2320,7 +2245,7 @@ def data_test_flyvis(
     end_frame = target_frames
 
 
-    if training_selected_neurons:           # MLP, RNN and ODE are trained on limted number of neurons
+    if tc.training_selected_neurons:           # MLP, RNN and ODE are trained on limted number of neurons
 
         print(f"evaluating on selected neurons only: {selected_neuron_ids}")
         x_generated_list = x_generated_list[:, selected_neuron_ids, :]
@@ -2347,7 +2272,7 @@ def data_test_flyvis(
         if len(selected_neuron_ids)==1:
             pred_slice = pred_slice[None,:]
 
-        filename_ = dataset_name.split('fly_N9_')[1] if 'fly_N9_' in dataset_name else 'no_id'
+        filename_ = config.dataset.split('fly_N9_')[1] if 'fly_N9_' in config.dataset else 'no_id'
 
         # Determine which figures to create
         if len(selected_neuron_ids) > 50:
@@ -2409,7 +2334,7 @@ def data_test_flyvis(
 
             plt.tight_layout()
             save_suffix = f"_{fig_suffix}" if fig_suffix else ""
-            plt.savefig(f"./{log_dir}/results/rollout_{filename_}_{simulation_config.visual_input_type}{save_suffix}.png", dpi=300, bbox_inches='tight')
+            plt.savefig(f"./{log_dir}/results/rollout_{filename_}_{sim.sim.visual_input_type}{save_suffix}.png", dpi=300, bbox_inches='tight')
             plt.close()
 
     else:
@@ -2433,7 +2358,7 @@ def data_test_flyvis(
             log_file.write(f"test_R2: {np.nanmean(r2_all):.4f}\n")
             log_file.write(f"test_pearson: {np.nanmean(pearson_all):.4f}\n")
 
-        filename_ = dataset_name.split('fly_N9_')[1] if 'fly_N9_' in dataset_name else 'no_id'
+        filename_ = config.dataset.split('fly_N9_')[1] if 'fly_N9_' in config.dataset else 'no_id'
 
         # Create two figures with different neuron type selections
         for fig_name, selected_types in [
@@ -2493,7 +2418,7 @@ def data_test_flyvis(
             ax.legend(loc='upper right', fontsize=14, frameon=False)
 
             plt.tight_layout()
-            plt.savefig(f"./{log_dir}/results/rollout_{filename_}_{simulation_config.visual_input_type}_{fig_name}.png", dpi=300, bbox_inches='tight')
+            plt.savefig(f"./{log_dir}/results/rollout_{filename_}_{sim.sim.visual_input_type}_{fig_name}.png", dpi=300, bbox_inches='tight')
             plt.close()
 
         if ('test_ablation' in test_mode) or ('test_inactivity' in test_mode):
