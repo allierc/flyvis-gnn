@@ -242,7 +242,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     # Move all timeseries to GPU to avoid per-iteration CPU→GPU transfers
     x_list = [ts.to(device) for ts in x_list]
 
-    print(f'dataset: {len(x_list)} run, {x_list[0].sim.n_frames} frames')
+    print(f'dataset: {len(x_list)} run, {x_list[0].n_frames} frames')
     x = x_list[0].frame(sim.n_frames - 10)
 
     activity = x_list[0].voltage
@@ -1713,8 +1713,8 @@ def data_test_flyvis(
             edge_index = torch.cat([edge_index, extra_edge_index], dim=1)
             p["w"] = torch.cat([p["w"], torch.zeros(len(extra_edges), device=device)])
 
-    pde = PDE_N9(p=p, f=torch.nn.functional.relu, params=sim.params, model_type=model_config.model_config.signal_model_name, n_neuron_types=n_neuron_types, device=device)
-    pde_modified = PDE_N9(p=copy.deepcopy(p), f=torch.nn.functional.relu, params=sim.params, model_type=model_config.model_config.signal_model_name, n_neuron_types=n_neuron_types, device=device)
+    pde = PDE_N9(p=p, f=torch.nn.functional.relu, params=sim.params, model_type=model_config.signal_model_name, n_neuron_types=n_neuron_types, device=device)
+    pde_modified = PDE_N9(p=copy.deepcopy(p), f=torch.nn.functional.relu, params=sim.params, model_type=model_config.signal_model_name, n_neuron_types=n_neuron_types, device=device)
 
 
     if 'RNN' in model_config.signal_model_name:
@@ -2334,7 +2334,7 @@ def data_test_flyvis(
 
             plt.tight_layout()
             save_suffix = f"_{fig_suffix}" if fig_suffix else ""
-            plt.savefig(f"./{log_dir}/results/rollout_{filename_}_{sim.sim.visual_input_type}{save_suffix}.png", dpi=300, bbox_inches='tight')
+            plt.savefig(f"./{log_dir}/results/rollout_{filename_}_{sim.visual_input_type}{save_suffix}.png", dpi=300, bbox_inches='tight')
             plt.close()
 
     else:
@@ -2418,7 +2418,7 @@ def data_test_flyvis(
             ax.legend(loc='upper right', fontsize=14, frameon=False)
 
             plt.tight_layout()
-            plt.savefig(f"./{log_dir}/results/rollout_{filename_}_{sim.sim.visual_input_type}_{fig_name}.png", dpi=300, bbox_inches='tight')
+            plt.savefig(f"./{log_dir}/results/rollout_{filename_}_{sim.visual_input_type}_{fig_name}.png", dpi=300, bbox_inches='tight')
             plt.close()
 
         if ('test_ablation' in test_mode) or ('test_inactivity' in test_mode):
