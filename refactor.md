@@ -429,3 +429,50 @@ Two systematic replacements:
 | Exploration config/protocol | 438 files | Inside `log/Claude_exploration/` |
 
 Backward compat stubs (`PDE_N9.py`, `Signal_Propagation_FlyVis.py`) and class aliases (`PDE_N9 = FlyVisODE`, `Signal_Propagation_FlyVis = FlyVisGNN`) were removed — the rename is complete, no transition period needed.
+
+## 7. LLM File Reorganization
+
+### The problem
+
+LLM instruction files (9) and exploration output files (~42) were scattered in the project root directory, cluttering it with experiment artifacts mixed alongside source code and scripts.
+
+### The solution: `LLM/` folder + exploration directories
+
+Two moves:
+
+1. **Instruction files** → `LLM/` at project root:
+   - `instruction_flyvis_62_0.md`, `instruction_flyvis_62_1.md`, etc.
+   - `instructions_epistemic_analysis.md`
+
+2. **Output files** → their respective `log/Claude_exploration/` directories:
+   - `flyvis_62_0_Claude_analysis.md`, `*_memory.md`, `*_ucb_scores.txt`, `*_reasoning.log`, `*_epistemic_analysis.md`, `*_exploration_summary.md`, batch logs (`*_00_analysis.log` through `*_03_analysis.log`)
+   - Each set of outputs maps to its exploration dir (e.g., `flyvis_62_1_Claude_*` → `log/Claude_exploration/instruction_flyvis_62_1_parallel/`)
+
+### Path updates in Python scripts
+
+All 4 GNN_LLM scripts construct file paths from `root_dir`. Two new variables introduced:
+
+```python
+llm_dir = f"{root_dir}/LLM"                    # instruction files
+exploration_dir = f"{root_dir}/log/Claude_exploration/{instruction_name}_parallel"  # outputs
+```
+
+| Path | Before | After |
+|------|--------|-------|
+| Instructions | `{root_dir}/{instruction_name}.md` | `{llm_dir}/{instruction_name}.md` |
+| Analysis log | `{root_dir}/{llm_task_name}_analysis.md` | `{exploration_dir}/{llm_task_name}_analysis.md` |
+| Memory | `{root_dir}/{llm_task_name}_memory.md` | `{exploration_dir}/{llm_task_name}_memory.md` |
+| UCB scores | `{root_dir}/{llm_task_name}_ucb_scores.txt` | `{exploration_dir}/{llm_task_name}_ucb_scores.txt` |
+| Reasoning log | `{root_dir}/{llm_task_name}_reasoning.log` | `{exploration_dir}/{llm_task_name}_reasoning.log` |
+| Batch logs | `{root_dir}/{slot_name}_analysis.log` | `{exploration_dir}/{slot_name}_analysis.log` |
+
+### Files changed
+
+| File | Changes |
+|------|---------|
+| `GNN_LLM_parallel_flyvis.py` | `llm_dir`, `exploration_dir` defined early; all output paths use `exploration_dir`; instruction paths use `llm_dir` |
+| `GNN_LLM_parallel_flyvis_understanding.py` | Same pattern |
+| `GNN_LLM_parallel.py` | Same pattern |
+| `GNN_LLM.py` | Same pattern (exploration_dir without `_parallel` suffix) |
+
+Cluster path replacement (`analysis_log_path.replace(root_dir, cluster_root_dir)`) continues to work because `exploration_dir` is a subdirectory of `root_dir`.

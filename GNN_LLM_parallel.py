@@ -317,11 +317,13 @@ if __name__ == "__main__":
     # -----------------------------------------------------------------------
     root_dir = os.path.dirname(os.path.abspath(__file__))
     config_root = root_dir + "/config"
+    llm_dir = f"{root_dir}/LLM"
+    exploration_dir = f"{root_dir}/log/Claude_exploration/{instruction_name}_parallel"
 
     # Fresh start (default) or auto-resume (--resume flag)
     if args.resume:
-        analysis_path_probe = f"{root_dir}/{llm_task_name}_analysis.md"
-        config_save_dir_probe = f"{root_dir}/log/Claude_exploration/{instruction_name}_parallel/config"
+        analysis_path_probe = f"{exploration_dir}/{llm_task_name}_analysis.md"
+        config_save_dir_probe = f"{exploration_dir}/config"
         start_iteration = detect_last_iteration(analysis_path_probe, config_save_dir_probe, N_PARALLEL)
         if start_iteration > 1:
             print(f"\033[93mAuto-resume: resuming from batch starting at {start_iteration}\033[0m")
@@ -329,11 +331,11 @@ if __name__ == "__main__":
             print("\033[93mFresh start (no previous iterations found)\033[0m")
     else:
         start_iteration = 1
-        _analysis_check = f"{root_dir}/{llm_task_name}_analysis.md"
+        _analysis_check = f"{exploration_dir}/{llm_task_name}_analysis.md"
         if os.path.exists(_analysis_check):
             print("\033[91mWARNING: Fresh start will erase existing results in:\033[0m")
             print(f"\033[91m  {_analysis_check}\033[0m")
-            print(f"\033[91m  {root_dir}/{llm_task_name}_memory.md\033[0m")
+            print(f"\033[91m  {exploration_dir}/{llm_task_name}_memory.md\033[0m")
             answer = input("\033[91mContinue? (y/n): \033[0m").strip().lower()
             if answer != 'y':
                 print("Aborted.")
@@ -368,7 +370,7 @@ if __name__ == "__main__":
         slot_names[slot] = slot_name
         target = f"{config_root}/{pre}{slot_name}.yaml"
         config_paths[slot] = target
-        analysis_log_paths[slot] = f"{root_dir}/{slot_name}_analysis.log"
+        analysis_log_paths[slot] = f"{exploration_dir}/{slot_name}_analysis.log"
 
         if start_iteration == 1 and not args.resume:
             # Fresh start: copy source config, set dataset per slot
@@ -395,16 +397,15 @@ if __name__ == "__main__":
     # Shared files
     config_file, pre_folder = add_pre_folder(llm_task_name + '_00')
     # Use base llm_task_name for shared files
-    analysis_path = f"{root_dir}/{llm_task_name}_analysis.md"
-    memory_path = f"{root_dir}/{llm_task_name}_memory.md"
-    ucb_path = f"{root_dir}/{llm_task_name}_ucb_scores.txt"
-    instruction_path = f"{root_dir}/{instruction_name}.md"
-    parallel_instruction_path = f"{root_dir}/instruction_{base_config_name}_parallel.md"
-    reasoning_log_path = f"{root_dir}/{llm_task_name}_reasoning.log"
+    analysis_path = f"{exploration_dir}/{llm_task_name}_analysis.md"
+    memory_path = f"{exploration_dir}/{llm_task_name}_memory.md"
+    ucb_path = f"{exploration_dir}/{llm_task_name}_ucb_scores.txt"
+    instruction_path = f"{llm_dir}/{instruction_name}.md"
+    parallel_instruction_path = f"{llm_dir}/instruction_{base_config_name}_parallel.md"
+    reasoning_log_path = f"{exploration_dir}/{llm_task_name}_reasoning.log"
 
-    exploration_dir = f"{root_dir}/log/Claude_exploration/{instruction_name}_parallel"
-    log_dir = f"{root_dir}/log/Claude_exploration/{instruction_name}_parallel"
-    os.makedirs(log_dir, exist_ok=True)
+    log_dir = exploration_dir
+    os.makedirs(exploration_dir, exist_ok=True)
 
     cluster_enabled = 'cluster' in task
 

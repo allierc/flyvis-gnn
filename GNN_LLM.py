@@ -101,19 +101,21 @@ if __name__ == "__main__":
 
     # Auto-resume or fresh start
     _root = os.path.dirname(os.path.abspath(__file__))
+    _llm_dir = f"{_root}/LLM"
+    _exploration_dir = f"{_root}/log/Claude_exploration/{instruction_name}"
     if args.resume:
-        start_iteration = detect_last_iteration(f"{_root}/{llm_task_name}_analysis.md")
+        start_iteration = detect_last_iteration(f"{_exploration_dir}/{llm_task_name}_analysis.md")
         if start_iteration > 1:
             print(f"\033[93mResuming from iteration {start_iteration}\033[0m")
         else:
             print("\033[93mNo previous iterations found, starting fresh\033[0m")
     else:
         start_iteration = 1
-        _analysis_check = f"{_root}/{llm_task_name}_analysis.md"
+        _analysis_check = f"{_exploration_dir}/{llm_task_name}_analysis.md"
         if os.path.exists(_analysis_check):
             print("\033[91mWARNING: Fresh start will erase existing results in:\033[0m")
             print(f"\033[91m  {_analysis_check}\033[0m")
-            print(f"\033[91m  {_root}/{llm_task_name}_memory.md\033[0m")
+            print(f"\033[91m  {_exploration_dir}/{llm_task_name}_memory.md\033[0m")
             answer = input("\033[91mContinue? (y/n): \033[0m").strip().lower()
             if answer != 'y':
                 print("Aborted.")
@@ -186,7 +188,7 @@ if __name__ == "__main__":
 
         print(f"\033[94mCluster node: gpu_{claude_node_name}\033[0m")
 
-        ucb_file = f"{root_dir}/{llm_task_name}_ucb_scores.txt"
+        ucb_file = f"{exploration_dir}/{llm_task_name}_ucb_scores.txt"
         if start_iteration == 1 and not args.resume:
             # only delete UCB file when starting fresh (not resuming)
             if os.path.exists(ucb_file):
@@ -229,16 +231,19 @@ if __name__ == "__main__":
 
         if 'Claude' in task:
             root_dir = os.path.dirname(os.path.abspath(__file__))
-            instruction_path = f"{root_dir}/{instruction_name}.md"
-            analysis_path = f"{root_dir}/{llm_task_name}_analysis.md"
-            memory_path = f"{root_dir}/{llm_task_name}_memory.md"
+            llm_dir = f"{root_dir}/LLM"
+            exploration_dir = f"{root_dir}/log/Claude_exploration/{instruction_name}"
+            os.makedirs(exploration_dir, exist_ok=True)
+            instruction_path = f"{llm_dir}/{instruction_name}.md"
+            analysis_path = f"{exploration_dir}/{llm_task_name}_analysis.md"
+            memory_path = f"{exploration_dir}/{llm_task_name}_memory.md"
 
             # check instruction file exists
             if not os.path.exists(instruction_path):
                 print(f"\033[91merror: instruction file not found: {instruction_path}\033[0m")
                 print("\033[93mavailable instruction files:\033[0m")
-                for f in os.listdir(root_dir):
-                    if f.endswith('.md') and not f.startswith('analysis_') and not f.startswith('README'):
+                for f in os.listdir(llm_dir):
+                    if f.endswith('.md'):
                         print(f"  - {f[:-3]}")
                 continue
 
@@ -277,7 +282,8 @@ if __name__ == "__main__":
             print(f"\033[93m{instruction_name} ({n_iterations} iterations, starting at {start_iteration})\033[0m")
 
         root_dir = os.path.dirname(os.path.abspath(__file__))
-        analysis_log_path = f"{root_dir}/{llm_task_name}_analysis.log"
+        exploration_dir = f"{root_dir}/log/Claude_exploration/{instruction_name}"
+        analysis_log_path = f"{exploration_dir}/{llm_task_name}_analysis.log"
 
 
 
@@ -288,7 +294,7 @@ if __name__ == "__main__":
                 print(f"\n\n\n\033[94miteration {iteration}/{n_iterations}: {config_file_} ===\033[0m")
                 # block boundary: erase UCB at start of each n_iter_block-iteration block (except iter 1, already handled)
                 if iteration > 1 and (iteration - 1) % n_iter_block == 0:
-                    ucb_file = f"{root_dir}/{llm_task_name}_ucb_scores.txt"
+                    ucb_file = f"{exploration_dir}/{llm_task_name}_ucb_scores.txt"
                     if os.path.exists(ucb_file):
                         os.remove(ucb_file)
                         print(f"\033[93msimulation block boundary: deleted {ucb_file} (new simulation block)\\033[0m")
@@ -672,7 +678,7 @@ If you cannot fix it, say "CANNOT_FIX" and explain why."""
 
                 # claude analysis: reads activity.png and analysis.log, updates config per experiment protocol
                 config_path = f"{root_dir}/config/{pre_folder}{config_file_}.yaml"
-                ucb_path = f"{root_dir}/{llm_task_name}_ucb_scores.txt"
+                ucb_path = f"{exploration_dir}/{llm_task_name}_ucb_scores.txt"
 
                 # read ucb_c from config
                 with open(config_path, 'r') as f:
