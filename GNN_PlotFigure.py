@@ -20,7 +20,7 @@ import pandas as pd
 
 
 from flyvis_gnn.figure_style import default_style as fig_style
-from flyvis_gnn.zarr_io import load_simulation_data, load_simulation_data_raw
+from flyvis_gnn.zarr_io import load_simulation_data_raw
 from flyvis_gnn.fitting_models import linear_model
 from flyvis_gnn.sparsify import EmbeddingCluster, sparsify_cluster, clustering_gmm
 from flyvis_gnn.models.utils import (
@@ -170,7 +170,7 @@ def load_training_data(dataset_name, n_runs, log_dir, device):
     print('load data ...')
     time.sleep(0.5)
     for run in trange(n_runs, ncols=90):
-        x = load_simulation_data(f'graphs_data/{dataset_name}/x_list_{run}')
+        x = load_simulation_data_raw(f'graphs_data/{dataset_name}/x_list_{run}')
         x = torch.tensor(x, dtype=torch.float32, device=device)
         y = load_simulation_data_raw(f'graphs_data/{dataset_name}/y_list_{run}')
         y = torch.tensor(y, dtype=torch.float32, device=device)
@@ -1059,7 +1059,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
     x_list = []
     y_list = []
     run =0
-    x = load_simulation_data(f'graphs_data/{dataset_name}/x_list_{run}')
+    x = load_simulation_data_raw(f'graphs_data/{dataset_name}/x_list_{run}')
     y = load_simulation_data_raw(f'graphs_data/{dataset_name}/y_list_{run}')
     if os.path.exists(f'graphs_data/{dataset_name}/raw_x_list_{run}.npy'):
         raw_x = np.load(f'graphs_data/{dataset_name}/raw_x_list_{run}.npy')
@@ -2935,7 +2935,7 @@ def plot_synaptic3(config, epoch_list, log_dir, logger, cc, style, extended, dev
     x_list = []
     y_list = []
     for run in trange(1, ncols=90):
-        x = load_simulation_data(f'graphs_data/{dataset_name}/x_list_{run}')
+        x = load_simulation_data_raw(f'graphs_data/{dataset_name}/x_list_{run}')
         y = load_simulation_data_raw(f'graphs_data/{dataset_name}/y_list_{run}')
         x_list.append(x)
         y_list.append(y)
@@ -3657,7 +3657,7 @@ def plot_synaptic_CElegans(config, epoch_list, log_dir, logger, cc, style, exten
     x_list = []
     y_list = []
     for run in trange(0,n_runs, ncols=90):
-        x = load_simulation_data(f'graphs_data/{dataset_name}/x_list_{run}')
+        x = load_simulation_data_raw(f'graphs_data/{dataset_name}/x_list_{run}')
         y = load_simulation_data_raw(f'graphs_data/{dataset_name}/y_list_{run}')
         if os.path.exists(f'graphs_data/{dataset_name}/raw_x_list_{run}.npy'):
             np.load(f'graphs_data/{dataset_name}/raw_x_list_{run}.npy')
@@ -4527,7 +4527,7 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
     time.sleep(0.5)
     print('load simulation data...')
     for run in range(0, n_runs):
-        x = load_simulation_data(f'graphs_data/{dataset_name}/x_list_{run}')
+        x = load_simulation_data_raw(f'graphs_data/{dataset_name}/x_list_{run}')
         y = load_simulation_data_raw(f'graphs_data/{dataset_name}/y_list_{run}')
         x_list.append(x)
         y_list.append(y)
@@ -5561,7 +5561,7 @@ def plot_synaptic_zebra(config, epoch_list, log_dir, logger, cc, style, extended
     print('load data...')
 
     run = 0
-    x = load_simulation_data(f'graphs_data/{dataset_name}/x_list_{run}')
+    x = load_simulation_data_raw(f'graphs_data/{dataset_name}/x_list_{run}')
     x = torch.tensor(x, dtype=torch.float32, device=device)
     y = load_simulation_data_raw(f'graphs_data/{dataset_name}/y_list_{run}')
     y = torch.tensor(y, dtype=torch.float32, device=device)
@@ -6186,13 +6186,12 @@ def analyze_model_functions(model, config, n_neurons, mu_activity, sigma_activit
         model, config, n_neurons, mu_activity, sigma_activity, device)
 
     # Compute corrected weights using a sample forward pass
-    mid_frame = x_list[0].voltage.shape[0] // 2
-    from flyvis_gnn.neuron_state import NeuronTimeSeries
+    from flyvis_gnn.neuron_state import NeuronTimeSeries, NeuronState
     if isinstance(x_list[0], NeuronTimeSeries):
+        mid_frame = x_list[0].n_frames // 2
         state = x_list[0].frame(mid_frame)
     else:
-        # Legacy packed array path
-        from flyvis_gnn.neuron_state import NeuronState
+        mid_frame = x_list[0].shape[0] // 2
         state = NeuronState.from_numpy(
             torch.tensor(x_list[0][mid_frame], dtype=torch.float32, device=device))
 
