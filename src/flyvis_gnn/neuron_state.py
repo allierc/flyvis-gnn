@@ -179,16 +179,20 @@ class NeuronTimeSeries:
         return self.index.shape[0]
 
     def frame(self, t: int) -> NeuronState:
-        """Extract single-frame NeuronState at time t."""
+        """Extract single-frame NeuronState at time t.
+
+        Dynamic fields are cloned so the caller can modify them
+        without corrupting the timeseries data.
+        """
         return NeuronState(
             index=self.index,
             pos=self.pos,
             group_type=self.group_type,
             neuron_type=self.neuron_type,
-            voltage=self.voltage[t],
-            stimulus=self.stimulus[t],
-            calcium=self.calcium[t],
-            fluorescence=self.fluorescence[t],
+            voltage=self.voltage[t].clone(),
+            stimulus=self.stimulus[t].clone(),
+            calcium=self.calcium[t].clone(),
+            fluorescence=self.fluorescence[t].clone(),
         )
 
     def to(self, device: torch.device) -> NeuronTimeSeries:
