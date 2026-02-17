@@ -83,10 +83,10 @@ class ZarrSimulationWriter:
         # ensure parent directory exists
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
-        # remove existing zarr directory if present
+        # remove existing zarr directory if present (ignore_errors for NFS)
         if self.path.exists():
             import shutil
-            shutil.rmtree(self.path)
+            shutil.rmtree(self.path, ignore_errors=True)
 
         # create zarr store with tensorstore
         # start with initial capacity, will resize as needed
@@ -235,10 +235,10 @@ class ZarrSimulationWriterV2:
         # ensure directory exists
         self.path.mkdir(parents=True, exist_ok=True)
 
-        # remove existing if present
+        # remove existing if present (ignore_errors for NFS race conditions)
         if self.metadata_path.exists():
             import shutil
-            shutil.rmtree(self.metadata_path)
+            shutil.rmtree(self.metadata_path, ignore_errors=True)
 
         # extract static columns: [INDEX, XPOS, YPOS, GROUP_TYPE, TYPE]
         self._metadata = frame[:, _STATIC_COLS].astype(self.dtype)  # (N, 5)
@@ -273,7 +273,7 @@ class ZarrSimulationWriterV2:
         """initialize timeseries zarr store."""
         if self.timeseries_path.exists():
             import shutil
-            shutil.rmtree(self.timeseries_path)
+            shutil.rmtree(self.timeseries_path, ignore_errors=True)
 
         initial_time_capacity = max(self.time_chunks * 10, 1000)
 
@@ -360,9 +360,10 @@ class ZarrSimulationWriterV2:
         """save pre-built metadata array (N, 5)."""
         self.path.mkdir(parents=True, exist_ok=True)
 
+        # ignore_errors for NFS race conditions on cluster filesystems
         if self.metadata_path.exists():
             import shutil
-            shutil.rmtree(self.metadata_path)
+            shutil.rmtree(self.metadata_path, ignore_errors=True)
 
         self._metadata = metadata
 
