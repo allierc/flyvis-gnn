@@ -105,7 +105,7 @@ if __name__ == "__main__":
         elif "train" in task:
             data_train(
                 config=config,
-                erase=False,
+                erase=True,
                 best_model=best_model,
                 style='color',
                 device=device,
