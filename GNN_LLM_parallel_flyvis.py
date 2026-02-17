@@ -280,6 +280,7 @@ if __name__ == "__main__":
     base_config_name = config_list[0] if config_list else 'flyvis_62_0'
     instruction_name = task_params.get('instruction', f'instruction_{base_config_name}')
     llm_task_name = task_params.get('llm_task', f'{base_config_name}_Claude')
+    generate_data = "generate" in task
 
     # -----------------------------------------------------------------------
     # Claude mode setup
@@ -346,6 +347,8 @@ if __name__ == "__main__":
                 with open(target, 'r') as f:
                     config_data = yaml.safe_load(f)
                 config_data['training']['n_epochs'] = claude_n_epochs
+                if generate_data:
+                    config_data['dataset'] = f"{base_config_name}_{slot:02d}"
                 config_data['claude'] = {
                     'n_epochs': claude_n_epochs,
                     'data_augmentation_loop': claude_data_augmentation_loop,
@@ -361,7 +364,9 @@ if __name__ == "__main__":
                 shutil.copy2(source_config, target)
                 with open(target, 'r') as f:
                     config_data = yaml.safe_load(f)
-                # DO NOT change dataset — data is pre-generated in graphs_data/fly/{original_dataset}/
+                # For generate mode, each slot gets its own dataset directory
+                if generate_data:
+                    config_data['dataset'] = f"{base_config_name}_{slot:02d}"
                 config_data['training']['n_epochs'] = claude_n_epochs
                 config_data['training']['data_augmentation_loop'] = claude_data_augmentation_loop
                 config_data['description'] = 'designed by Claude (parallel flyvis)'
@@ -512,7 +517,6 @@ Write the planned mutations to the working memory file."""
         # -------------------------------------------------------------------
         # PHASE 1: Load configs (data generation handled per-slot if needed)
         # -------------------------------------------------------------------
-        generate_data = "generate" in task
         if generate_data:
             print(f"\n\033[93mPHASE 1: Loading configs for {n_slots} slots (data will be re-generated per slot)\033[0m")
         else:
@@ -961,3 +965,4 @@ IMPORTANT: Baseline training time is ~45 min/epoch on H100. With n_epochs=1, exp
 # python GNN_LLM_parallel_flyvis.py -o train_test_plot_Claude_cluster flyvis_62_0 iterations=144 --resume
 # python GNN_LLM_parallel_flyvis.py -o train_test_plot_Claude_cluster flyvis_62_1 iterations=144 --resume
 # python GNN_LLM_parallel_flyvis.py -o train_test_plot_Claude_cluster flyvis_63_1 iterations=144 --resume
+# python GNN_LLM_parallel_flyvis.py -o generate_train_test_plot_Claude_cluster flyvis_62_1_gs iterations=144 instruction=instruction_flyvis_62_1_gs
