@@ -211,3 +211,25 @@ At the end of each block:
 | **Std** | **0.029** | **0.028** | **0.216** | **0.023** |
 
 Any config that achieves V_rest_R2 mean > 0.55 (with 3+ samples) while keeping conn_R2 > 0.8 is an improvement.
+
+## CRITICAL: Repeatability Testing Protocol
+
+V_rest has enormous variance (std=0.216). A single good V_rest result is meaningless — it could be a lucky seed. **Every promising config MUST be repeatability-tested before drawing conclusions.**
+
+### Rules
+
+1. **Never claim improvement from 1 sample.** A single V_rest_R2=0.75 is within Node 21's variance range (0.11-0.78). It proves nothing.
+2. **3 samples minimum** before any conclusion. Use slot 3 (robustness) plus additional re-runs.
+3. **5 samples recommended** for configs you want to declare "better than Node 21".
+4. **Statistical test**: A config is better than Node 21 only if its V_rest mean (3+ samples) exceeds 0.55 AND its V_rest std is < 0.20 (i.e., both higher mean AND lower variance).
+5. **Dedicate slots to repeatability**: When a config looks promising after 1 run, the NEXT batch should re-run it in 2-3 slots (not just slot 3). Exploring new parameters can wait — confirming a real improvement is more valuable than testing another hypothesis.
+6. **Track per-config sample counts** in memory.md. Maintain a table:
+
+```
+| Config (Node) | V_rest samples | V_rest mean | V_rest std | conn_R2 mean | Status |
+|---------------|---------------|-------------|------------|--------------|--------|
+| Node 21 (baseline) | 8 | 0.499 | 0.216 | 0.955 | baseline |
+| Node X (lr_update=2E-3) | 3 | ??? | ??? | ??? | testing |
+```
+
+7. **Block transitions**: Do NOT move to the next block until the current block's best config has 3+ repeatability samples. Rushing to new parameters without confirming is wasted compute.

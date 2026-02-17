@@ -40,7 +40,15 @@ V_rest variance is the core problem. Slot 3 must always re-run the current best 
 4. Log: `Mutation: [none] — robustness re-run of Node X`
 5. After 3+ samples, compute V_rest mean/std and compare to Node 21 baseline (mean=0.499, std=0.216)
 
-**A config is only better than Node 21 if its V_rest mean (3+ samples) > 0.55 with conn_R2 mean > 0.8.**
+**A config is only better than Node 21 if its V_rest mean (3+ samples) > 0.55 AND V_rest std < 0.20 with conn_R2 mean > 0.8.**
+
+### Repeatability Over Exploration
+
+When a config shows a promising V_rest result (e.g., V_rest > 0.65 on first sample):
+- **Next batch**: Dedicate slots 1, 2, AND 3 to re-running that config (only slot 0 explores)
+- This gives 3 more samples in one batch, reaching the 4-sample minimum for conclusions
+- Do NOT waste 3 batches testing new parameters when you have an unconfirmed promising result
+- A single good V_rest is within Node 21's variance range (0.11-0.78) and proves nothing
 
 ## Start Call (first batch, no results yet)
 
