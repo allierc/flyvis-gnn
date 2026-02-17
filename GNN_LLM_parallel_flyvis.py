@@ -72,7 +72,8 @@ CLUSTER_ROOT_DIR = f"{CLUSTER_HOME}/Graph/flyvis-gnn"
 
 
 def submit_cluster_job(slot, config_path, analysis_log_path, config_file_field,
-                       log_dir, root_dir, erase=True, node_name='a100'):
+                       log_dir, root_dir, erase=True, node_name='a100',
+                       generate=False, seed=None):
     """Submit a single flyvis training job to the cluster WITHOUT -K (non-blocking)."""
     cluster_script_path = f"{log_dir}/cluster_train_{slot:02d}.sh"
     error_details_path = f"{log_dir}/training_error_{slot:02d}.log"
@@ -87,6 +88,10 @@ def submit_cluster_job(slot, config_path, analysis_log_path, config_file_field,
     cluster_train_cmd += f" --error_log '{cluster_error_log}'"
     if erase:
         cluster_train_cmd += " --erase"
+    if generate:
+        cluster_train_cmd += " --generate"
+    if seed is not None:
+        cluster_train_cmd += f" --seed {seed}"
 
     with open(cluster_script_path, 'w') as f:
         f.write("#!/bin/bash\n")
@@ -505,9 +510,13 @@ Write the planned mutations to the working memory file."""
         print(f"\033[94m{'='*60}\033[0m")
 
         # -------------------------------------------------------------------
-        # PHASE 1: No data generation needed for flyvis (pre-generated)
+        # PHASE 1: Load configs (data generation handled per-slot if needed)
         # -------------------------------------------------------------------
-        print(f"\n\033[93mPHASE 1: Loading configs for {n_slots} slots (data is pre-generated)\033[0m")
+        generate_data = "generate" in task
+        if generate_data:
+            print(f"\n\033[93mPHASE 1: Loading configs for {n_slots} slots (data will be re-generated per slot)\033[0m")
+        else:
+            print(f"\n\033[93mPHASE 1: Loading configs for {n_slots} slots (data is pre-generated)\033[0m")
 
         configs = {}
         for slot_idx, iteration in enumerate(iterations):
@@ -533,6 +542,7 @@ Write the planned mutations to the working memory file."""
                 for slot_idx, iteration in enumerate(iterations):
                     slot = slot_idx
                     config = configs[slot]
+                    slot_seed = (iteration * 1000 + slot) if generate_data else None
                     jid = submit_cluster_job(
                         slot=slot,
                         config_path=config_paths[slot],
@@ -541,7 +551,9 @@ Write the planned mutations to the working memory file."""
                         log_dir=log_dir,
                         root_dir=root_dir,
                         erase=True,
-                        node_name=claude_node_name
+                        node_name=claude_node_name,
+                        generate=generate_data,
+                        seed=slot_seed
                     )
                     if jid:
                         job_ids[slot] = jid
@@ -663,6 +675,24 @@ Fix the bug. Do NOT make other changes."""
 
                     log_file = open(analysis_log_paths[slot], 'w')
                     try:
+                        # Generate data if requested
+                        if generate_data:
+                            from flyvis_gnn.generators.graph_data_generator import data_generate
+                            slot_seed = iteration * 1000 + slot
+                            config.simulation.seed = slot_seed
+                            print(f"\033[90m  slot {slot}: generating data with seed={slot_seed}\033[0m")
+                            data_generate(
+                                config=config,
+                                device=device,
+                                visualize=False,
+                                run_vizualized=0,
+                                style="color",
+                                alpha=1,
+                                erase=True,
+                                bSave=True,
+                                step=100,
+                            )
+
                         # Train
                         data_train(
                             config=config,

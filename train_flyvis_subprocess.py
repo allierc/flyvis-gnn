@@ -35,6 +35,8 @@ def main():
     parser.add_argument('--config_file', type=str, default=None, help='Config file name for log directory')
     parser.add_argument('--error_log', type=str, default=None, help='Path to error log file')
     parser.add_argument('--best_model', type=str, default=None, help='Best model path')
+    parser.add_argument('--generate', action='store_true', help='Regenerate data before training')
+    parser.add_argument('--seed', type=int, default=None, help='Override simulation seed (for data variance)')
 
     args = parser.parse_args()
 
@@ -59,8 +61,28 @@ def main():
                 pre_folder += '/'
             config.dataset = pre_folder + config.dataset
 
+        # Override seed if specified
+        if args.seed is not None:
+            config.simulation.seed = args.seed
+
         # Set device
         device = set_device(args.device)
+
+        # Phase 0: Generate data (if requested)
+        if args.generate:
+            from flyvis_gnn.generators.graph_data_generator import data_generate
+            print(f"Generating data with seed={config.simulation.seed} ...")
+            data_generate(
+                config=config,
+                device=device,
+                visualize=False,
+                run_vizualized=0,
+                style="color",
+                alpha=1,
+                erase=True,
+                bSave=True,
+                step=100,
+            )
 
         # Open log file if specified
         log_file = None
