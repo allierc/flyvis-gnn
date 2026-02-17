@@ -26,11 +26,10 @@ import numpy as np
 
 from flyvis_gnn.models.utils import (
     set_trainable_parameters,
-    plot_training_flyvis,
-    plot_weight_comparison,
     analyze_data_svd,
     LossRegularizer,
 )
+from flyvis_gnn.plot import plot_training_flyvis, plot_weight_comparison
 from flyvis_gnn.utils import (
     to_numpy,
     CustomColorMap,
@@ -43,7 +42,7 @@ from flyvis_gnn.utils import (
     get_datavis_root_dir,
 )
 from flyvis_gnn.figure_style import dark_style
-from flyvis_gnn.generators.plots import plot_spatial_activity_grid, INDEX_TO_NAME
+from flyvis_gnn.plot import plot_spatial_activity_grid, INDEX_TO_NAME
 from flyvis_gnn.models.flyvis_gnn import FlyVisGNN
 from flyvis_gnn.models.registry import create_model
 from flyvis_gnn.models.Neural_ode_wrapper_FlyVis import (
@@ -63,7 +62,8 @@ import seaborn as sns
 import imageio
 imread = imageio.imread
 from matplotlib.colors import LinearSegmentedColormap
-from flyvis_gnn.generators.utils import plot_signal_loss, generate_compressed_video_mp4, init_connectivity
+from flyvis_gnn.generators.utils import generate_compressed_video_mp4, init_connectivity
+from flyvis_gnn.plot import plot_signal_loss
 from flyvis_gnn.generators.graph_data_generator import (
     apply_pairwise_knobs_torch,
     assign_columns_from_uv,
@@ -267,6 +267,8 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     else:
         print('no state_dict loaded - using freshly initialized model')
 
+    # === LLM-MODIFIABLE: OPTIMIZER SETUP START ===
+    # Change optimizer type, learning rate schedule, parameter groups
     lr = tc.learning_rate_start
     if tc.learning_rate_update_start == 0:
         lr_update = tc.learning_rate_start
@@ -281,6 +283,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
     optimizer, n_total_params = set_trainable_parameters(model=model, lr_embedding=lr_embedding, lr=lr,
                                                          lr_update=lr_update, lr_W=lr_W, learning_rate_NNR=learning_rate_NNR, learning_rate_NNR_f = learning_rate_NNR_f)
+    # === LLM-MODIFIABLE: OPTIMIZER SETUP END ===
     model.train()
 
     net = f"{log_dir}/models/best_model_with_{tc.n_runs - 1}_graphs.pt"
@@ -346,6 +349,10 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         field_R2 = None
         field_slope = None
         pbar = trange(Niter, ncols=150)
+        # === LLM-MODIFIABLE: TRAINING LOOP START ===
+        # Main training loop. Suggested changes: loss function, gradient clipping,
+        # data sampling strategy, LR scheduler steps, early stopping.
+        # Do NOT change: function signature, model construction, data loading, return values.
         for N in pbar:
 
             optimizer.zero_grad()
@@ -531,14 +538,16 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                         loss = loss + (pred[ids_batch] - y_batch[ids_batch]).norm(2)
 
 
+                # === LLM-MODIFIABLE: BACKWARD AND STEP START ===
+                # Allowed changes: gradient clipping, LR scheduler step, loss scaling
                 loss.backward()
-
 
                 # debug gradient check for neural ODE training
                 if DEBUG_ODE and tc.neural_ODE_training and (N % 500 == 0):
                     debug_check_gradients(model, loss, N)
 
                 optimizer.step()
+                # === LLM-MODIFIABLE: BACKWARD AND STEP END ===
 
                 total_loss += loss.item()
                 total_loss_regul += regularizer.get_iteration_total()
@@ -725,6 +734,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
             # check_and_clear_memory(device=device, iteration_number=N, every_n_iterations=Niter // 50, memory_percentage_threshold=0.6)
 
+        # === LLM-MODIFIABLE: TRAINING LOOP END ===
 
         # Calculate epoch-level losses
         epoch_total_loss = total_loss / n_neurons

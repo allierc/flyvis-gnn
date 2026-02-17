@@ -9,7 +9,7 @@ except ImportError:
     load_wormvae_data = None
     load_zebrafish_data = None
 from flyvis_gnn.figure_style import default_style, dark_style
-from flyvis_gnn.generators.plots import (
+from flyvis_gnn.plot import (
     plot_spatial_activity_grid,
     plot_kinograph,
     plot_activity_traces,

@@ -633,3 +633,2366 @@ def plot_vrest(ax, slopes_lin_phi, offsets_lin_phi, gt_V_rest, n_neurons, mc=Non
     ax.tick_params(axis='both', which='major', labelsize=24)
 
     return r_squared
+
+
+# ================================================================== #
+#  CONSOLIDATED FROM generators/plots.py
+# ================================================================== #
+
+from typing import Optional, Dict
+from flyvis_gnn.figure_style import FigureStyle, default_style
+
+INDEX_TO_NAME: dict[int, str] = {
+    0: 'am', 1: 'c2', 2: 'c3', 3: 'ct1(lo1)', 4: 'ct1(m10)',
+    5: 'l1', 6: 'l2', 7: 'l3', 8: 'l4', 9: 'l5',
+    10: 'lawf1', 11: 'lawf2', 12: 'mi1', 13: 'mi10', 14: 'mi11',
+    15: 'mi12', 16: 'mi13', 17: 'mi14', 18: 'mi15', 19: 'mi2',
+    20: 'mi3', 21: 'mi4', 22: 'mi9', 23: 'r1', 24: 'r2',
+    25: 'r3', 26: 'r4', 27: 'r5', 28: 'r6', 29: 'r7', 30: 'r8',
+    31: 't1', 32: 't2', 33: 't2a', 34: 't3', 35: 't4a',
+    36: 't4b', 37: 't4c', 38: 't4d', 39: 't5a', 40: 't5b',
+    41: 't5c', 42: 't5d', 43: 'tm1', 44: 'tm16', 45: 'tm2',
+    46: 'tm20', 47: 'tm28', 48: 'tm3', 49: 'tm30', 50: 'tm4',
+    51: 'tm5y', 52: 'tm5a', 53: 'tm5b', 54: 'tm5c', 55: 'tm9',
+    56: 'tmy10', 57: 'tmy13', 58: 'tmy14', 59: 'tmy15',
+    60: 'tmy18', 61: 'tmy3', 62: 'tmy4', 63: 'tmy5a', 64: 'tmy9',
+}
+
+ANATOMICAL_ORDER: list[Optional[int]] = [
+    None, 23, 24, 25, 26, 27, 28, 29, 30,
+    5, 6, 7, 8, 9, 10, 11, 12,
+    19, 20, 21, 22,
+    13, 14, 15, 16, 17, 18,
+    43, 45, 48, 50, 44, 46, 47, 49, 51, 52, 53, 54, 55,
+    61, 62, 63, 56, 57, 58, 59, 60, 64,
+    1, 2, 4, 3,
+    31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42,
+    0,
+]
+def plot_spatial_activity_grid(
+    positions: np.ndarray,
+    voltages: np.ndarray,
+    stimulus: np.ndarray,
+    neuron_types: np.ndarray,
+    output_path: str,
+    calcium: Optional[np.ndarray] = None,
+    n_input_neurons: Optional[int] = None,
+    index_to_name: Optional[dict] = None,
+    anatomical_order: Optional[list] = None,
+    style: FigureStyle = default_style,
+) -> None:
+    """8x9 or 16x9 hex scatter grid of per-neuron-type spatial activity.
+
+    Args:
+        positions: (N, 2) spatial positions for hex scatter.
+        voltages: (N,) voltage per neuron.
+        stimulus: (n_input,) stimulus values for input neurons.
+        neuron_types: (N,) integer neuron type per neuron.
+        output_path: where to save the figure.
+        calcium: (N,) calcium values (if not None, adds bottom 8 rows).
+        n_input_neurons: number of input neurons (defaults to len(stimulus)).
+        index_to_name: type index -> name mapping. Defaults to INDEX_TO_NAME.
+        anatomical_order: panel ordering. Defaults to ANATOMICAL_ORDER.
+        style: FigureStyle instance.
+    """
+    names = index_to_name or INDEX_TO_NAME
+    order = anatomical_order or ANATOMICAL_ORDER
+    n_inp = n_input_neurons or len(stimulus)
+    include_calcium = calcium is not None
+
+    n_cols = 9
+    n_rows = 16 if include_calcium else 8
+    panel_w, panel_h = 2.0, 1.8
+    fig, axes = plt.subplots(
+        n_rows, n_cols,
+        figsize=(panel_w * n_cols, panel_h * n_rows),
+        facecolor=style.background,
+    )
+    plt.subplots_adjust(hspace=1.2)
+    axes_flat = axes.flatten()
+
+    # hide trailing panels in voltage section
+    n_panels = len(order)
+    for i in range(n_panels, n_cols * 8):
+        if i < len(axes_flat):
+            axes_flat[i].set_visible(False)
+    if include_calcium:
+        for i in range(n_panels + n_cols * 8, len(axes_flat)):
+            axes_flat[i].set_visible(False)
+
+    vmin_v, vmax_v = style.hex_voltage_range
+    vmin_s, vmax_s = style.hex_stimulus_range
+    vmin_ca, vmax_ca = style.hex_calcium_range
+
+    for panel_idx, type_idx in enumerate(order):
+        # --- voltage panel ---
+        ax_v = axes_flat[panel_idx]
+        _draw_hex_panel(
+            ax_v, type_idx, positions, voltages, stimulus,
+            neuron_types, n_inp, names,
+            cmap=style.cmap, vmin=vmin_v, vmax=vmax_v,
+            stim_cmap=style.cmap, stim_vmin=vmin_s, stim_vmax=vmax_s,
+            style=style,
+        )
+
+        # --- calcium panel (if present) ---
+        if include_calcium:
+            ax_ca = axes_flat[panel_idx + n_cols * 8]
+            if type_idx is None:
+                # stimulus panel (same as voltage section)
+                ax_ca.scatter(
+                    positions[:n_inp, 0], positions[:n_inp, 1],
+                    s=style.hex_stimulus_marker_size, c=stimulus,
+                    cmap=style.cmap, vmin=vmin_s, vmax=vmax_s,
+                    marker=style.hex_marker, alpha=1.0, linewidths=0,
+                )
+                ax_ca.set_title(style._label('stimuli'), fontsize=style.font_size)
+            else:
+                mask = neuron_types == type_idx
+                count = int(np.sum(mask))
+                name = names.get(type_idx, f'type_{type_idx}')
+                if count > 0:
+                    ax_ca.scatter(
+                        positions[:count, 0], positions[:count, 1],
+                        s=style.hex_marker_size, c=calcium[mask],
+                        cmap=style.cmap_calcium, vmin=vmin_ca, vmax=vmax_ca,
+                        marker=style.hex_marker, alpha=1, linewidths=0,
+                    )
+                ax_ca.set_title(style._label(name), fontsize=style.font_size)
+            ax_ca.set_facecolor(style.background)
+            ax_ca.set_xticks([])
+            ax_ca.set_yticks([])
+            ax_ca.set_aspect('equal')
+            for spine in ax_ca.spines.values():
+                spine.set_visible(False)
+
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.95 if not include_calcium else 0.92, bottom=0.05)
+    style.savefig(fig, output_path)
+
+
+def plot_kinograph(
+    activity: np.ndarray,
+    stimulus: np.ndarray,
+    output_path: str,
+    rank_90_act: int = 0,
+    rank_99_act: int = 0,
+    rank_90_inp: int = 0,
+    rank_99_inp: int = 0,
+    zoom_size: int = 200,
+    style: FigureStyle = default_style,
+) -> None:
+    """2x2 kinograph: full activity + zoom, full stimulus + zoom.
+
+    Args:
+        activity: (n_neurons, n_frames) transposed voltage array.
+        stimulus: (n_input_neurons, n_frames) transposed stimulus array.
+        output_path: where to save the figure.
+        rank_90_act: effective rank at 90% variance (activity).
+        rank_99_act: effective rank at 99% variance (activity).
+        rank_90_inp: effective rank at 90% variance (input).
+        rank_99_inp: effective rank at 99% variance (input).
+        zoom_size: size of zoom window in neurons and frames.
+        style: FigureStyle instance.
+    """
+    n_neurons, n_frames = activity.shape
+    n_input, _ = stimulus.shape
+    vmax_act = np.abs(activity).max()
+    vmax_inp = np.abs(stimulus).max() * 1.2
+    zoom_f = min(zoom_size, n_frames)
+    zoom_n_act = min(zoom_size, n_neurons)
+    zoom_n_inp = min(zoom_size, n_input)
+
+    fig, axes = plt.subplots(
+        2, 2,
+        figsize=(style.figure_height * 3.5, style.figure_height * 2.5),
+        facecolor=style.background,
+        gridspec_kw={'width_ratios': [2, 1]},
+    )
+
+    imshow_kw = dict(aspect='auto', cmap=style.cmap, origin='lower', interpolation='nearest')
+
+    # top-left: full activity
+    ax = axes[0, 0]
+    im = ax.imshow(activity, vmin=-vmax_act, vmax=vmax_act, **imshow_kw)
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04).ax.tick_params(labelsize=style.tick_font_size)
+    style.ylabel(ax, 'neurons')
+    style.xlabel(ax, 'time (frames)')
+    ax.set_xticks([0, n_frames - 1])
+    ax.set_xticklabels([0, n_frames], fontsize=style.tick_font_size)
+    ax.set_yticks([0, n_neurons - 1])
+    ax.set_yticklabels([1, n_neurons], fontsize=style.tick_font_size)
+    style.annotate(ax, f'rank(90%)={rank_90_act}  rank(99%)={rank_99_act}', (0.02, 0.97), va='top', ha='left')
+
+    # top-right: zoom activity
+    ax = axes[0, 1]
+    im = ax.imshow(activity[:zoom_n_act, :zoom_f], vmin=-vmax_act, vmax=vmax_act, **imshow_kw)
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04).ax.tick_params(labelsize=style.tick_font_size)
+    style.ylabel(ax, 'neurons')
+    style.xlabel(ax, 'time (frames)')
+    ax.set_xticks([0, zoom_f - 1])
+    ax.set_xticklabels([0, zoom_f], fontsize=style.tick_font_size)
+    ax.set_yticks([0, zoom_n_act - 1])
+    ax.set_yticklabels([1, zoom_n_act], fontsize=style.tick_font_size)
+
+    # bottom-left: full stimulus
+    ax = axes[1, 0]
+    im = ax.imshow(stimulus, vmin=-vmax_inp, vmax=vmax_inp, **imshow_kw)
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04).ax.tick_params(labelsize=style.tick_font_size)
+    style.ylabel(ax, 'input neurons')
+    style.xlabel(ax, 'time (frames)')
+    ax.set_xticks([0, stimulus.shape[1] - 1])
+    ax.set_xticklabels([0, stimulus.shape[1]], fontsize=style.tick_font_size)
+    ax.set_yticks([0, n_input - 1])
+    ax.set_yticklabels([1, n_input], fontsize=style.tick_font_size)
+    style.annotate(ax, f'rank(90%)={rank_90_inp}  rank(99%)={rank_99_inp}', (0.02, 0.97), va='top', ha='left')
+
+    # bottom-right: zoom stimulus
+    ax = axes[1, 1]
+    im = ax.imshow(stimulus[:zoom_n_inp, :zoom_f], vmin=-vmax_inp, vmax=vmax_inp, **imshow_kw)
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04).ax.tick_params(labelsize=style.tick_font_size)
+    style.ylabel(ax, 'input neurons')
+    style.xlabel(ax, 'time (frames)')
+    ax.set_xticks([0, zoom_f - 1])
+    ax.set_xticklabels([0, zoom_f], fontsize=style.tick_font_size)
+    ax.set_yticks([0, zoom_n_inp - 1])
+    ax.set_yticklabels([1, zoom_n_inp], fontsize=style.tick_font_size)
+
+    plt.tight_layout()
+    style.savefig(fig, output_path)
+
+
+def plot_activity_traces(
+    activity: np.ndarray,
+    output_path: str,
+    n_traces: int = 100,
+    max_frames: int = 10000,
+    n_input_neurons: int = 0,
+    style: FigureStyle = default_style,
+) -> None:
+    """Sampled neuron voltage traces stacked vertically.
+
+    Args:
+        activity: (n_neurons, n_frames) transposed voltage array.
+        output_path: where to save the figure.
+        n_traces: number of neurons to sample.
+        max_frames: truncate x-axis at this frame count.
+        n_input_neurons: shown as annotation.
+        style: FigureStyle instance.
+    """
+    n_neurons, n_frames = activity.shape
+    n_traces = min(n_traces, n_neurons)
+    sampled_idx = np.sort(np.random.choice(n_neurons, n_traces, replace=False))
+    sampled = activity[sampled_idx]
+    offset = sampled + 2 * np.arange(n_traces)[:, None]
+
+    fig, ax = style.figure(aspect=3.0)
+    ax.plot(offset.T, linewidth=0.5, alpha=0.7, color=style.foreground)
+    style.xlabel(ax, 'time (frames)')
+    ax.set_yticks([])
+    ax.set_xlim([0, min(n_frames, max_frames)])
+    ax.set_ylim([offset[0].min() - 2, offset[-1].max() + 2])
+    if n_input_neurons > 0:
+        style.annotate(ax, f'{n_input_neurons} neurons', (0.98, 0.98), va='top', ha='right')
+
+    style.savefig(fig, output_path)
+
+
+def plot_selected_neuron_traces(
+    activity: np.ndarray,
+    type_list: np.ndarray,
+    output_path: str,
+    selected_types: Optional[list[int]] = None,
+    start_frame: int = 63000,
+    end_frame: int = 63500,
+    index_to_name: Optional[dict] = None,
+    step_v: float = 1.5,
+    style: FigureStyle = default_style,
+) -> None:
+    """Traces for specific neuron types over a time window.
+
+    Args:
+        activity: (n_neurons, n_frames) full activity array.
+        type_list: (n_neurons,) integer neuron type per neuron.
+        output_path: where to save the figure.
+        selected_types: list of type indices to plot. Defaults to
+            [l1, mi1, mi2, r1, t1, t4a, t5a, tm1, tm4, tm9].
+        start_frame: start of time window.
+        end_frame: end of time window.
+        index_to_name: type index -> name mapping. Defaults to INDEX_TO_NAME.
+        step_v: vertical offset between traces.
+        style: FigureStyle instance.
+    """
+    names = index_to_name or INDEX_TO_NAME
+    if selected_types is None:
+        selected_types = [5, 12, 19, 23, 31, 35, 39, 43, 50, 55]
+
+    # find one neuron per selected type
+    neuron_indices = []
+    for stype in selected_types:
+        indices = np.where(type_list == stype)[0]
+        if len(indices) > 0:
+            neuron_indices.append(indices[0])
+
+    n_sel = len(neuron_indices)
+    if n_sel == 0:
+        return
+
+    true_slice = activity[neuron_indices, start_frame:end_frame]
+
+    fig, ax = style.figure(aspect=3.0)
+    for i in range(n_sel):
+        baseline = np.mean(true_slice[i])
+        ax.plot(true_slice[i] - baseline + i * step_v,
+                linewidth=style.line_width, c='green', alpha=0.75)
+
+    for i in range(n_sel):
+        ax.text(-100, i * step_v, style._label(names.get(selected_types[i], f'type_{selected_types[i]}')),
+                fontsize=style.tick_font_size, va='center', color=style.foreground)
+
+    ax.set_ylim([-step_v, n_sel * step_v])
+    ax.set_yticks([])
+    ax.set_xticks([0, end_frame - start_frame])
+    ax.set_xticklabels([start_frame, end_frame], fontsize=style.tick_font_size)
+    style.xlabel(ax, 'frame')
+
+    plt.subplots_adjust(left=0.05)
+    style.savefig(fig, output_path)
+
+
+# --------------------------------------------------------------------------- #
+#  Private helpers
+# --------------------------------------------------------------------------- #
+
+def _draw_hex_panel(
+    ax, type_idx, positions, voltages, stimulus, neuron_types,
+    n_input_neurons, names, cmap, vmin, vmax,
+    stim_cmap, stim_vmin, stim_vmax, style,
+):
+    """Draw a single hex scatter panel (voltage or stimulus)."""
+    if type_idx is None:
+        ax.scatter(
+            positions[:n_input_neurons, 0], positions[:n_input_neurons, 1],
+            s=style.hex_stimulus_marker_size, c=stimulus,
+            cmap=stim_cmap, vmin=stim_vmin, vmax=stim_vmax,
+            marker=style.hex_marker, alpha=1.0, linewidths=0,
+        )
+        ax.set_title(style._label('stimuli'), fontsize=style.font_size)
+    else:
+        mask = neuron_types == type_idx
+        count = int(np.sum(mask))
+        name = names.get(type_idx, f'type_{type_idx}')
+        if count > 0:
+            ax.scatter(
+                positions[:count, 0], positions[:count, 1],
+                s=style.hex_marker_size, c=voltages[mask],
+                cmap=cmap, vmin=vmin, vmax=vmax,
+                marker=style.hex_marker, alpha=1, linewidths=0,
+            )
+        ax.set_title(style._label(name), fontsize=style.font_size)
+
+    ax.set_facecolor(style.background)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_aspect('equal')
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+
+# ================================================================== #
+#  CONSOLIDATED FROM generators/utils.py
+# ================================================================== #
+
+import seaborn as sns
+from tifffile import imread
+
+def plot_synaptic_frame_visual(X1, A1, H1, dataset_name, run, num):
+    """Plot frame for visual field type."""
+    plt.figure(figsize=(8, 8))
+    plt.axis("off")
+    plt.subplot(211)
+    plt.axis("off")
+    plt.title("$b_i$", fontsize=24)
+    plt.scatter(
+        to_numpy(X1[0:1024, 1]) * 0.95,
+        to_numpy(X1[0:1024, 0]) * 0.95,
+        s=15,
+        c=to_numpy(A1[0:1024, 0]),
+        cmap="viridis",
+        vmin=0,
+        vmax=2,
+    )
+    plt.scatter(
+        to_numpy(X1[1024:, 1]) * 0.95 + 0.2,
+        to_numpy(X1[1024:, 0]) * 0.95,
+        s=15,
+        c=to_numpy(A1[1024:, 0]),
+        cmap="viridis",
+        vmin=-4,
+        vmax=4,
+    )
+    plt.xticks([])
+    plt.yticks([])
+    plt.subplot(212)
+    plt.axis("off")
+    plt.title("$x_i$", fontsize=24)
+    plt.scatter(
+        to_numpy(X1[0:1024, 1]),
+        to_numpy(X1[0:1024, 0]),
+        s=15,
+        c=to_numpy(H1[0:1024, 0]),
+        cmap="viridis",
+        vmin=-10,
+        vmax=10,
+    )
+    plt.scatter(
+        to_numpy(X1[1024:, 1]) + 0.2,
+        to_numpy(X1[1024:, 0]),
+        s=15,
+        c=to_numpy(H1[1024:, 0]),
+        cmap="viridis",
+        vmin=-10,
+        vmax=10,
+    )
+    plt.xticks([])
+    plt.yticks([])
+    plt.tight_layout()
+    plt.savefig(f"graphs_data/{dataset_name}/Fig/Fig_{run}_{num}.png", dpi=80)
+    plt.close()
+
+
+def plot_synaptic_frame_modulation(X1, A1, H1, dataset_name, run, num):
+    """Plot frame for modulation field type."""
+    plt.figure(figsize=(12, 12))
+    plt.subplot(221)
+    plt.scatter(
+        to_numpy(X1[:, 1]),
+        to_numpy(X1[:, 0]),
+        s=100,
+        c=to_numpy(A1[:, 0]),
+        cmap="viridis",
+        vmin=0,
+        vmax=2,
+    )
+    plt.subplot(222)
+    plt.scatter(
+        to_numpy(X1[:, 1]),
+        to_numpy(X1[:, 0]),
+        s=100,
+        c=to_numpy(H1[:, 0]),
+        cmap="viridis",
+        vmin=-5,
+        vmax=5,
+    )
+    plt.xticks([])
+    plt.yticks([])
+    plt.tight_layout()
+    plt.savefig(f"graphs_data/{dataset_name}/Fig/Fig_{run}_{num}.png", dpi=80)
+    plt.close()
+
+
+def plot_synaptic_frame_plasticity(X1, x, dataset_name, run, num):
+    """Plot frame for PDE_N6/PDE_N7 with short term plasticity."""
+    plt.figure(figsize=(12, 5.6))
+    plt.axis("off")
+    plt.subplot(121)
+    plt.title("activity $x_i$", fontsize=24)
+    plt.scatter(
+        to_numpy(X1[:, 0]),
+        to_numpy(X1[:, 1]),
+        s=200,
+        c=to_numpy(x[:, 3]),
+        cmap="viridis",
+        vmin=-5,
+        vmax=5,
+        edgecolors="k",
+        alpha=1,
+    )
+    cbar = plt.colorbar()
+    cbar.ax.yaxis.set_tick_params(labelsize=12)
+    plt.xticks([])
+    plt.yticks([])
+    plt.subplot(122)
+    plt.title("short term plasticity $y_i$", fontsize=24)
+    plt.scatter(
+        to_numpy(X1[:, 0]),
+        to_numpy(X1[:, 1]),
+        s=200,
+        c=to_numpy(x[:, 5]),
+        cmap="grey",
+        vmin=0,
+        vmax=1,
+        edgecolors="k",
+        alpha=1,
+    )
+    cbar = plt.colorbar()
+    cbar.ax.yaxis.set_tick_params(labelsize=12)
+    plt.xticks([])
+    plt.yticks([])
+    plt.tight_layout()
+    plt.savefig(f"graphs_data/{dataset_name}/Fig/Fig_{run}_{num}.tif", dpi=170)
+    plt.close()
+
+
+def plot_synaptic_frame_default(X1, x, dataset_name, run, num):
+    """Plot default frame for synaptic simulation."""
+    plt.figure(figsize=(10, 10))
+    plt.axis("off")
+    plt.scatter(
+        to_numpy(X1[:, 0]),
+        to_numpy(X1[:, 1]),
+        s=100,
+        c=to_numpy(x[:, 3]),
+        cmap="viridis",
+        vmin=-40,
+        vmax=40,
+    )
+    plt.xticks([])
+    plt.yticks([])
+    plt.tight_layout()
+    plt.savefig(f"graphs_data/{dataset_name}/Fig/Fig_{run}_{num}.tif", dpi=170)
+    plt.close()
+
+    # Read back and create zoomed subplot
+    im_ = imread(f"graphs_data/{dataset_name}/Fig/Fig_{run}_{num}.tif")
+    plt.figure(figsize=(10, 10))
+    plt.imshow(im_)
+    plt.xticks([])
+    plt.yticks([])
+    plt.subplot(3, 3, 1)
+    plt.imshow(im_[800:1000, 800:1000, :])
+    plt.xticks([])
+    plt.yticks([])
+    plt.tight_layout()
+    plt.savefig(f"graphs_data/{dataset_name}/Fig/Fig_{run}_{num}.png", dpi=80)
+    plt.close()
+
+
+def plot_synaptic_activity_traces(x_list, n_neurons, n_frames, dataset_name, model=None, config=None):
+    """Plot activity traces for synaptic simulation."""
+    print('plot activity ...')
+    activity = x_list[:, :, 3:4]
+    activity = activity.squeeze()
+    activity = activity.T
+
+    # Sample 100 traces if n_neurons > 100
+    if n_neurons > 100:
+        sampled_indices = np.random.choice(n_neurons, 100, replace=False)
+        sampled_indices = np.sort(sampled_indices)
+        activity_plot = activity[sampled_indices]
+        n_plot = 100
+    else:
+        activity_plot = activity
+        sampled_indices = np.arange(n_neurons)
+        n_plot = n_neurons
+
+    # Offset traces so neuron 0 is at bottom (consistent with kinograph origin='lower')
+    activity_plot = activity_plot + 10 * np.arange(n_plot)[:, None]
+    plt.figure(figsize=(10, 10))
+
+    # Plot all traces
+    plt.plot(activity_plot.T, linewidth=2, alpha=0.7)
+
+    # Plot external_input trace at the top (from x_list[:, :, 4])
+    external_input = x_list[:, :, 4]  # (n_frames, n_neurons)
+    if np.abs(external_input).max() > 1e-6:  # Only plot if there's external input
+        # Average external input across all neurons or use max
+        external_input_mean = np.mean(external_input, axis=1)  # (n_frames,)
+        # Scale and offset to show at top of plot
+        ext_scale = 20 / (np.abs(external_input_mean).max() + 1e-6)
+        ext_offset = activity_plot.max() + 50
+        frames = np.arange(min(n_frames, external_input.shape[0]))
+        plt.plot(frames, external_input_mean[:len(frames)] * ext_scale + ext_offset,
+                 color='yellow', linewidth=2, linestyle='--')
+        plt.text(-100, ext_offset, 'ext_in', fontsize=12, va='center', ha='right', color='yellow')
+        plt.ylim([activity_plot.min() - 50, ext_offset + 50])
+
+    for i in range(0, n_plot, 5):
+        plt.text(-100, activity_plot[i, 0], str(sampled_indices[i]), fontsize=16, va='center', ha='right')
+
+    ax = plt.gca()
+
+    # Compute and display effective rank
+    from sklearn.utils.extmath import randomized_svd
+    activity_for_svd = x_list[:, :, 3]  # (n_frames, n_neurons)
+    n_components = min(50, min(activity_for_svd.shape) - 1)
+    _, S, _ = randomized_svd(activity_for_svd, n_components=n_components, random_state=0)
+    cumvar = np.cumsum(S**2) / np.sum(S**2)
+    rank_90 = int(np.searchsorted(cumvar, 0.90) + 1)
+    rank_99 = int(np.searchsorted(cumvar, 0.99) + 1)
+    ax.text(0.98, 0.98, f'rank(90%)={rank_90}  rank(99%)={rank_99}', fontsize=14,
+            transform=ax.transAxes, va='top', ha='right')
+
+    # "neurons" label above the top index
+    ax.text(-200, activity_plot[-1, 0] + 30, 'neurons', fontsize=16, va='bottom', ha='right')
+    plt.xlabel("time", fontsize=20)
+    plt.xticks(fontsize=16)
+    ax.spines['left'].set_visible(False)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.set_yticks([])
+    plt.xlim([0, min(n_frames, 10000)])
+    plt.tight_layout()
+    plt.savefig(f"graphs_data/{dataset_name}/activity.png", dpi=300)
+    plt.close()
+
+
+def plot_synaptic_kinograph(x_list, n_neurons, n_frames, dataset_name):
+    """Plot kinograph: neurons x time heatmap of activity."""
+    print('plot kinograph ...')
+    activity = x_list[:, :, 3]  # (n_frames, n_neurons)
+    activity = activity.T  # (n_neurons, n_frames)
+    n_frames_plot = min(n_frames, activity.shape[1])
+    activity = activity[:, :n_frames_plot]
+
+    vmax = np.abs(activity).max()
+    plt.figure(figsize=(10, 10))
+    plt.imshow(activity, aspect='auto', cmap='viridis', vmin=-vmax, vmax=vmax, origin='lower', interpolation='nearest')
+    cbar = plt.colorbar(fraction=0.046, pad=0.04)
+    cbar.ax.tick_params(labelsize=16)
+    plt.ylabel('neurons', fontsize=20)
+    plt.xlabel('time', fontsize=20)
+    plt.xticks([0, n_frames_plot - 1], [0, n_frames_plot], fontsize=16)
+    plt.yticks([0, n_neurons - 1], [1, n_neurons], fontsize=16)
+    plt.tight_layout()
+    plt.savefig(f"graphs_data/{dataset_name}/kinograph.png", dpi=300)
+    plt.close()
+
+
+def plot_synaptic_mlp_functions(model, x_list, n_neurons, dataset_name, colormap, device, signal_model_name=None):
+    """Plot MLP0 and MLP1 functions for synaptic simulation.
+
+    For PDE_N5, plots a 2x2 montage showing neuron-neuron dependent transfer functions.
+    Each subplot shows target neuron type k receiving from all source neuron types.
+    """
+    if not hasattr(model, 'func'):
+        return
+
+    print('plot MLP0 and MLP1 functions ...')
+    xnorm = np.std(x_list[:, :, 3])
+    import torch
+    rr = torch.linspace(-xnorm, xnorm, 1000).to(device)
+    neuron_types = x_list[0, :, 6].astype(int)  # neuron_type is at column 6
+    n_neuron_types = int(neuron_types.max()) + 1
+    cmap = plt.cm.get_cmap(colormap)
+
+    # For PDE_N5: plot 2x2 montage of neuron-neuron dependent MLP1
+    if signal_model_name == 'PDE_N5' and n_neuron_types == 4:
+        print('  PDE_N5: plotting 2x2 neuron-neuron dependent MLP1 montage ...')
+        fig = plt.figure(figsize=(16, 16))
+        plt.axis('off')
+
+        for k in range(n_neuron_types):  # target neuron type
+            ax = fig.add_subplot(2, 2, k + 1)
+            # Color the subplot border by target neuron type
+            for spine in ax.spines.values():
+                spine.set_edgecolor(cmap(k))
+                spine.set_linewidth(3)
+
+            if k == 0:
+                plt.ylabel(r'$\psi^*(a_i, a_j, x_i)$', fontsize=32)
+
+            # Plot MLP1 for all source neuron types -> target type k
+            for n in range(n_neuron_types):  # source neuron type
+                # Get width (w) from target neuron type k
+                w_target = model.p[k, 4:5]  # width of target
+
+                # Sample multiple neurons of source type n
+                for m in range(250):
+                    # Get threshold (h) from source neuron type n
+                    if model.p.shape[1] >= 6:
+                        h_source = model.p[n, 5:6]
+                    else:
+                        h_source = torch.zeros_like(w_target)
+
+                    # Compute phi((u - h_source) / w_target)
+                    func_phi = model.phi((rr[:, None] - h_source) / w_target)
+                    # Add the log term: - u * log(w_source) / 50
+                    l_source = torch.log(model.p[n, 4:5])
+                    func_phi = func_phi - rr[:, None] * l_source / 50
+
+                    plt.plot(to_numpy(rr), to_numpy(func_phi), color=cmap(n),
+                             linewidth=2, alpha=0.25)
+
+            plt.ylim([-1.1, 1.1])
+            plt.xlim([-5, 5])
+            if k >= 2:  # bottom row
+                plt.xlabel(r'$x_j$', fontsize=32)
+            plt.xticks(fontsize=20)
+            plt.yticks(fontsize=20)
+
+        plt.tight_layout()
+        plt.savefig(f"graphs_data/{dataset_name}/MLP1_neuron_neuron.png", dpi=150)
+        plt.close()
+
+    # Plot MLP1 (message/phi function) - all neurons (standard plot)
+    plt.figure(figsize=(10, 8))
+    for n in range(n_neurons):
+        neuron_type = neuron_types[n]
+        func_phi = model.func(rr, neuron_type, 'phi')
+        plt.plot(to_numpy(rr), to_numpy(func_phi), color=cmap(neuron_type), linewidth=1, alpha=0.5)
+    plt.xlabel('$x$', fontsize=20)
+    plt.ylabel(r'$\mathrm{MLP}_1(x)$', fontsize=20)
+    plt.xticks(fontsize=16)
+    plt.yticks(fontsize=16)
+    plt.tight_layout()
+    plt.savefig(f"graphs_data/{dataset_name}/MLP1_function.png", dpi=300)
+    plt.close()
+
+    # Plot MLP0 (update function) - all neurons
+    plt.figure(figsize=(10, 8))
+    for n in range(n_neurons):
+        neuron_type = neuron_types[n]
+        func_update = model.func(rr, neuron_type, 'update')
+        plt.plot(to_numpy(rr), to_numpy(func_update), color=cmap(neuron_type), linewidth=1, alpha=0.5)
+    plt.xlabel('$x$', fontsize=20)
+    plt.ylabel(r'$\mathrm{MLP}_0(x)$', fontsize=20)
+    plt.xticks(fontsize=16)
+    plt.yticks(fontsize=16)
+    plt.tight_layout()
+    plt.savefig(f"graphs_data/{dataset_name}/MLP0_function.png", dpi=300)
+    plt.close()
+
+
+def plot_eigenvalue_spectrum(connectivity, dataset_name, mc='k', log_file=None):
+    """Plot eigenvalue spectrum of connectivity matrix (3 panels)."""
+    gt_weight = to_numpy(connectivity)
+    eig_true, _ = np.linalg.eig(gt_weight)
+
+    # Sort eigenvalues by magnitude
+    idx_true = np.argsort(-np.abs(eig_true))
+    eig_true_sorted = eig_true[idx_true]
+    spectral_radius = np.max(np.abs(eig_true))
+
+    fig, axes = plt.subplots(1, 3, figsize=(30, 10))
+
+    # (0) eigenvalues in complex plane
+    axes[0].scatter(eig_true.real, eig_true.imag, s=50, c=mc, alpha=0.7, edgecolors='none')
+    axes[0].axhline(y=0, color='gray', linestyle='--', linewidth=0.5)
+    axes[0].axvline(x=0, color='gray', linestyle='--', linewidth=0.5)
+    axes[0].set_xlabel('real', fontsize=32)
+    axes[0].set_ylabel('imag', fontsize=32)
+    axes[0].tick_params(labelsize=20)
+    axes[0].set_title('eigenvalues in complex plane', fontsize=28)
+    axes[0].text(0.05, 0.95, f'spectral radius: {spectral_radius:.3f}',
+            transform=axes[0].transAxes, fontsize=20, verticalalignment='top')
+
+    # (1) eigenvalue magnitude (sorted)
+    axes[1].scatter(range(len(eig_true_sorted)), np.abs(eig_true_sorted), s=50, c=mc, alpha=0.7, edgecolors='none')
+    axes[1].set_xlabel('index', fontsize=32)
+    axes[1].set_ylabel('|eigenvalue|', fontsize=32)
+    axes[1].tick_params(labelsize=20)
+    axes[1].set_title('eigenvalue magnitude (sorted)', fontsize=28)
+
+    # (2) eigenvalue spectrum (log scale)
+    axes[2].plot(np.abs(eig_true_sorted), c=mc, linewidth=2)
+    axes[2].set_xlabel('index', fontsize=32)
+    axes[2].set_ylabel('|eigenvalue|', fontsize=32)
+    axes[2].set_yscale('log')
+    axes[2].tick_params(labelsize=20)
+    axes[2].set_title('eigenvalue spectrum (log scale)', fontsize=28)
+
+    plt.tight_layout()
+    plt.savefig(f"./graphs_data/{dataset_name}/eigenvalues.png", dpi=150)
+    plt.close()
+
+    msg = f'spectral radius: {spectral_radius:.3f}'
+    print(msg)
+    if log_file:
+        log_file.write(msg + '\n')
+    return spectral_radius
+
+
+def plot_connectivity_matrix(connectivity, output_path, vmin_vmax_method='minmax',
+                              percentile=99, vmin=None, vmax=None,
+                              show_labels=True, show_title=True,
+                              zoom_size=20, dpi=100, cbar_fontsize=16, label_fontsize=20):
+    """Plot connectivity matrix heatmap with zoom inset.
+
+    Args:
+        connectivity: Connectivity matrix (torch tensor or numpy array)
+        output_path: Path to save the figure
+        vmin_vmax_method: 'minmax' for full range, 'percentile' for percentile-based
+        percentile: Percentile value if vmin_vmax_method='percentile' (default: 99)
+        vmin: Explicit vmin value (overrides vmin_vmax_method if provided)
+        vmax: Explicit vmax value (overrides vmin_vmax_method if provided)
+        show_labels: Whether to show x/y axis labels (default: True)
+        show_title: Whether to show title (default: True)
+        zoom_size: Size of zoom inset (top-left NxN block, default: 20)
+        dpi: Output DPI (default: 100)
+        cbar_fontsize: Colorbar tick font size (default: 32)
+        label_fontsize: Axis label font size (default: 48)
+    """
+    gt_weight = to_numpy(connectivity)
+    n_neurons = gt_weight.shape[0]
+
+    # Use explicit vmin/vmax if provided, otherwise compute based on method
+    if vmin is None or vmax is None:
+        if vmin_vmax_method == 'percentile':
+            weight_pct = np.percentile(np.abs(gt_weight.flatten()), percentile)
+            vmin, vmax = -weight_pct * 1.1, weight_pct * 1.1
+        else:  # minmax
+            weight_max = np.max(np.abs(gt_weight))
+            vmin, vmax = -weight_max, weight_max
+
+    # Main heatmap
+    plt.figure(figsize=(8, 8))
+    ax = sns.heatmap(gt_weight, center=0, square=True, cmap='bwr',
+                     cbar_kws={'fraction': 0.046}, vmin=vmin, vmax=vmax)
+    cbar = ax.collections[0].colorbar
+    cbar.ax.tick_params(labelsize=cbar_fontsize)
+
+    if show_labels:
+        plt.xticks([0, n_neurons - 1], [1, n_neurons], fontsize=label_fontsize)
+        plt.yticks([0, n_neurons - 1], [1, n_neurons], fontsize=label_fontsize)
+        plt.xticks(rotation=0)
+    else:
+        plt.xticks([])
+        plt.yticks([])
+
+    if show_title:
+        plt.title('connectivity matrix', fontsize=20)
+
+    # Zoom inset (top-left corner)
+    if zoom_size > 0 and n_neurons >= zoom_size:
+        plt.subplot(2, 2, 1)
+        sns.heatmap(gt_weight[0:zoom_size, 0:zoom_size], cbar=False,
+                    center=0, square=True, cmap='bwr', vmin=vmin, vmax=vmax)
+        plt.xticks([])
+        plt.yticks([])
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=dpi)
+    plt.close()
+
+
+def plot_low_rank_connectivity(connectivity, U, V, output_path, dpi=300):
+    """Plot 3-panel figure: W, U, V for low-rank connectivity (W = U @ V).
+
+    Args:
+        connectivity: W matrix (torch tensor or numpy array), shape (n, n)
+        U: left factor, shape (n, rank)
+        V: right factor, shape (rank, n)
+        output_path: path to save figure
+        dpi: output DPI
+    """
+    W = to_numpy(connectivity)
+    U = to_numpy(U)
+    V = to_numpy(V)
+
+    from matplotlib.ticker import MaxNLocator
+
+    fig, axes = plt.subplots(1, 3, figsize=(24, 8))
+
+    # W panel
+    weight_max = np.max(np.abs(W))
+    im0 = axes[0].imshow(W, cmap='bwr', vmin=-weight_max, vmax=weight_max, aspect='auto')
+    axes[0].set_title('W = U V', fontsize=20)
+    axes[0].set_xlabel('post', fontsize=16)
+    axes[0].set_ylabel('pre', fontsize=16)
+    axes[0].tick_params(labelsize=12)
+    axes[0].xaxis.set_major_locator(MaxNLocator(integer=True))
+    axes[0].yaxis.set_major_locator(MaxNLocator(integer=True))
+    plt.colorbar(im0, ax=axes[0], fraction=0.046)
+
+    # U panel
+    u_max = np.max(np.abs(U))
+    im1 = axes[1].imshow(U, cmap='bwr', vmin=-u_max, vmax=u_max, aspect='auto')
+    axes[1].set_title(f'U  ({U.shape[0]} x {U.shape[1]})', fontsize=20)
+    axes[1].set_xlabel('rank', fontsize=16)
+    axes[1].set_ylabel('pre', fontsize=16)
+    axes[1].tick_params(labelsize=12)
+    axes[1].xaxis.set_major_locator(MaxNLocator(integer=True))
+    axes[1].yaxis.set_major_locator(MaxNLocator(integer=True))
+    plt.colorbar(im1, ax=axes[1], fraction=0.046)
+
+    # V panel
+    v_max = np.max(np.abs(V))
+    im2 = axes[2].imshow(V, cmap='bwr', vmin=-v_max, vmax=v_max, aspect='auto')
+    axes[2].set_title(f'V  ({V.shape[0]} x {V.shape[1]})', fontsize=20)
+    axes[2].set_xlabel('post', fontsize=16)
+    axes[2].set_ylabel('rank', fontsize=16)
+    axes[2].tick_params(labelsize=12)
+    axes[2].xaxis.set_major_locator(MaxNLocator(integer=True))
+    axes[2].yaxis.set_major_locator(MaxNLocator(integer=True))
+    plt.colorbar(im2, ax=axes[2], fraction=0.046)
+
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=dpi)
+    plt.close()
+
+
+def plot_signal_loss(loss_dict, log_dir, epoch=None, Niter=None, debug=False,
+                     current_loss=None, current_regul=None, total_loss=None,
+                     total_loss_regul=None):
+    """
+    Plot stratified loss components over training iterations.
+
+    Creates a two-panel figure showing loss and regularization terms in both
+    linear and log scale. Saves to {log_dir}/tmp_training/loss.tif.
+
+    Parameters:
+    -----------
+    loss_dict : dict
+        Dictionary containing loss component lists with keys:
+        - 'loss': Loss without regularization
+        - 'regul_total': Total regularization loss
+        - 'W_L1': W L1 sparsity penalty
+        - 'W_L2': W L2 regularization penalty
+        - 'edge_diff': Edge monotonicity penalty
+        - 'edge_norm': Edge normalization
+        - 'edge_weight': Edge MLP weight regularization
+        - 'phi_weight': Phi MLP weight regularization
+        - 'W_sign': W sign consistency penalty
+    log_dir : str
+        Directory to save the figure
+    epoch : int, optional
+        Current epoch number
+    Niter : int, optional
+        Number of iterations per epoch
+    debug : bool, optional
+        If True, print debug information about loss components
+    current_loss : float, optional
+        Current iteration total loss (for debug)
+    current_regul : float, optional
+        Current iteration regularization (for debug)
+    total_loss : float, optional
+        Accumulated total loss (for debug)
+    total_loss_regul : float, optional
+        Accumulated regularization loss (for debug)
+    """
+    if len(loss_dict['loss']) == 0:
+        return
+
+    # Debug output if requested
+    if debug and current_loss is not None and current_regul is not None:
+        current_pred_loss = current_loss - current_regul
+
+        # Get current iteration component values (last element in each list)
+        comp_sum = (loss_dict['W_L1'][-1] + loss_dict['W_L2'][-1] +
+                   loss_dict['edge_diff'][-1] + loss_dict['edge_norm'][-1] +
+                   loss_dict['edge_weight'][-1] + loss_dict['phi_weight'][-1] +
+                   loss_dict['W_sign'][-1])
+
+        print(f"\n=== DEBUG Loss Components (Epoch {epoch}, Iter {Niter}) ===")
+        print("Current iteration:")
+        print(f"  loss.item() (total): {current_loss:.6f}")
+        print(f"  regul_this_iter: {current_regul:.6f}")
+        print(f"  prediction_loss (loss - regul): {current_pred_loss:.6f}")
+        print("\nRegularization breakdown:")
+        print(f"  W_L1: {loss_dict['W_L1'][-1]:.6f}")
+        print(f"  W_L2: {loss_dict['W_L2'][-1]:.6f}")
+        print(f"  W_sign: {loss_dict['W_sign'][-1]:.6f}")
+        print(f"  edge_diff: {loss_dict['edge_diff'][-1]:.6f}")
+        print(f"  edge_norm: {loss_dict['edge_norm'][-1]:.6f}")
+        print(f"  edge_weight: {loss_dict['edge_weight'][-1]:.6f}")
+        print(f"  phi_weight: {loss_dict['phi_weight'][-1]:.6f}")
+        print(f"  Sum of components: {comp_sum:.6f}")
+        if total_loss is not None and total_loss_regul is not None:
+            print("\nAccumulated (for reference):")
+            print(f"  total_loss (accumulated): {total_loss:.6f}")
+            print(f"  total_loss_regul (accumulated): {total_loss_regul:.6f}")
+        if current_loss > 0:
+            print(f"\nRatio: regul / loss (current iter) = {current_regul / current_loss:.4f}")
+        if current_pred_loss < 0:
+            print("\n⚠️  WARNING: Negative prediction loss! regul > total loss")
+        print("="*60)
+
+    fig_loss, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 10))
+
+    # Add epoch and iteration info as text annotation
+    info_text = ""
+    if epoch is not None:
+        info_text += f"epoch: {epoch}"
+    if Niter is not None:
+        if info_text:
+            info_text += " | "
+        info_text += f"iterations/epoch: {Niter}"
+    if info_text:
+        fig_loss.suptitle(info_text, fontsize=20, y=0.995)
+
+    # Linear scale
+    ax1.plot(loss_dict['loss'], color='b', linewidth=4, label='loss (no regul)', alpha=0.8)
+    ax1.plot(loss_dict['regul_total'], color='b', linewidth=2, label='total regularization', alpha=0.8)
+    ax1.plot(loss_dict['W_L1'], color='r', linewidth=1.5, label='W L1 sparsity', alpha=0.7)
+    ax1.plot(loss_dict['W_L2'], color='darkred', linewidth=1.5, label='W L2 regul', alpha=0.7)
+    ax1.plot(loss_dict['W_sign'], color='navy', linewidth=1.5, label='W sign (Dale)', alpha=0.7)
+    ax1.plot(loss_dict['phi_weight'], color='lime', linewidth=1.5, label='MLP0 Weight Regul', alpha=0.7)
+    ax1.plot(loss_dict['edge_diff'], color='orange', linewidth=1.5, label='MLP1 monotonicity', alpha=0.7)
+    ax1.plot(loss_dict['edge_norm'], color='brown', linewidth=1.5, label='MLP1 norm', alpha=0.7)
+    ax1.plot(loss_dict['edge_weight'], color='pink', linewidth=1.5, label='MLP1 weight regul', alpha=0.7)
+    ax1.set_xlabel('iteration', fontsize=16)
+    ax1.set_ylabel('loss', fontsize=16)
+    ax1.set_title('loss vs iteration', fontsize=18)
+    ax1.legend(fontsize=10, loc='best', ncol=2)
+    ax1.grid(True, alpha=0.3)
+    ax1.tick_params(labelsize=14)
+
+    # Log scale
+    ax2.plot(loss_dict['loss'], color='b', linewidth=4, label='loss (no regul)', alpha=0.8)
+    ax2.plot(loss_dict['regul_total'], color='b', linewidth=2, label='total regularization', alpha=0.8)
+    ax2.plot(loss_dict['W_L1'], color='r', linewidth=1.5, label='W L1 sparsity', alpha=0.7)
+    ax2.plot(loss_dict['W_L2'], color='darkred', linewidth=1.5, label='W L2 regul', alpha=0.7)
+    ax2.plot(loss_dict['W_sign'], color='navy', linewidth=1.5, label='W sign (Dale)', alpha=0.7)
+    ax2.plot(loss_dict['phi_weight'], color='lime', linewidth=1.5, label='MLP0 Weight Regul', alpha=0.7)
+    ax2.plot(loss_dict['edge_diff'], color='orange', linewidth=1.5, label='MLP1 monotonicity', alpha=0.7)
+    ax2.plot(loss_dict['edge_norm'], color='brown', linewidth=1.5, label='MLP1 norm', alpha=0.7)
+    ax2.plot(loss_dict['edge_weight'], color='pink', linewidth=1.5, label='MLP1 weight regul', alpha=0.7)
+    ax2.set_xlabel('iteration', fontsize=16)
+    ax2.set_ylabel('loss', fontsize=16)
+    ax2.set_yscale('log')
+    ax2.set_title('loss vs iteration (Log)', fontsize=18)
+    ax2.legend(fontsize=10, loc='best', ncol=2)
+    ax2.grid(True, alpha=0.3, which='both')
+    ax2.tick_params(labelsize=14)
+
+    plt.tight_layout()
+    plt.savefig(f'{log_dir}/tmp_training/loss.tif', dpi=150)
+    plt.close()
+
+
+
+# ================================================================== #
+#  CONSOLIDATED FROM models/utils.py
+# ================================================================== #
+
+def plot_training_flyvis(x_list, model, config, epoch, N, log_dir, device, cmap, type_list,
+                         gt_weights, edges, n_neurons=None, n_neuron_types=None):
+    from flyvis_gnn.plot import (
+        plot_embedding, plot_lin_edge, plot_lin_phi, plot_weight_scatter,
+        compute_all_corrected_weights, get_model_W,
+    )
+
+    if n_neurons is None:
+        n_neurons = len(type_list)
+
+    plt.style.use('default')
+
+    # Plot 1: Embedding scatter plot
+    fig, ax = plt.subplots(figsize=(8, 8))
+    plot_embedding(ax, model, type_list, n_neuron_types, cmap)
+    plt.tight_layout()
+    plt.savefig(f"./{log_dir}/tmp_training/embedding/{epoch}_{N}.png", dpi=87)
+    plt.close()
+
+    # Plot 2: Raw W scatter (no correction)
+    fig, ax = plt.subplots(figsize=(8, 8))
+    raw_W = to_numpy(get_model_W(model).squeeze())
+    r_squared_raw, _ = plot_weight_scatter(
+        ax,
+        gt_weights=to_numpy(gt_weights),
+        learned_weights=raw_W,
+        corrected=False,
+        outlier_threshold=5,
+    )
+    plt.tight_layout()
+    plt.savefig(f"./{log_dir}/tmp_training/matrix/raw_{epoch}_{N}.png",
+                dpi=87, bbox_inches='tight', pad_inches=0)
+    plt.close()
+
+    # Compute corrected weights
+    corrected_W, _, _, _ = compute_all_corrected_weights(
+        model, config, edges, x_list, device)
+
+    # Plot 3: Corrected weight comparison scatter plot
+    fig, ax = plt.subplots(figsize=(8, 8))
+    r_squared, _ = plot_weight_scatter(
+        ax,
+        gt_weights=to_numpy(gt_weights),
+        learned_weights=to_numpy(corrected_W.squeeze()),
+        corrected=True,
+        xlim=[-1, 2],
+        ylim=[-1, 2],
+        outlier_threshold=5,
+    )
+    plt.tight_layout()
+    plt.savefig(f"./{log_dir}/tmp_training/matrix/comparison_{epoch}_{N}.png",
+                dpi=87, bbox_inches='tight', pad_inches=0)
+    plt.close()
+
+    # Plot 4: Edge function visualization (lin_edge / MLP1)
+    fig, ax = plt.subplots(figsize=(8, 8))
+    plot_lin_edge(ax, model, config, n_neurons, type_list, cmap, device)
+    plt.tight_layout()
+    plt.savefig(f"./{log_dir}/tmp_training/function/MLP1/func_{epoch}_{N}.png", dpi=87)
+    plt.close()
+
+    # Plot 5: Phi function visualization (lin_phi / MLP0)
+    fig, ax = plt.subplots(figsize=(8, 8))
+    plot_lin_phi(ax, model, config, n_neurons, type_list, cmap, device)
+    plt.tight_layout()
+    plt.savefig(f"./{log_dir}/tmp_training/function/MLP0/func_{epoch}_{N}.png", dpi=87)
+    plt.close()
+
+    return r_squared
+
+def plot_odor_heatmaps(odor_responses):
+    """
+    Plot 3 separate heatmaps showing mean response per neuron for each odor
+    """
+    odor_list = ['butanone', 'pentanedione', 'NaCL']
+    n_neurons = odor_responses['butanone'].shape[1]
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+
+    for i, odor in enumerate(odor_list):
+        # Compute mean response per neuron
+        mean_responses = torch.mean(odor_responses[odor], dim=0).numpy()  # [n_neurons]
+
+        # Reshape to 2D for heatmap (assuming square-ish layout)
+        side_length = int(np.ceil(np.sqrt(n_neurons)))
+        padded_responses = np.pad(mean_responses, (0, side_length ** 2 - n_neurons), 'constant')
+        response_matrix = padded_responses.reshape(side_length, side_length)
+
+        # Plot heatmap
+        sns.heatmap(response_matrix, ax=axes[i], cmap='bwr', center=0,
+                    cbar=False, square=True, xticklabels=False, yticklabels=False)
+        axes[i].set_title(f'{odor} mean response')
+
+    plt.tight_layout()
+    return fig
+
+def plot_weight_comparison(w_true, w_modified, output_path, xlabel='true $W$', ylabel='modified $W$', color='white'):
+    w_true_np = w_true.detach().cpu().numpy().flatten()
+    w_modified_np = w_modified.detach().cpu().numpy().flatten()
+    plt.figure(figsize=(8, 8))
+    plt.scatter(w_true_np, w_modified_np, s=8, alpha=0.5, color=color, edgecolors='none')
+    # Fit linear model
+    lin_fit, _ = curve_fit(linear_model, w_true_np, w_modified_np)
+    slope = lin_fit[0]
+    lin_fit[1]
+    # R2 calculation
+    residuals = w_modified_np - linear_model(w_true_np, *lin_fit)
+    ss_res = np.sum(residuals ** 2)
+    ss_tot = np.sum((w_modified_np - np.mean(w_modified_np)) ** 2)
+    r_squared = 1 - (ss_res / ss_tot)
+    # Plot identity line
+    plt.plot([w_true_np.min(), w_true_np.max()], [w_true_np.min(), w_true_np.max()], 'r--', linewidth=2, label='identity')
+    # Add text
+    plt.text(w_true_np.min(), w_true_np.max(), f'$R^2$: {r_squared:.3f}\nslope: {slope:.2f}', fontsize=18, va='top', ha='left')
+    plt.xlabel(xlabel, fontsize=24)
+    plt.ylabel(ylabel, fontsize=24)
+    plt.xticks(fontsize=18)
+    plt.yticks(fontsize=18)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150)
+    plt.close()
+    return slope, r_squared
+
+
+# ================================================================== #
+#  CONSOLIDATED FROM models/plot_utils.py
+# ================================================================== #
+
+from tqdm import trange
+import pandas as pd
+from collections import defaultdict
+import warnings
+warnings.filterwarnings('ignore')
+
+def get_neuron_index(neuron_name, activity_neuron_list):
+    """
+    Returns the index of the neuron_name in activity_neuron_list.
+    Raises ValueError if not found.
+    """
+    try:
+        return activity_neuron_list.index(neuron_name)
+    except ValueError:
+        raise ValueError(f"Neuron '{neuron_name}' not found in activity_neuron_list.")
+
+
+def analyze_mlp_edge_lines(model, neuron_list, all_neuron_list, adjacency_matrix, signal_range=(0, 10), resolution=100,
+                           device=None):
+    """
+    Create line plots showing edge function vs signal difference for neuron pairs
+    Uses adjacency matrix to find all connected neurons for each neuron of interest
+    Plots mean and standard deviation across all connections
+
+    Args:
+        model: The trained model with embeddings and lin_edge
+        neuron_list: List of neuron names of interest (1-5 neurons)
+        all_neuron_list: Complete list of all 300 neuron names
+        adjacency_matrix: 2D array (300x300) where adjacency_matrix[i,j] = 1 if i->j connection exists
+        signal_range: Tuple of (min_signal, max_signal)
+        resolution: Number of points for signal difference sampling
+        device: PyTorch device
+
+    Returns:
+        fig_lines: Figure with line plots showing mean ± std for each neuron of interest
+    """
+
+    embedding = model.a  # Shape: (300, 2)
+
+    print(f"generating line plots for {len(neuron_list)} neurons using adjacency matrix connections...")
+
+    # Get indices of the neurons of interest
+    neuron_indices_of_interest = []
+    for neuron_name in neuron_list:
+        try:
+            neuron_idx = get_neuron_index(neuron_name, all_neuron_list)
+            neuron_indices_of_interest.append(neuron_idx)
+        except ValueError as e:
+            print(f"Warning: {e}")
+            continue
+
+    if len(neuron_indices_of_interest) == 0:
+        raise ValueError("No valid neurons found in neuron_list")
+
+    # Create signal difference array for line plots
+    u_diff_line = torch.linspace(-signal_range[1], signal_range[1], resolution * 2 - 1, device=device)
+
+    # For each neuron of interest, find all its connections and compute statistics
+    neuron_stats = {}
+
+    for neuron_idx, neuron_id in enumerate(neuron_indices_of_interest):
+        neuron_name = neuron_list[neuron_idx]
+        receiver_embedding = embedding[neuron_id]  # This neuron as receiver (embedding_i)
+
+        # Find all connected senders (where adjacency_matrix[receiver, sender] = 1)
+        connected_senders = np.where(adjacency_matrix[neuron_id, :] == 1)[0]
+
+        if len(connected_senders) == 0:
+            print(f"Warning: No incoming connections found for {neuron_name}")
+            continue
+
+        # print(f"Found {len(connected_senders)} incoming connections for {neuron_name}")
+        # Store outputs for all connections to this receiver
+        connection_outputs = torch.zeros(len(connected_senders), len(u_diff_line), device=device)
+
+        for conn_idx, sender_id in enumerate(connected_senders):
+            sender_embedding = embedding[sender_id]  # Connected neuron as sender (embedding_j)
+
+            line_inputs = []
+            for diff_idx, diff in enumerate(u_diff_line):
+                # Create signal pairs that span the valid range
+                u_center = (signal_range[0] + signal_range[1]) / 2
+                u_i = torch.clamp(u_center - diff / 2, signal_range[0], signal_range[1])
+                u_j = torch.clamp(u_center + diff / 2, signal_range[0], signal_range[1])
+
+                # Ensure the actual difference matches what we want
+                actual_diff = u_j - u_i
+                if abs(actual_diff - diff) > 1e-6:
+                    # Adjust to get the exact difference we want
+                    u_i = torch.clamp(u_center - diff / 2, signal_range[0], signal_range[1])
+                    u_j = u_i + diff
+                    if u_j > signal_range[1]:
+                        u_j = torch.tensor(signal_range[1], device=device)
+                        u_i = u_j - diff
+                    elif u_j < signal_range[0]:
+                        u_j = torch.tensor(signal_range[0], device=device)
+                        u_i = u_j - diff
+
+                # Create input feature vector: [u_i, u_j, embedding_i, embedding_j]
+                in_features = torch.cat([
+                    u_i.unsqueeze(0),  # u_i as (1,)
+                    u_j.unsqueeze(0),  # u_j as (1,)
+                    receiver_embedding,  # embedding_i (receiver) as (2,)
+                    sender_embedding  # embedding_j (sender) as (2,)
+                ], dim=0)  # Final shape: (6,)
+                line_inputs.append(in_features)
+
+            line_features = torch.stack(line_inputs, dim=0)  # (len(u_diff_line), 6)
+
+            with torch.no_grad():
+                lin_edge = model.lin_edge(line_features)
+                if model.lin_edge_positive:
+                    lin_edge = lin_edge ** 2
+
+            connection_outputs[conn_idx] = lin_edge.squeeze(-1)
+
+        # Compute mean and std across all connections to this receiver
+        mean_output = torch.mean(connection_outputs, dim=0).cpu().numpy()
+        std_output = torch.std(connection_outputs, dim=0).cpu().numpy()
+
+        neuron_stats[neuron_name] = {
+            'mean': mean_output,
+            'std': std_output,
+            'n_connections': len(connected_senders)
+        }
+
+    # Create line plot figure
+    fig_lines, ax_lines = plt.subplots(1, 1, figsize=(14, 8))
+
+    # Generate colors for each neuron of interest
+    colors = plt.cm.tab10(np.linspace(0, 1, len(neuron_stats)))
+    u_diff_line_np = u_diff_line.cpu().numpy()
+
+    for neuron_idx, (neuron_name, stats) in enumerate(neuron_stats.items()):
+        color = colors[neuron_idx]
+        mean_vals = stats['mean']
+        std_vals = stats['std']
+        n_conn = stats['n_connections']
+
+        # Plot mean line
+        ax_lines.plot(u_diff_line_np, mean_vals,
+                      color=color, linewidth=2,
+                      label=f'{neuron_name} (n={n_conn})')
+
+        # Plot standard deviation as shaded area
+        ax_lines.fill_between(u_diff_line_np,
+                              mean_vals - std_vals,
+                              mean_vals + std_vals,
+                              color=color, alpha=0.2)
+
+    ax_lines.set_xlabel('u_j - u_i (signal difference)')
+    ax_lines.set_ylabel('edge function output')
+    ax_lines.set_title('edge function vs signal difference\n(mean ± std across incoming connections)')
+    # grid(True, alpha=0.3)
+
+    # Adaptive legend placement based on number of neurons
+    n_neurons = len(neuron_stats)
+    if n_neurons <= 20:
+        # For few neurons, use right side
+        ax_lines.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+
+    plt.tight_layout()
+
+    return fig_lines
+
+
+def analyze_mlp_edge_lines_weighted_with_max(model, neuron_name, all_neuron_list, adjacency_matrix, weight_matrix,
+                                             signal_range=(0, 10), resolution=100, device=None):
+    """
+    Create line plots showing weighted edge function vs signal difference for a single neuron of interest
+    Uses adjacency matrix to find connections and weight matrix to scale the outputs
+    Plots individual lines for each incoming connection
+    Returns the connection with maximum response in signal difference range [8, 10]
+
+    Args:
+        model: The trained model with embeddings and lin_edge
+        neuron_name: Single neuron name of interest
+        all_neuron_list: Complete list of all 300 neuron names
+        adjacency_matrix: 2D array (300x300) where adjacency_matrix[i,j] = 1 if i->j connection exists
+        weight_matrix: 2D array (300x300) with connection weights to scale edge function output
+        signal_range: Tuple of (min_signal, max_signal) for DF/F0 measurements
+        resolution: Number of points for signal difference sampling
+        device: PyTorch device
+
+    Returns:
+        fig_lines: Figure with individual weighted line plots for each connection
+        max_response_data: Dict with info about the connection with maximum response in [8,10] range
+    """
+
+    embedding = model.a  # Shape: (300, 2)
+
+    # print(f"generating weighted line plots for {neuron_name} using adjacency and weight matrices...")
+
+    # Get index of the neuron of interest
+    try:
+        neuron_id = get_neuron_index(neuron_name, all_neuron_list)
+    except ValueError as e:
+        raise ValueError(f"Neuron '{neuron_name}' not found: {e}")
+
+    receiver_embedding = embedding[neuron_id]  # This neuron as receiver (embedding_i)
+
+    # Find all connected senders (where adjacency_matrix[receiver, sender] = 1)
+    connected_senders = np.where(adjacency_matrix[neuron_id, :] == 1)[0]
+    #
+    # if len(connected_senders) == 0:
+    #     print(f"No incoming connections found for {neuron_name}")
+    #     return None, None
+
+    # print(f"Found {len(connected_senders)} incoming connections for {neuron_name}")
+
+    # Create signal difference array for line plots
+    u_diff_line = torch.linspace(-signal_range[1], signal_range[1], resolution * 2 - 1, device=device)
+    u_diff_line_np = u_diff_line.cpu().numpy()
+
+    # Find indices corresponding to signal difference range [8, 10]
+    target_range_mask = (u_diff_line_np >= 8.0) & (u_diff_line_np <= 10.0)
+    target_indices = np.where(target_range_mask)[0]
+
+    # Store outputs and metadata for all connections
+    connection_data = []
+    max_response = -float('inf')
+    max_response_data = None
+
+    for sender_id in connected_senders:
+        sender_name = all_neuron_list[sender_id]
+        sender_embedding = embedding[sender_id]  # Connected neuron as sender (embedding_j)
+        connection_weight = weight_matrix[neuron_id, sender_id]  # Weight for this connection
+
+        line_inputs = []
+        for diff_idx, diff in enumerate(u_diff_line):
+            # Create signal pairs that span the valid range
+            u_center = (signal_range[0] + signal_range[1]) / 2
+            u_i = torch.clamp(u_center - diff / 2, signal_range[0], signal_range[1])
+            u_j = torch.clamp(u_center + diff / 2, signal_range[0], signal_range[1])
+
+            # Ensure the actual difference matches what we want
+            actual_diff = u_j - u_i
+            if abs(actual_diff - diff) > 1e-6:
+                # Adjust to get the exact difference we want
+                u_i = torch.clamp(u_center - diff / 2, signal_range[0], signal_range[1])
+                u_j = u_i + diff
+                if u_j > signal_range[1]:
+                    u_j = torch.tensor(signal_range[1], device=device)
+                    u_i = u_j - diff
+                elif u_j < signal_range[0]:
+                    u_j = torch.tensor(signal_range[0], device=device)
+                    u_i = u_j - diff
+
+            # Create input feature vector: [u_i, u_j, embedding_i, embedding_j]
+            in_features = torch.cat([
+                u_i.unsqueeze(0),  # u_i as (1,)
+                u_j.unsqueeze(0),  # u_j as (1,)
+                receiver_embedding,  # embedding_i (receiver) as (2,)
+                sender_embedding  # embedding_j (sender) as (2,)
+            ], dim=0)  # Final shape: (6,)
+            line_inputs.append(in_features)
+
+        line_features = torch.stack(line_inputs, dim=0)  # (len(u_diff_line), 6)
+
+        with torch.no_grad():
+            lin_edge = model.lin_edge(line_features)
+            if model.lin_edge_positive:
+                lin_edge = lin_edge ** 2
+
+        # Apply weight scaling
+        edge_output = lin_edge.squeeze(-1).cpu().numpy()
+        weighted_output = edge_output * connection_weight
+
+        # Find maximum response in target range [8, 10]
+        if len(target_indices) > 0:
+            max_in_range = np.max(weighted_output[target_indices])
+            if max_in_range > max_response:
+                max_response = max_in_range
+                max_response_data = {
+                    'receiver_name': neuron_name,
+                    'sender_name': sender_name,
+                    'receiver_id': neuron_id,
+                    'sender_id': sender_id,
+                    'weight': connection_weight,
+                    'max_response': max_response,
+                    'signal_diff_range': [8.0, 10.0]
+                }
+
+        connection_data.append({
+            'sender_name': sender_name,
+            'sender_id': sender_id,
+            'weight': connection_weight,
+            'output': weighted_output,
+            'unweighted_output': edge_output
+        })
+
+    # Sort connections by weight magnitude for better visualization
+    connection_data.sort(key=lambda x: abs(x['weight']), reverse=True)
+
+    # Create line plot figure
+    fig_lines, ax_lines = plt.subplots(1, 1, figsize=(14, 10))
+
+    # Generate colors using a colormap that handles many lines well
+    if len(connection_data) <= 10:
+        colors = plt.cm.tab10(np.linspace(0, 1, len(connection_data)))
+    else:
+        colors = plt.cm.viridis(np.linspace(0, 1, len(connection_data)))
+
+    # Plot each connection
+    for conn_idx, conn_data in enumerate(connection_data):
+        color = colors[conn_idx]
+        sender_name = conn_data['sender_name']
+        weight = conn_data['weight']
+        weighted_output = conn_data['output']
+
+        # Line style based on weight sign
+        line_style = '-' if weight >= 0 else '--'
+
+        # Calculate line width with safe division
+        max_weight = np.max(np.abs([c['weight'] for c in connection_data]))
+        if max_weight > 0:
+            line_width = 1.5 + min(2.0, abs(weight) / max_weight)
+        else:
+            line_width = 1.5  # Default width if all weights are zero
+
+        ax_lines.plot(u_diff_line_np, weighted_output,
+                      color=color, linewidth=line_width, linestyle=line_style,
+                      label=f'{sender_name} (w={weight:.3f})')
+
+    # Highlight the target range [8, 10]
+    ax_lines.axvspan(8.0, 10.0, alpha=0.2, color='red', label='Target range [8,10]')
+
+    ax_lines.set_xlabel('u_j - u_i (signal difference)')
+    ax_lines.set_ylabel('weighted edge function output')
+    ax_lines.set_title(
+        f'weighted edge function vs signal difference\n(receiver: {neuron_name}, all incoming connections)')
+    ax_lines.grid(True, alpha=0.3)
+
+    # Adaptive legend placement based on number of connections
+    n_connections = len(connection_data)
+    if n_connections <= 5:
+        # For few connections, use right side
+        ax_lines.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize='small')
+    elif n_connections <= 15:
+        # For medium number, use multiple columns on right
+        ax_lines.legend(bbox_to_anchor=(1.05, 1), loc='upper left',
+                        fontsize='x-small', ncol=1)
+    else:
+        # For many connections, use multiple columns below plot
+        ncol = min(4, n_connections // 5 + 1)
+        ax_lines.legend(bbox_to_anchor=(0.5, -0.15), loc='upper center',
+                        ncol=ncol, fontsize='x-small', framealpha=0.9)
+        # Add more space at bottom for legend
+        plt.subplots_adjust(bottom=0.25)
+
+    plt.tight_layout()
+
+    return fig_lines, max_response_data
+
+
+def find_top_responding_pairs(model, all_neuron_list, adjacency_matrix, weight_matrix,
+                              signal_range=(0, 10), resolution=100, device=None, top_k=10):
+    """
+    Find the top K receiver-sender pairs with largest response in signal difference range [8, 10]
+    by analyzing all neurons as receivers
+
+    Args:
+        model: The trained model with embeddings and lin_edge
+        all_neuron_list: Complete list of all 300 neuron names
+        adjacency_matrix: 2D array (300x300) where adjacency_matrix[i,j] = 1 if i->j connection exists
+        weight_matrix: 2D array (300x300) with connection weights
+        signal_range: Tuple of (min_signal, max_signal) for DF/F0 measurements
+        resolution: Number of points for signal difference sampling
+        device: PyTorch device
+        top_k: Number of top pairs to return
+
+    Returns:
+        top_pairs: List of top K pairs sorted by response magnitude
+        top_figures: List of figures for the top pairs
+    """
+
+    # print(f"Analyzing all {len(all_neuron_list)} neurons to find top {top_k} responding pairs...")
+
+    all_responses = []
+
+    # Analyze each neuron as receiver
+    for neuron_idx, neuron_name in enumerate(all_neuron_list):
+        try:
+            fig , max_response_data = analyze_mlp_edge_lines_weighted_with_max(
+                model, neuron_name, all_neuron_list, adjacency_matrix, weight_matrix,
+                signal_range, resolution, device
+            )
+
+            plt.close(fig)
+
+            if max_response_data is not None:
+                all_responses.append(max_response_data)
+
+        except Exception as e:
+            print(f"Error processing {neuron_name}: {e}")
+            continue
+
+    # Sort by response magnitude and get top K
+    all_responses.sort(key=lambda x: x['max_response'], reverse=True)
+    top_pairs = all_responses[:top_k]
+    for i, pair in enumerate(top_pairs):
+        print(f"{i + 1:2d}. {pair['receiver_name']} ← {pair['sender_name']}:  ({pair['max_response']:.4f})")
+
+    return top_pairs    # , top_figures
+
+def analyze_embedding_space(model, n_neurons=300):
+    """Analyze the learned embedding space"""
+
+    embedding = model.a.detach().cpu().numpy()  # (300, 2)
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+
+    # 1. Embedding scatter plot
+    axes[0].scatter(embedding[:, 0], embedding[:, 1],
+                              c=np.arange(n_neurons), cmap='tab10', alpha=0.7)
+    axes[0].set_xlabel('Embedding Dimension 1')
+    axes[0].set_ylabel('Embedding Dimension 2')
+    axes[0].set_title('Learned Neuron Embeddings')
+    axes[0].grid(True, alpha=0.3)
+
+    # 2. Embedding distribution
+    axes[1].hist(embedding[:, 0], bins=30, alpha=0.7, label='Dim 1')
+    axes[1].hist(embedding[:, 1], bins=30, alpha=0.7, label='Dim 2')
+    axes[1].set_xlabel('Embedding Value')
+    axes[1].set_ylabel('Frequency')
+    axes[1].set_title('Embedding Value Distribution')
+    axes[1].legend()
+    axes[1].grid(True, alpha=0.3)
+
+    # 3. Distance matrix between embeddings
+    distances = np.linalg.norm(embedding[:, None] - embedding[None, :], axis=2)
+    im = axes[2].imshow(distances, cmap='viridis')
+    axes[2].set_title('Pairwise Embedding Distances')
+    axes[2].set_xlabel('Neuron Index')
+    axes[2].set_ylabel('Neuron Index')
+    plt.colorbar(im, ax=axes[2])
+
+    plt.tight_layout()
+    plt.savefig('embedding_analysis.png', dpi=150, bbox_inches='tight')
+    plt.show()
+
+    return embedding, distances
+
+
+def analyze_mlp_phi_synaptic(model, n_neurons=300, signal_range=(0, 10), resolution=50, n_sample_pairs=200,
+                             device=None):
+    """
+    Analyze the learned MLP phi function with statistical sampling
+    Creates 2D plots: mean with std band + all individual line plots
+
+    For generic_excitation update type:
+    - u: signal (varied)
+    - embedding: neuron embedding (sampled from different neurons)
+    - msg: set to zeros (no message passing)
+    - field: set to ones
+    - excitation: set to zeros
+    """
+
+    embedding = model.a  # Shape: (300, 2)
+
+    # Get excitation dimension from model
+    excitation_dim = getattr(model, 'excitation_dim', 0)
+
+    # Create signal grid (1D since we're analyzing signal vs embedding effects)
+    u_vals = torch.linspace(signal_range[0], signal_range[1], resolution, device=device)
+
+    print(f"sampling {n_sample_pairs} random neurons across {resolution} signal points...")
+    print(f"excitation_dim: {excitation_dim}")
+
+    # Sample random neurons
+    np.random.seed(42)  # For reproducibility
+    neuron_indices = np.random.choice(n_neurons, size=n_sample_pairs, replace=True)
+
+    # Store all outputs for statistics
+    all_outputs = torch.zeros(n_sample_pairs, resolution, device=device)
+
+    # Process in batches to manage memory
+    batch_size = 50
+    for batch_start in trange(0, n_sample_pairs, batch_size):
+        batch_end = min(batch_start + batch_size, n_sample_pairs)
+        batch_size_actual = batch_end - batch_start
+
+        batch_inputs = []
+        for batch_idx in range(batch_size_actual):
+            neuron_idx = neuron_indices[batch_start + batch_idx]
+
+            # Get embedding for this neuron
+            neuron_embedding = embedding[neuron_idx].unsqueeze(0).repeat(resolution, 1)  # (resolution, 2)
+
+            # Create signal array
+            u_batch = u_vals.unsqueeze(1)  # (resolution, 1)
+
+            # Create fixed components
+            msg = torch.zeros(resolution, 1, device=device)  # Message set to zeros
+            field = torch.ones(resolution, 1, device=device)  # Field set to ones
+            excitation = torch.zeros(resolution, excitation_dim, device=device)  # Excitation set to zeros
+
+            # Concatenate input features: [u, embedding, msg, field, excitation]
+            in_features = torch.cat([u_batch, neuron_embedding, msg, field, excitation], dim=1)
+            batch_inputs.append(in_features)
+
+        # Stack batch inputs
+        batch_features = torch.stack(batch_inputs, dim=0)  # (batch_size, resolution, input_dim)
+        batch_features = batch_features.reshape(-1, batch_features.shape[-1])  # (batch_size * resolution, input_dim)
+
+        # Forward pass through MLP
+        with torch.no_grad():
+            phi_output = model.lin_phi(batch_features)
+
+        # Reshape back to batch format
+        phi_output = phi_output.reshape(batch_size_actual, resolution, -1).squeeze(-1)
+
+        # Store results
+        all_outputs[batch_start:batch_end] = phi_output
+
+    # Compute statistics across all sampled neurons
+    mean_output = torch.mean(all_outputs, dim=0).cpu().numpy()  # (resolution,)
+    std_output = torch.std(all_outputs, dim=0).cpu().numpy()  # (resolution,)
+    all_outputs_np = all_outputs.cpu().numpy()  # (n_sample_pairs, resolution)
+
+    u_vals_np = u_vals.cpu().numpy()
+
+    print(f"statistics computed over {n_sample_pairs} neurons")
+    print(f"mean output range: [{mean_output.min():.4f}, {mean_output.max():.4f}]")
+    print(f"std output range: [{std_output.min():.4f}, {std_output.max():.4f}]")
+
+    # Create 2D plots
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+
+    # Left panel: Mean plot with std band
+    ax1.plot(u_vals_np, mean_output, 'b-', linewidth=3, label='mean', zorder=10)
+    ax1.fill_between(u_vals_np, mean_output - std_output, mean_output + std_output,
+                     alpha=0.3, color='blue', label='±1 std')
+    ax1.set_xlabel('signal (u)')
+    ax1.set_ylabel('phi output')
+    ax1.set_title(f'mean phi function\n(over {n_sample_pairs} random neurons)')
+    ax1.grid(True, alpha=0.3)
+    ax1.legend()
+
+    # Right panel: All individual line plots
+    # Use alpha to make individual lines semi-transparent
+    alpha_val = min(0.8, max(0.1, 50.0 / n_sample_pairs))  # Adaptive alpha based on number of lines
+
+    for i in range(n_sample_pairs):
+        ax2.plot(u_vals_np, all_outputs_np[i], '-', alpha=alpha_val, linewidth=0.5, color='gray')
+
+    # Overlay the mean on top
+    ax2.plot(u_vals_np, mean_output, 'r-', linewidth=2, label='mean', zorder=10)
+
+    ax2.set_xlabel('signal (u)')
+    ax2.set_ylabel('phi output')
+    ax2.set_title(f'all individual phi functions\n({n_sample_pairs} neurons)')
+    ax2.grid(True, alpha=0.3)
+    ax2.legend()
+
+    plt.tight_layout()
+
+    return fig
+
+
+def analyze_mlp_phi_embedding(model, n_neurons=300, signal_range=(0, 10), resolution=50, n_sample_pairs=200,
+                                 device=None):
+    """
+    Analyze MLP phi function across signal and embedding space
+    Creates 2D heatmaps showing how phi varies with signal and embedding dimensions
+    """
+
+    embedding = model.a  # Shape: (300, 2)
+    excitation_dim = getattr(model, 'excitation_dim', 0)
+
+    # Create signal grid
+    u_vals = torch.linspace(signal_range[0], signal_range[1], resolution, device=device)
+
+    print("analyzing phi function across signal and embedding space...")
+    print(f"resolution: {resolution}x{resolution}, excitation_dim: {excitation_dim}")
+
+    # Sample random neurons for embedding analysis
+    np.random.seed(42)
+    neuron_indices = np.random.choice(n_neurons, size=n_sample_pairs, replace=True)
+
+    # Store outputs for each embedding dimension
+    all_outputs_emb1 = torch.zeros(n_sample_pairs, resolution, device=device)
+    torch.zeros(n_sample_pairs, resolution, device=device)
+
+    # Process in batches
+    batch_size = 50
+    for batch_start in trange(0, n_sample_pairs, batch_size):
+        batch_end = min(batch_start + batch_size, n_sample_pairs)
+        batch_size_actual = batch_end - batch_start
+
+        batch_inputs = []
+        for batch_idx in range(batch_size_actual):
+            neuron_idx = neuron_indices[batch_start + batch_idx]
+
+            # Get embedding for this neuron
+            neuron_embedding = embedding[neuron_idx].unsqueeze(0).repeat(resolution, 1)
+
+            # Create signal array
+            u_batch = u_vals.unsqueeze(1)
+
+            # Fixed components
+            msg = torch.zeros(resolution, 1, device=device)
+            field = torch.ones(resolution, 1, device=device)
+            excitation = torch.zeros(resolution, excitation_dim, device=device)
+
+            # Input features
+            in_features = torch.cat([u_batch, neuron_embedding, msg, field, excitation], dim=1)
+            batch_inputs.append(in_features)
+
+        # Process batch
+        batch_features = torch.stack(batch_inputs, dim=0)
+        batch_features = batch_features.reshape(-1, batch_features.shape[-1])
+
+        with torch.no_grad():
+            phi_output = model.lin_phi(batch_features)
+
+        phi_output = phi_output.reshape(batch_size_actual, resolution, -1).squeeze(-1)
+
+        # Store results
+        all_outputs_emb1[batch_start:batch_end] = phi_output
+
+    # Now create 2D grid: signal vs embedding dimension
+    # We'll vary embedding dimension 1 and keep dimension 2 at mean value
+    emb_vals = torch.linspace(embedding[:, 0].min(), embedding[:, 0].max(), resolution, device=device)
+    emb_mean_dim2 = embedding[:, 1].mean()
+
+    # Create 2D output grid
+    output_grid = torch.zeros(resolution, resolution, device=device)  # (emb_dim1, signal)
+
+    print("creating 2D grid: embedding dim 1 vs signal...")
+    for i, emb1_val in enumerate(trange(len(emb_vals))):
+        emb1_val = emb_vals[i]
+
+        # Create embedding with varying dim1 and fixed dim2
+        neuron_embedding = torch.stack([
+            emb1_val.repeat(resolution),
+            emb_mean_dim2.repeat(resolution)
+        ], dim=1)
+
+        u_batch = u_vals.unsqueeze(1)
+        msg = torch.zeros(resolution, 1, device=device)
+        field = torch.ones(resolution, 1, device=device)
+        excitation = torch.zeros(resolution, excitation_dim, device=device)
+
+        in_features = torch.cat([u_batch, neuron_embedding, msg, field, excitation], dim=1)
+
+        with torch.no_grad():
+            phi_output = model.lin_phi(in_features)
+
+        output_grid[i, :] = phi_output.squeeze()
+
+    output_grid_np = output_grid.cpu().numpy()
+    u_vals.cpu().numpy()
+    emb_vals_np = emb_vals.cpu().numpy()
+
+    # Create 2D heatmap
+    fig_2d, ax = plt.subplots(1, 1, figsize=(10, 8))
+
+    im = ax.imshow(output_grid_np, extent=[signal_range[0], signal_range[1],
+                                           emb_vals_np.min(), emb_vals_np.max()],
+                   origin='lower', cmap='viridis', aspect='auto')
+    ax.set_xlabel('signal (u)')
+    ax.set_ylabel('embedding dimension 1')
+    ax.set_title(f'phi function: signal vs embedding\n(dim 2 fixed at {emb_mean_dim2:.3f})')
+
+    cbar = plt.colorbar(im, ax=ax)
+    cbar.set_label('phi output')
+
+    plt.tight_layout()
+
+    return fig_2d, output_grid_np
+
+# Example usage:
+# fig_2d_signal, mean_out, std_out = analyze_mlp_phi_function(model, n_sample_pairs=1000, resolution=100, device=device)
+# fig_2d_heatmap, grid_out = analyze_mlp_phi_embedding(model, n_sample_pairs=1000, resolution=50, device=device)
+#
+# fig_2d_signal.savefig(f"./{log_dir}/results/phi_function_signal.png", dpi=300, bbox_inches='tight')
+# fig_2d_heatmap.savefig(f"./{log_dir}/results/phi_function_2d.png", dpi=300, bbox_inches='tight')
+# plt.close(fig_2d_signal)
+# plt.close(fig_2d_heatmap)
+def compute_separation_index(connectivity_neurons, odor_responsive_neurons):
+    """
+    Compute functional separation between high connectivity and high odor-responsive neurons
+
+    Args:
+        connectivity_neurons: List of neuron names with high connectivity
+        odor_responsive_neurons: List of neuron names with high odor responses
+
+    Returns:
+        separation_metrics: Dict with separation statistics
+    """
+    connectivity_set = set(connectivity_neurons)
+    odor_set = set(odor_responsive_neurons)
+
+    # Find overlap
+    overlap = connectivity_set.intersection(odor_set)
+
+    # Compute separation metrics
+    len(connectivity_set.union(odor_set))
+    overlap_count = len(overlap)
+    min_set_size = min(len(connectivity_set), len(odor_set))
+
+    # Separation index: 1 - (overlap / min_set_size)
+    separation_index = 1.0 - (overlap_count / min_set_size) if min_set_size > 0 else 1.0
+
+    # Additional metrics
+    connectivity_purity = 1.0 - (overlap_count / len(connectivity_set)) if len(connectivity_set) > 0 else 1.0
+    odor_purity = 1.0 - (overlap_count / len(odor_set)) if len(odor_set) > 0 else 1.0
+
+    return {
+        'separation_index': separation_index,
+        'overlap_count': overlap_count,
+        'connectivity_purity': connectivity_purity,
+        'odor_purity': odor_purity,
+        'total_connectivity_neurons': len(connectivity_set),
+        'total_odor_neurons': len(odor_set),
+        'overlapping_neurons': list(overlap)
+    }
+
+
+def classify_neural_architecture(separation_index, specialist_threshold=0.95, adapter_threshold=0.70):
+    """
+    Classify neural architecture based on separation index
+
+    Args:
+        separation_index: Float between 0 and 1
+        specialist_threshold: Threshold for specialist classification
+        adapter_threshold: Threshold for adapter classification
+
+    Returns:
+        architecture_type: String classification
+    """
+    if separation_index >= specialist_threshold:
+        return 'specialist'
+    elif separation_index >= adapter_threshold:
+        return 'adapter'
+    else:
+        return 'generalist'
+
+
+def analyze_individual_architectures(top_pairs_by_run, odor_responses_by_run, all_neuron_list,
+                                     specialist_threshold=0.95, adapter_threshold=0.70):
+    """
+    Analyze neural architectures across all individual worms
+
+    Args:
+        top_pairs_by_run: Dict with run_id -> list of top connectivity pairs
+        odor_responses_by_run: Dict with run_id -> odor response data
+        all_neuron_list: List of all neuron names
+        specialist_threshold: Threshold for specialist classification
+        adapter_threshold: Threshold for adapter classification
+
+    Returns:
+        architecture_analysis: Dict with comprehensive analysis results
+    """
+
+    architecture_data = []
+    separation_details = {}
+
+    print("=== INDIVIDUAL NEURAL ARCHITECTURE ANALYSIS ===")
+
+    for run_id in top_pairs_by_run.keys():
+        # Extract high connectivity neurons
+        connectivity_neurons = []
+        for pair in top_pairs_by_run[run_id]:
+            connectivity_neurons.extend([pair['sender_name'], pair['receiver_name']])
+        connectivity_neurons = list(set(connectivity_neurons))  # Remove duplicates
+
+        # Extract high odor-responsive neurons from all odors
+        odor_responsive_neurons = set()
+        if run_id in odor_responses_by_run:
+            for odor in ['butanone', 'pentanedione', 'NaCL']:
+                if odor in odor_responses_by_run[run_id]:
+                    odor_responsive_neurons.update(odor_responses_by_run[run_id][odor]['names'])
+        odor_responsive_neurons = list(odor_responsive_neurons)
+
+        # Compute separation metrics
+        separation_metrics = compute_separation_index(connectivity_neurons, odor_responsive_neurons)
+
+        # Classify architecture
+        architecture_type = classify_neural_architecture(
+            separation_metrics['separation_index'],
+            specialist_threshold,
+            adapter_threshold
+        )
+
+        # Store data
+        architecture_data.append({
+            'run_id': run_id,
+            'architecture_type': architecture_type,
+            'separation_index': separation_metrics['separation_index'],
+            'overlap_count': separation_metrics['overlap_count'],
+            'connectivity_purity': separation_metrics['connectivity_purity'],
+            'odor_purity': separation_metrics['odor_purity'],
+            'n_connectivity_neurons': separation_metrics['total_connectivity_neurons'],
+            'n_odor_neurons': separation_metrics['total_odor_neurons']
+        })
+
+        separation_details[run_id] = separation_metrics
+
+        print(f"Run {run_id}: {architecture_type.upper()} "
+              f"(separation: {separation_metrics['separation_index']:.3f}, "
+              f"overlap: {separation_metrics['overlap_count']})")
+
+    # Convert to DataFrame for analysis
+    df = pd.DataFrame(architecture_data)
+
+    # Summary statistics by architecture type
+    type_summary = df.groupby('architecture_type').agg({
+        'separation_index': ['count', 'mean', 'std', 'min', 'max'],
+        'overlap_count': ['mean', 'std'],
+        'n_connectivity_neurons': ['mean', 'std'],
+        'n_odor_neurons': ['mean', 'std']
+    }).round(3)
+
+    print("\n=== ARCHITECTURE TYPE SUMMARY ===")
+    print(type_summary)
+
+    return {
+        'architecture_data': df,
+        'separation_details': separation_details,
+        'type_summary': type_summary,
+        'classification_thresholds': {
+            'specialist': specialist_threshold,
+            'adapter': adapter_threshold
+        }
+    }
+
+
+def identify_hub_neurons_by_type(top_pairs_by_run, architecture_analysis, min_frequency=0.5):
+    """
+    Identify hub neurons for each architecture type
+
+    Args:
+        top_pairs_by_run: Dict with run_id -> list of top connectivity pairs
+        architecture_analysis: Results from analyze_individual_architectures
+        min_frequency: Minimum frequency to be considered a hub
+
+    Returns:
+        hub_analysis: Dict with hub neuron analysis by architecture type
+    """
+
+    # Get architecture types for each run
+    run_to_type = dict(zip(architecture_analysis['architecture_data']['run_id'],
+                           architecture_analysis['architecture_data']['architecture_type']))
+
+    # Group by architecture type
+    hubs_by_type = defaultdict(lambda: defaultdict(int))
+    connection_counts_by_type = defaultdict(int)
+
+    print("=== HUB NEURON ANALYSIS BY ARCHITECTURE TYPE ===")
+
+    for run_id, pairs in top_pairs_by_run.items():
+        arch_type = run_to_type[run_id]
+        connection_counts_by_type[arch_type] += 1
+
+        # Count neuron appearances in this run
+        neuron_counts = defaultdict(int)
+        for pair in pairs:
+            neuron_counts[pair['sender_name']] += 1
+            neuron_counts[pair['receiver_name']] += 1
+
+        # Add to architecture type totals
+        for neuron, count in neuron_counts.items():
+            hubs_by_type[arch_type][neuron] += count
+
+    # Analyze hubs for each architecture type
+    hub_analysis = {}
+
+    for arch_type in hubs_by_type.keys():
+        n_runs = connection_counts_by_type[arch_type]
+
+        # Calculate frequencies and identify hubs
+        neuron_frequencies = {}
+        for neuron, total_count in hubs_by_type[arch_type].items():
+            # Frequency = appearances / total possible appearances
+            max_possible = n_runs * 40  # Max appearances if in all top-20 pairs as both sender and receiver
+            frequency = total_count / max_possible
+            neuron_frequencies[neuron] = {
+                'total_count': total_count,
+                'frequency': frequency,
+                'n_runs': n_runs
+            }
+
+        # Sort by frequency
+        sorted_neurons = sorted(neuron_frequencies.items(),
+                                key=lambda x: x[1]['frequency'], reverse=True)
+
+        # Identify hubs above threshold
+        hubs = [(neuron, stats) for neuron, stats in sorted_neurons
+                if stats['frequency'] >= min_frequency]
+
+        hub_analysis[arch_type] = {
+            'all_neurons': dict(sorted_neurons),
+            'hub_neurons': hubs,
+            'n_runs': n_runs,
+            'top_10_neurons': sorted_neurons[:10]
+        }
+
+        print(f"\n{arch_type.upper()} ARCHITECTURE ({n_runs} individuals):")
+        print("Top 10 hub neurons:")
+        for i, (neuron, stats) in enumerate(sorted_neurons[:10]):
+            print(f"  {i + 1:2d}. {neuron}: {stats['frequency']:.3f} "
+                  f"({stats['total_count']} total appearances)")
+
+    return hub_analysis
+
+
+def compare_pathway_organization(top_pairs_by_run, architecture_analysis, all_neuron_list):
+    """
+    Compare pathway organization across architecture types
+
+    Args:
+        top_pairs_by_run: Dict with run_id -> list of top connectivity pairs
+        architecture_analysis: Results from analyze_individual_architectures
+        all_neuron_list: List of all neuron names
+
+    Returns:
+        pathway_analysis: Dict with pathway comparison results
+    """
+
+    # Define functional neuron classes
+    neuron_classes = {
+        'chemosensory': ['ADLR', 'ADLL', 'AWAL', 'AWAR', 'AWBL', 'AWBR', 'AWCL', 'AWCR',
+                         'ASKL', 'ASKR', 'ASHL', 'ASHR', 'ASJL', 'ASJR'],
+        'command': ['AVAR', 'AVAL', 'AVBL', 'AVBR', 'AVDL', 'AVDR', 'AVKL', 'AVKR',
+                    'AVHL', 'AVHR', 'AVJL', 'AVJR'],
+        'ring_integration': ['RID', 'RIS', 'RIML', 'RIMR', 'RIBL', 'RIBR', 'RIAR', 'RIAL',
+                             'RICL', 'RICR', 'RMDL', 'RMDR', 'RMDVL', 'RMDVR'],
+        'motor': ['SMDVL', 'SMDVR', 'SMDDL', 'SMDDR', 'SMBVL', 'SMBVR', 'SMBDL', 'SMBDR',
+                  'VB01', 'VB02', 'VB03', 'VB04', 'VB05', 'VB06', 'VB07', 'VB08', 'VB09', 'VB10', 'VB11',
+                  'DB01', 'DB02', 'DB03', 'DB04', 'DB05', 'DB06', 'DB07'],
+        'head_sensory': ['CEPVL', 'CEPVR', 'CEPDL', 'CEPDR', 'OLQVL', 'OLQVR', 'OLQDL', 'OLQDR',
+                         'OLLR', 'OLLL'],
+        'muscle': ['M1', 'M2L', 'M2R', 'M3L', 'M3R', 'M4', 'M5', 'MI', 'I1L', 'I1R', 'I2L', 'I2R',
+                   'I3', 'I4', 'I5', 'I6']
+    }
+
+    # Get architecture types for each run
+    run_to_type = dict(zip(architecture_analysis['architecture_data']['run_id'],
+                           architecture_analysis['architecture_data']['architecture_type']))
+
+    # Analyze pathway patterns by architecture type
+    pathway_stats = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+    connection_types = defaultdict(lambda: defaultdict(int))
+
+    print("=== PATHWAY ORGANIZATION ANALYSIS ===")
+
+    for run_id, pairs in top_pairs_by_run.items():
+        arch_type = run_to_type[run_id]
+
+        for pair in pairs:
+            sender = pair['sender_name']
+            receiver = pair['receiver_name']
+            weight = pair.get('max_response', 0)  # Use weight if available
+
+            # Classify sender and receiver
+            sender_class = 'other'
+            receiver_class = 'other'
+
+            for class_name, neurons in neuron_classes.items():
+                if sender in neurons:
+                    sender_class = class_name
+                if receiver in neurons:
+                    receiver_class = class_name
+
+            # Record connection type
+            connection_type = f"{sender_class}→{receiver_class}"
+            connection_types[arch_type][connection_type] += 1
+
+            # Record pathway statistics
+            pathway_stats[arch_type][sender_class]['out_degree'] += 1
+            pathway_stats[arch_type][receiver_class]['in_degree'] += 1
+            pathway_stats[arch_type][sender_class]['out_weight'] += weight
+            pathway_stats[arch_type][receiver_class]['in_weight'] += weight
+
+    # Normalize by number of runs of each type
+    type_counts = architecture_analysis['architecture_data']['architecture_type'].value_counts()
+
+    normalized_connections = {}
+    for arch_type in connection_types.keys():
+        n_runs = type_counts[arch_type]
+        normalized_connections[arch_type] = {
+            conn_type: count / n_runs
+            for conn_type, count in connection_types[arch_type].items()
+        }
+
+    # Print results
+    for arch_type in ['specialist', 'adapter', 'generalist']:
+        if arch_type in normalized_connections:
+            print(f"\n{arch_type.upper()} PATHWAY PATTERNS (avg per individual):")
+
+            # Sort connection types by frequency
+            sorted_connections = sorted(normalized_connections[arch_type].items(),
+                                        key=lambda x: x[1], reverse=True)
+
+            for conn_type, avg_count in sorted_connections[:10]:
+                print(f"  {conn_type}: {avg_count:.2f}")
+
+    return {
+        'pathway_stats': dict(pathway_stats),
+        'connection_types': dict(connection_types),
+        'normalized_connections': normalized_connections,
+        'neuron_classes': neuron_classes
+    }
+
+
+def normalize_edge_function_amplitudes(edge_functions_by_run, method='z_score'):
+    """
+    Normalize edge function amplitudes across runs to account for different scales
+
+    Args:
+        edge_functions_by_run: Dict with run_id -> edge function data
+        method: Normalization method ('z_score', 'min_max', 'robust')
+
+    Returns:
+        normalized_functions: Dict with normalized edge function data
+    """
+
+    normalized_functions = {}
+
+    for run_id, edge_data in edge_functions_by_run.items():
+        if method == 'z_score':
+            # Z-score normalization
+            mean_val = np.mean(edge_data)
+            std_val = np.std(edge_data)
+            normalized = (edge_data - mean_val) / std_val if std_val > 0 else edge_data
+
+        elif method == 'min_max':
+            # Min-max normalization to [0, 1]
+            min_val = np.min(edge_data)
+            max_val = np.max(edge_data)
+            normalized = (edge_data - min_val) / (max_val - min_val) if max_val > min_val else edge_data
+
+        elif method == 'robust':
+            # Robust normalization using median and IQR
+            median_val = np.median(edge_data)
+            q75 = np.percentile(edge_data, 75)
+            q25 = np.percentile(edge_data, 25)
+            iqr = q75 - q25
+            normalized = (edge_data - median_val) / iqr if iqr > 0 else edge_data
+
+        else:
+            raise ValueError(f"Unknown normalization method: {method}")
+
+        normalized_functions[run_id] = normalized
+
+    return normalized_functions
+
+
+def plot_architecture_analysis_summary(architecture_analysis, hub_analysis, pathway_analysis):
+    """
+    Create comprehensive visualization of architecture analysis results
+
+    Args:
+        architecture_analysis: Results from analyze_individual_architectures
+        hub_analysis: Results from identify_hub_neurons_by_type
+        pathway_analysis: Results from compare_pathway_organization
+
+    Returns:
+        fig: matplotlib figure with summary plots
+    """
+
+    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+
+    # 1. Distribution of architecture types
+    df = architecture_analysis['architecture_data']
+    type_counts = df['architecture_type'].value_counts()
+
+    axes[0, 0].pie(type_counts.values, labels=type_counts.index, autopct='%1.1f%%')
+    axes[0, 0].set_title('Distribution of Architecture Types')
+
+    # 2. Separation index distribution
+    for arch_type in df['architecture_type'].unique():
+        subset = df[df['architecture_type'] == arch_type]
+        axes[0, 1].hist(subset['separation_index'], alpha=0.7, label=arch_type, bins=10)
+
+    axes[0, 1].set_xlabel('Separation Index')
+    axes[0, 1].set_ylabel('Count')
+    axes[0, 1].set_title('Separation Index by Architecture Type')
+    axes[0, 1].legend()
+
+    # 3. Overlap count vs separation index
+    colors = {'specialist': 'blue', 'adapter': 'green', 'generalist': 'red'}
+    for arch_type in df['architecture_type'].unique():
+        subset = df[df['architecture_type'] == arch_type]
+        axes[0, 2].scatter(subset['separation_index'], subset['overlap_count'],
+                           c=colors.get(arch_type, 'gray'), label=arch_type, alpha=0.7)
+
+    axes[0, 2].set_xlabel('Separation Index')
+    axes[0, 2].set_ylabel('Overlap Count')
+    axes[0, 2].set_title('Separation vs Overlap')
+    axes[0, 2].legend()
+
+    # 4. Hub neuron frequency comparison
+    if len(hub_analysis) >= 2:
+        arch_types = list(hub_analysis.keys())[:2]  # Compare first two types
+
+        # Get top neurons for each type
+        neurons_type1 = [item[0] for item in hub_analysis[arch_types[0]]['top_10_neurons']]
+        freq_type1 = [item[1]['frequency'] for item in hub_analysis[arch_types[0]]['top_10_neurons']]
+
+        [item[0] for item in hub_analysis[arch_types[1]]['top_10_neurons']]
+        freq_type2 = [item[1]['frequency'] for item in hub_analysis[arch_types[1]]['top_10_neurons']]
+
+        x_pos = np.arange(len(neurons_type1))
+        width = 0.35
+
+        axes[1, 0].bar(x_pos - width / 2, freq_type1, width, label=arch_types[0])
+        axes[1, 0].bar(x_pos + width / 2, freq_type2, width, label=arch_types[1])
+
+        axes[1, 0].set_xlabel('Neurons')
+        axes[1, 0].set_ylabel('Hub Frequency')
+        axes[1, 0].set_title(f'Top Hub Neurons: {arch_types[0]} vs {arch_types[1]}')
+        axes[1, 0].set_xticks(x_pos)
+        axes[1, 0].set_xticklabels(neurons_type1, rotation=45)
+        axes[1, 0].legend()
+
+    # 5. Connection type heatmap
+    if 'normalized_connections' in pathway_analysis:
+        # Create matrix of connection types vs architecture types
+        all_arch_types = list(pathway_analysis['normalized_connections'].keys())
+        all_conn_types = set()
+        for arch_conns in pathway_analysis['normalized_connections'].values():
+            all_conn_types.update(arch_conns.keys())
+        all_conn_types = sorted(list(all_conn_types))
+
+        matrix = np.zeros((len(all_conn_types), len(all_arch_types)))
+        for i, conn_type in enumerate(all_conn_types):
+            for j, arch_type in enumerate(all_arch_types):
+                matrix[i, j] = pathway_analysis['normalized_connections'][arch_type].get(conn_type, 0)
+
+        im = axes[1, 1].imshow(matrix, cmap='viridis', aspect='auto')
+        axes[1, 1].set_xticks(range(len(all_arch_types)))
+        axes[1, 1].set_xticklabels(all_arch_types)
+        axes[1, 1].set_yticks(range(len(all_conn_types)))
+        axes[1, 1].set_yticklabels(all_conn_types, fontsize=8)
+        axes[1, 1].set_title('Connection Types by Architecture')
+        plt.colorbar(im, ax=axes[1, 1])
+
+    # 6. Summary statistics
+    axes[1, 2].axis('off')
+    summary_text = f"""
+    SUMMARY STATISTICS
+
+    Total Individuals: {len(df)}
+
+    Architecture Types:
+    """
+
+    for arch_type in df['architecture_type'].unique():
+        count = sum(df['architecture_type'] == arch_type)
+        mean_sep = df[df['architecture_type'] == arch_type]['separation_index'].mean()
+        summary_text += f"  {arch_type}: {count} ({count / len(df) * 100:.1f}%)\n"
+        summary_text += f"    Mean separation: {mean_sep:.3f}\n"
+
+    axes[1, 2].text(0.1, 0.9, summary_text, transform=axes[1, 2].transAxes,
+                    verticalalignment='top', fontfamily='monospace')
+
+    plt.tight_layout()
+    return fig
+
+
+def run_neural_architecture_pipeline(top_pairs_by_run, odor_responses_by_run, all_neuron_list,
+                                     specialist_threshold=0.95, adapter_threshold=0.70):
+    """
+    Run the complete neural architecture analysis pipeline
+
+    Args:
+        top_pairs_by_run: Dict with run_id -> list of top connectivity pairs
+        odor_responses_by_run: Dict with run_id -> odor response data
+        all_neuron_list: List of all neuron names
+        specialist_threshold: Threshold for specialist classification
+        adapter_threshold: Threshold for adapter classification
+
+    Returns:
+        complete_analysis: Dict with all analysis results
+    """
+
+    print("RUNNING NEURAL ARCHITECTURE ANALYSIS PIPELINE")
+    print("=" * 60)
+
+    # Phase 1: Individual Architecture Classification
+    architecture_analysis = analyze_individual_architectures(
+        top_pairs_by_run, odor_responses_by_run, all_neuron_list,
+        specialist_threshold, adapter_threshold
+    )
+
+    # Phase 2: Hub Neuron Analysis
+    hub_analysis = identify_hub_neurons_by_type(
+        top_pairs_by_run, architecture_analysis
+    )
+
+    # Phase 2: Pathway Organization Comparison
+    pathway_analysis = compare_pathway_organization(
+        top_pairs_by_run, architecture_analysis, all_neuron_list
+    )
+
+    # Create summary visualization
+    summary_fig = plot_architecture_analysis_summary(
+        architecture_analysis, hub_analysis, pathway_analysis
+    )
+
+    return {
+        'architecture_analysis': architecture_analysis,
+        'hub_analysis': hub_analysis,
+        'pathway_analysis': pathway_analysis,
+        'summary_figure': summary_fig
+    }
+
+
+

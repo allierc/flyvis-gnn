@@ -27,12 +27,12 @@ from flyvis_gnn.models.utils import (
     get_in_features_update,
     get_index_particles,
     analyze_odor_responses_by_neuron,
-    plot_odor_heatmaps,
     analyze_data_svd,
     compute_normalization_value,
 )
 from flyvis_gnn.models.registry import create_model
-from flyvis_gnn.models.plot_utils import (
+from flyvis_gnn.plot import (
+    plot_odor_heatmaps,
     analyze_mlp_edge_lines,
     analyze_mlp_edge_lines_weighted_with_max,
     analyze_mlp_phi_synaptic,

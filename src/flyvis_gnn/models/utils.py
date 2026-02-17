@@ -262,76 +262,6 @@ def get_in_features(rr=None, embedding=None, model=[], model_name = [], max_radi
 
     return in_features
 
-def plot_training_flyvis(x_list, model, config, epoch, N, log_dir, device, cmap, type_list,
-                         gt_weights, edges, n_neurons=None, n_neuron_types=None):
-    from flyvis_gnn.plot import (
-        plot_embedding, plot_lin_edge, plot_lin_phi, plot_weight_scatter,
-        compute_all_corrected_weights, get_model_W,
-    )
-
-    if n_neurons is None:
-        n_neurons = len(type_list)
-
-    plt.style.use('default')
-
-    # Plot 1: Embedding scatter plot
-    fig, ax = plt.subplots(figsize=(8, 8))
-    plot_embedding(ax, model, type_list, n_neuron_types, cmap)
-    plt.tight_layout()
-    plt.savefig(f"./{log_dir}/tmp_training/embedding/{epoch}_{N}.png", dpi=87)
-    plt.close()
-
-    # Plot 2: Raw W scatter (no correction)
-    fig, ax = plt.subplots(figsize=(8, 8))
-    raw_W = to_numpy(get_model_W(model).squeeze())
-    r_squared_raw, _ = plot_weight_scatter(
-        ax,
-        gt_weights=to_numpy(gt_weights),
-        learned_weights=raw_W,
-        corrected=False,
-        outlier_threshold=5,
-    )
-    plt.tight_layout()
-    plt.savefig(f"./{log_dir}/tmp_training/matrix/raw_{epoch}_{N}.png",
-                dpi=87, bbox_inches='tight', pad_inches=0)
-    plt.close()
-
-    # Compute corrected weights
-    corrected_W, _, _, _ = compute_all_corrected_weights(
-        model, config, edges, x_list, device)
-
-    # Plot 3: Corrected weight comparison scatter plot
-    fig, ax = plt.subplots(figsize=(8, 8))
-    r_squared, _ = plot_weight_scatter(
-        ax,
-        gt_weights=to_numpy(gt_weights),
-        learned_weights=to_numpy(corrected_W.squeeze()),
-        corrected=True,
-        xlim=[-1, 2],
-        ylim=[-1, 2],
-        outlier_threshold=5,
-    )
-    plt.tight_layout()
-    plt.savefig(f"./{log_dir}/tmp_training/matrix/comparison_{epoch}_{N}.png",
-                dpi=87, bbox_inches='tight', pad_inches=0)
-    plt.close()
-
-    # Plot 4: Edge function visualization (lin_edge / MLP1)
-    fig, ax = plt.subplots(figsize=(8, 8))
-    plot_lin_edge(ax, model, config, n_neurons, type_list, cmap, device)
-    plt.tight_layout()
-    plt.savefig(f"./{log_dir}/tmp_training/function/MLP1/func_{epoch}_{N}.png", dpi=87)
-    plt.close()
-
-    # Plot 5: Phi function visualization (lin_phi / MLP0)
-    fig, ax = plt.subplots(figsize=(8, 8))
-    plot_lin_phi(ax, model, config, n_neurons, type_list, cmap, device)
-    plt.tight_layout()
-    plt.savefig(f"./{log_dir}/tmp_training/function/MLP0/func_{epoch}_{N}.png", dpi=87)
-    plt.close()
-
-    return r_squared
-
 def set_trainable_parameters(model=[], lr_embedding=[], lr=[],  lr_update=[], lr_W=[], lr_modulation=[], learning_rate_NNR=[], learning_rate_NNR_f=[], learning_rate_NNR_E=[], learning_rate_NNR_b=[]):
 
     trainable_params = [param for _, param in model.named_parameters() if param.requires_grad]
@@ -517,59 +447,6 @@ def analyze_odor_responses_by_neuron(model, x_list, edges, n_runs, n_frames, tim
             print(f"  {i + 1}. {name} : {val:.4f}")
 
     return odor_responses  # Return only odor_responses to match original function signature
-
-def plot_odor_heatmaps(odor_responses):
-    """
-    Plot 3 separate heatmaps showing mean response per neuron for each odor
-    """
-    odor_list = ['butanone', 'pentanedione', 'NaCL']
-    n_neurons = odor_responses['butanone'].shape[1]
-
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-
-    for i, odor in enumerate(odor_list):
-        # Compute mean response per neuron
-        mean_responses = torch.mean(odor_responses[odor], dim=0).numpy()  # [n_neurons]
-
-        # Reshape to 2D for heatmap (assuming square-ish layout)
-        side_length = int(np.ceil(np.sqrt(n_neurons)))
-        padded_responses = np.pad(mean_responses, (0, side_length ** 2 - n_neurons), 'constant')
-        response_matrix = padded_responses.reshape(side_length, side_length)
-
-        # Plot heatmap
-        sns.heatmap(response_matrix, ax=axes[i], cmap='bwr', center=0,
-                    cbar=False, square=True, xticklabels=False, yticklabels=False)
-        axes[i].set_title(f'{odor} mean response')
-
-    plt.tight_layout()
-    return fig
-
-def plot_weight_comparison(w_true, w_modified, output_path, xlabel='true $W$', ylabel='modified $W$', color='white'):
-    w_true_np = w_true.detach().cpu().numpy().flatten()
-    w_modified_np = w_modified.detach().cpu().numpy().flatten()
-    plt.figure(figsize=(8, 8))
-    plt.scatter(w_true_np, w_modified_np, s=8, alpha=0.5, color=color, edgecolors='none')
-    # Fit linear model
-    lin_fit, _ = curve_fit(linear_model, w_true_np, w_modified_np)
-    slope = lin_fit[0]
-    lin_fit[1]
-    # R2 calculation
-    residuals = w_modified_np - linear_model(w_true_np, *lin_fit)
-    ss_res = np.sum(residuals ** 2)
-    ss_tot = np.sum((w_modified_np - np.mean(w_modified_np)) ** 2)
-    r_squared = 1 - (ss_res / ss_tot)
-    # Plot identity line
-    plt.plot([w_true_np.min(), w_true_np.max()], [w_true_np.min(), w_true_np.max()], 'r--', linewidth=2, label='identity')
-    # Add text
-    plt.text(w_true_np.min(), w_true_np.max(), f'$R^2$: {r_squared:.3f}\nslope: {slope:.2f}', fontsize=18, va='top', ha='left')
-    plt.xlabel(xlabel, fontsize=24)
-    plt.ylabel(ylabel, fontsize=24)
-    plt.xticks(fontsize=18)
-    plt.yticks(fontsize=18)
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=150)
-    plt.close()
-    return slope, r_squared
 
 
 def check_dales_law(edges, weights, type_list=None, n_neurons=None, verbose=True, logger=None):
