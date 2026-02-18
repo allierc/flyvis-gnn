@@ -7,6 +7,7 @@ import subprocess
 import torch
 import xarray as xr
 from flyvis_gnn.utils import choose_boundary_values, get_equidistant_points, to_numpy, large_tensor_nonzero
+from flyvis_gnn.figure_style import default_style
 from scipy import stats
 from scipy.spatial import Delaunay
 from time import sleep
@@ -482,22 +483,16 @@ def init_connectivity(connectivity_file, connectivity_type, connectivity_filling
                                    dtype=torch.float32, device=device)
         matrix_sign = matrix_sign.reshape(n_neuron_types, n_neuron_types)
 
-        plt.figure(figsize=(10, 10))
-        ax = sns.heatmap(to_numpy(connectivity), center=0, square=True, cmap='bwr', cbar_kws={'fraction': 0.046},
-                         vmin=-0.1, vmax=0.1)
+        fig, ax = default_style.figure(width=10, height=10)
+        sns.heatmap(to_numpy(connectivity), center=0, square=True, cmap='bwr', cbar_kws={'fraction': 0.046},
+                    vmin=-0.1, vmax=0.1, ax=ax)
         cbar = ax.collections[0].colorbar
-        cbar.ax.tick_params(labelsize=32)
-        plt.xticks([0, n_neurons - 1], [1, n_neurons], fontsize=48)
-        plt.yticks([0, n_neurons - 1], [1, n_neurons], fontsize=48)
-        plt.xticks(rotation=0)
-        plt.subplot(2, 2, 1)
-        ax = sns.heatmap(to_numpy(connectivity[0:20, 0:20]), cbar=False, center=0, square=True, cmap='bwr', vmin=-0.1,
-                         vmax=0.1)
-        plt.xticks([])
-        plt.yticks([])
-        plt.tight_layout()
-        plt.savefig(f'graphs_data/{dataset_name}/adjacency_0.png', dpi=300)
-        plt.close()
+        cbar.ax.tick_params(labelsize=default_style.tick_font_size)
+        ax.set_xticks([0, n_neurons - 1])
+        ax.set_xticklabels([1, n_neurons])
+        ax.set_yticks([0, n_neurons - 1])
+        ax.set_yticklabels([1, n_neurons])
+        default_style.savefig(fig, f'graphs_data/{dataset_name}/adjacency_0.png')
 
         T1_ = to_numpy(T1.squeeze())
         xy_grid = np.stack(np.meshgrid(T1_, T1_), -1)
@@ -507,26 +502,20 @@ def init_connectivity(connectivity_file, connectivity_type, connectivity_filling
         sign_matrix = matrix_sign[xy_grid[..., 0], xy_grid[..., 1]]
         connectivity *= sign_matrix
 
-        plt.imshow(to_numpy(sign_matrix))
-        plt.savefig(f"graphs_data/{dataset_name}/large_connectivity_sign.tif", dpi=130)
-        plt.close()
+        fig_sign, ax_sign = default_style.figure(width=10, height=10)
+        ax_sign.imshow(to_numpy(sign_matrix))
+        default_style.savefig(fig_sign, f"graphs_data/{dataset_name}/large_connectivity_sign.tif")
 
-        plt.figure(figsize=(10, 10))
-        ax = sns.heatmap(to_numpy(connectivity), center=0, square=True, cmap='bwr', cbar_kws={'fraction': 0.046},
-                         vmin=-0.1, vmax=0.1)
+        fig, ax = default_style.figure(width=10, height=10)
+        sns.heatmap(to_numpy(connectivity), center=0, square=True, cmap='bwr', cbar_kws={'fraction': 0.046},
+                    vmin=-0.1, vmax=0.1, ax=ax)
         cbar = ax.collections[0].colorbar
-        cbar.ax.tick_params(labelsize=32)
-        plt.xticks([0, n_neurons - 1], [1, n_neurons], fontsize=48)
-        plt.yticks([0, n_neurons - 1], [1, n_neurons], fontsize=48)
-        plt.xticks(rotation=0)
-        plt.subplot(2, 2, 1)
-        ax = sns.heatmap(to_numpy(connectivity[0:20, 0:20]), cbar=False, center=0, square=True, cmap='bwr', vmin=-0.1,
-                         vmax=0.1)
-        plt.xticks([])
-        plt.yticks([])
-        plt.tight_layout()
-        plt.savefig(f'graphs_data/{dataset_name}/adjacency_1.png', dpi=300)
-        plt.close()
+        cbar.ax.tick_params(labelsize=default_style.tick_font_size)
+        ax.set_xticks([0, n_neurons - 1])
+        ax.set_xticklabels([1, n_neurons])
+        ax.set_yticks([0, n_neurons - 1])
+        ax.set_yticklabels([1, n_neurons])
+        default_style.savefig(fig, f'graphs_data/{dataset_name}/adjacency_1.png')
 
         flat_sign_matrix = sign_matrix.flatten()
         num_elements = len(flat_sign_matrix)
@@ -538,22 +527,16 @@ def init_connectivity(connectivity_file, connectivity_type, connectivity_filling
 
         connectivity *= sign_matrix
 
-        plt.figure(figsize=(10, 10))
-        ax = sns.heatmap(to_numpy(connectivity), center=0, square=True, cmap='bwr', cbar_kws={'fraction': 0.046},
-                         vmin=-0.1, vmax=0.1)
+        fig, ax = default_style.figure(width=10, height=10)
+        sns.heatmap(to_numpy(connectivity), center=0, square=True, cmap='bwr', cbar_kws={'fraction': 0.046},
+                    vmin=-0.1, vmax=0.1, ax=ax)
         cbar = ax.collections[0].colorbar
-        cbar.ax.tick_params(labelsize=32)
-        plt.xticks([0, n_neurons - 1], [1, n_neurons], fontsize=48)
-        plt.yticks([0, n_neurons - 1], [1, n_neurons], fontsize=48)
-        plt.xticks(rotation=0)
-        plt.subplot(2, 2, 1)
-        ax = sns.heatmap(to_numpy(connectivity[0:20, 0:20]), cbar=False, center=0, square=True, cmap='bwr', vmin=-0.1,
-                         vmax=0.1)
-        plt.xticks([])
-        plt.yticks([])
-        plt.tight_layout()
-        plt.savefig(f'graphs_data/{dataset_name}/adjacency_2.png', dpi=300)
-        plt.close()
+        cbar.ax.tick_params(labelsize=default_style.tick_font_size)
+        ax.set_xticks([0, n_neurons - 1])
+        ax.set_xticklabels([1, n_neurons])
+        ax.set_yticks([0, n_neurons - 1])
+        ax.set_yticklabels([1, n_neurons])
+        default_style.savefig(fig, f'graphs_data/{dataset_name}/adjacency_2.png')
 
         total_possible = connectivity.shape[0] * connectivity.shape[1]
         actual_connections = (connectivity != 0).sum().item()

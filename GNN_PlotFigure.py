@@ -1886,6 +1886,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
             else:
                 scatter_size = 0.1
                 scatter_alpha = 0.1
+            scatter_alpha * 0.6
             # Raw weights: compute R² and slope
             plt.scatter(gt_weight, pred_weight, s=scatter_size, c=mc, alpha=scatter_alpha)
             x_data_raw = np.reshape(gt_weight, (n_plot * n_plot))
@@ -3177,7 +3178,7 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
 
 
             fig = plt.figure(figsize=(10, 9))
-            plt.scatter(true_in, learned_in, c=mc, s=0.5, alpha=0.1)
+            plt.scatter(true_in, learned_in, c=mc, s=0.5, alpha=0.06)
             lin_fit, _ = curve_fit(linear_model, true_in, learned_in)
             residuals_ = learned_in - linear_model(true_in, *lin_fit)
             ss_res = np.sum(residuals_ ** 2)

@@ -75,7 +75,7 @@ def data_generate(
             bSave=bSave,
         )
 
-    plt.style.use("default")
+    default_style.apply_globally()
 
 
 def generate_from_data(config, device, visualize=True, step=None, cmap=None, style=None):
@@ -121,7 +121,6 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     for f in files:
         os.remove(f)
 
-    plt.style.use('default')
     extent = 8
 
     from flyvis.datasets.sintel import AugmentedSintel

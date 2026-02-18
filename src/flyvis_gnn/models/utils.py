@@ -4,6 +4,7 @@ import torch
 
 from flyvis_gnn.utils import to_numpy
 from flyvis_gnn.neuron_state import NeuronState
+from flyvis_gnn.figure_style import default_style, dark_style
 import numpy as np
 import seaborn as sns
 from scipy.optimize import curve_fit
@@ -648,7 +649,8 @@ def analyze_data_svd(data, output_folder, config=None, max_components=100, logge
         max_data_size: maximum data size before subsampling (default 10M elements)
         max_neurons: maximum number of neurons before subsampling (default 1024)
         is_flyvis: if True, use "visual stimuli" label instead of "external input"
-        style: matplotlib style to use (e.g., 'dark_background' for dark mode)
+        style: FigureStyle instance or matplotlib style string (e.g., 'dark_background').
+               None defaults to default_style.
         save_in_subfolder: if True, save to results/ subfolder; if False, save directly to output_folder
         log_file: optional file handle to write results
 
@@ -717,25 +719,22 @@ def analyze_data_svd(data, output_folder, config=None, max_components=100, logge
     else:
         data_info = f"using full data ({n_frames:,} frames, {n_neurons:,} neurons)"
 
-    # save current style context and apply new style if provided
-    # We use context manager approach to avoid resetting global style
-    if style:
-        plt.style.use(style)
+    # resolve figure style
+    from flyvis_gnn.figure_style import FigureStyle
+    if style is None:
+        fig_style = default_style
+    elif isinstance(style, FigureStyle):
+        fig_style = style
+    elif style == 'dark_background':
+        fig_style = dark_style
+    else:
+        fig_style = default_style
 
-    # main color based on style
-    mc = 'w' if style == 'dark_background' else 'k'
-    bg_color = 'k' if style == 'dark_background' else 'w'
-
-    # font sizes
-    TITLE_SIZE = 11
-    LABEL_SIZE = 14
-    TICK_SIZE = 12
-    LEGEND_SIZE = 12
+    mc = fig_style.foreground
+    bg_color = fig_style.background
 
     # prepare figure
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10), facecolor=bg_color)
-    for ax in axes.flat:
-        ax.set_facecolor(bg_color)
+    fig, axes = fig_style.figure(nrows=2, ncols=2, width=14, height=10)
 
     # 1. analyze activity (u)
     activity = activity_sampled  # shape: (n_frames_sampled, n_neurons)
@@ -775,25 +774,19 @@ def analyze_data_svd(data, output_folder, config=None, max_components=100, logge
 
     # plot activity SVD
     ax = axes[0, 0]
-    ax.semilogy(S_act, color=mc, lw=1.5)
-    ax.set_xlabel('component', fontsize=LABEL_SIZE)
-    ax.set_ylabel('singular value', fontsize=LABEL_SIZE)
-    ax.set_title('activity: singular values', fontsize=TITLE_SIZE)
-    ax.tick_params(axis='both', labelsize=TICK_SIZE)
-    ax.grid(True, alpha=0.3)
+    ax.semilogy(S_act, color=mc, lw=fig_style.line_width)
+    fig_style.xlabel(ax, 'component')
+    fig_style.ylabel(ax, 'singular value')
 
     ax = axes[0, 1]
-    ax.plot(cumvar_act, color=mc, lw=1.5)
+    ax.plot(cumvar_act, color=mc, lw=fig_style.line_width)
     ax.axhline(0.90, color='orange', ls='--', label='90%')
     ax.axhline(0.99, color='green', ls='--', label='99%')
     ax.axvline(rank_90_act, color='orange', ls=':', alpha=0.7)
     ax.axvline(rank_99_act, color='green', ls=':', alpha=0.7)
-    ax.set_xlabel('component', fontsize=LABEL_SIZE)
-    ax.set_ylabel('cumulative variance', fontsize=LABEL_SIZE)
-    ax.set_title(f'activity: rank(90%)={rank_90_act}, rank(99%)={rank_99_act}', fontsize=TITLE_SIZE)
-    ax.legend(loc='lower right', fontsize=LEGEND_SIZE)
-    ax.tick_params(axis='both', labelsize=TICK_SIZE)
-    ax.grid(True, alpha=0.3)
+    fig_style.xlabel(ax, 'component')
+    fig_style.ylabel(ax, 'cumulative variance')
+    ax.legend(loc='lower right', fontsize=fig_style.tick_font_size)
 
     # 2. Analyze external_input / visual stimuli (if present and non-zero) - column 4
     # Determine label based on is_flyvis parameter
@@ -847,25 +840,19 @@ def analyze_data_svd(data, output_folder, config=None, max_components=100, logge
 
             # plot external_input / visual stimuli SVD
             ax = axes[1, 0]
-            ax.semilogy(S_ext, color=mc, lw=1.5)
-            ax.set_xlabel('component', fontsize=LABEL_SIZE)
-            ax.set_ylabel('singular value', fontsize=LABEL_SIZE)
-            ax.set_title(f'{input_label}: singular values', fontsize=TITLE_SIZE)
-            ax.tick_params(axis='both', labelsize=TICK_SIZE)
-            ax.grid(True, alpha=0.3)
+            ax.semilogy(S_ext, color=mc, lw=fig_style.line_width)
+            fig_style.xlabel(ax, 'component')
+            fig_style.ylabel(ax, 'singular value')
 
             ax = axes[1, 1]
-            ax.plot(cumvar_ext, color=mc, lw=1.5)
+            ax.plot(cumvar_ext, color=mc, lw=fig_style.line_width)
             ax.axhline(0.90, color='orange', ls='--', label='90%')
             ax.axhline(0.99, color='green', ls='--', label='99%')
             ax.axvline(rank_90_ext, color='orange', ls=':', alpha=0.7)
             ax.axvline(rank_99_ext, color='green', ls=':', alpha=0.7)
-            ax.set_xlabel('component', fontsize=LABEL_SIZE)
-            ax.set_ylabel('cumulative variance', fontsize=LABEL_SIZE)
-            ax.set_title(f'{input_label}: rank(90%)={rank_90_ext}, rank(99%)={rank_99_ext}', fontsize=TITLE_SIZE)
-            ax.legend(loc='lower right', fontsize=LEGEND_SIZE)
-            ax.tick_params(axis='both', labelsize=TICK_SIZE)
-            ax.grid(True, alpha=0.3)
+            fig_style.xlabel(ax, 'component')
+            fig_style.ylabel(ax, 'cumulative variance')
+            ax.legend(loc='lower right', fontsize=fig_style.tick_font_size)
         else:
             log_print(f"--- {input_label} ---")
             log_print("  no external input found (range < 1e-6)")
@@ -890,8 +877,7 @@ def analyze_data_svd(data, output_folder, config=None, max_components=100, logge
     else:
         save_folder = output_folder
     save_path = os.path.join(save_folder, 'svd_analysis.png')
-    plt.savefig(save_path, dpi=150, bbox_inches='tight', facecolor=bg_color)
-    plt.close()
+    fig_style.savefig(fig, save_path)
 
     # print SVD results: data info (white) + rank results (green)
     ext_key = 'visual_stimuli' if is_flyvis else 'external_input'
@@ -996,16 +982,12 @@ def save_exploration_artifacts(root_dir, exploration_dir, config, config_file_, 
             img1 = mpimg.imread(src_mlp1)
 
             # Create combined figure
-            fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+            fig, axes = default_style.figure(ncols=2, width=14, height=6)
             axes[0].imshow(img0)
-            axes[0].set_title('MLP0 (φ)', fontsize=12)
             axes[0].axis('off')
             axes[1].imshow(img1)
-            axes[1].set_title('MLP1 (edge)', fontsize=12)
             axes[1].axis('off')
-            plt.tight_layout()
-            plt.savefig(f"{mlp_save_dir}/iter_{iteration:03d}_MLP.png", dpi=150, bbox_inches='tight')
-            plt.close()
+            default_style.savefig(fig, f"{mlp_save_dir}/iter_{iteration:03d}_MLP.png")
         except Exception as e:
             print(f"\033[93mwarning: could not combine MLP plots: {e}\033[0m")
 

@@ -557,7 +557,7 @@ def plot_weight_scatter(ax, gt_weights, learned_weights, corrected=False,
     r_squared, slope = compute_r_squared(true_in, learned_in)
 
     scatter_color = mc_in if mc_in is not None else 'k'
-    ax.scatter(true_in, learned_in, s=scatter_size, c=scatter_color, alpha=0.1)
+    ax.scatter(true_in, learned_in, s=scatter_size, c=scatter_color, alpha=0.06)
     ax.text(0.05, 0.95,
             f'$R^2$: {r_squared:.3f}\nslope: {slope:.2f}\nN: {len(true_in)}',
             transform=ax.transAxes, verticalalignment='top', fontsize=24)

@@ -5,18 +5,40 @@
 
 ## Goal
 
-Optimize GNN training hyperparameters for the **Drosophila visual system** (flyvis_62_1_gs, DAVIS + noise).
-**Data is RE-GENERATED each iteration** — simulation parameters are fixed but each run produces a new stochastic realization (noise, initial conditions). This tests robustness to data variability.
+Find a **robust** GNN training configuration for the **Drosophila visual system** (flyvis_62_1_gs, DAVIS + noise).
+**Data is RE-GENERATED each iteration** — simulation parameters are fixed but each run produces a new stochastic realization (noise, initial conditions).
 
-Primary metric: **connectivity_R2** (R² between learned W and ground-truth W).
-Secondary metrics: **tau_R2** (time constant recovery), **V_rest_R2** (resting potential recovery), **cluster_accuracy** (neuron type clustering from embeddings).
+**Primary objective: LOW VARIANCE across runs.** A config that scores conn_R2=0.95 with CV<5% is better than one that scores conn_R2=0.98 with CV>15%.
+
+### Robustness Metrics
+
+For each config tested multiple times, compute:
+- **mean** and **std** of each metric (conn_R2, tau_R2, V_rest_R2, cluster_accuracy)
+- **CV = std / mean** (coefficient of variation) — lower is better
+- **min** across runs — the worst-case matters for reliability
+
+A config is **robust** if:
+- conn_R2: CV < 5% and min > 0.90
+- tau_R2: CV < 5% and min > 0.90
+- V_rest_R2: CV < 20% and min > 0.40
+- cluster_accuracy: CV < 10% and min > 0.80
+
+A config is **fragile** if any metric has CV > 25% or min falls below 50% of the mean.
+
+### Ranking Configs
+
+When comparing configs, use this ranking:
+1. First filter: only configs with >= 3 runs
+2. Sort by: `score = mean(conn_R2) * (1 - CV(conn_R2)) + 0.5 * mean(V_rest_R2) * (1 - CV(V_rest_R2))`
+3. Break ties by: lower CV(V_rest_R2)
 
 ## CRITICAL: Data is RE-GENERATED Each Iteration
 
 Unlike `flyvis_62_1`, this exploration **regenerates data before each training run**. This means:
 - Results will vary across iterations even with identical configs (stochastic noise)
-- Robust configs will show consistent performance across regenerations
-- Fragile configs will show high variance — mark these in observations
+- **Replicate runs are NOT wasted** — they are the most valuable data for assessing robustness
+- A single run tells you almost nothing about robustness; 3+ runs are needed
+- When a config shows high variance, investigate which metric is unstable and why
 
 **DO NOT change simulation parameters** (n_neurons, n_frames, n_edges, n_input_neurons, n_neuron_types, delta_t, noise_model_level, visual_input_type). These are fixed. Only the stochastic realization changes.
 
@@ -30,7 +52,7 @@ tau_i * dv_i(t)/dt = -v_i(t) + V_i^rest + sum_j W_ij * ReLU(v_j(t)) + I_i(t)
 
 - 13,741 neurons, 65 cell types, 434,112 edges
 - 1,736 input neurons (photoreceptors)
-- DAVIS visual input, noise_model_level=0.05
+- DAVIS visual input, noise_model_level=0.05 (additive $\mathcal{N}(0, \sigma^2)$ with $\sigma=0.05$)
 - 64,000 frames, delta_t=0.02
 
 ## GNN Architecture
@@ -92,9 +114,9 @@ Each epoch runs `Niter = n_frames * data_augmentation_loop / batch_size * 0.2` i
 
 ## Established Principles from flyvis_62_1 (144 iterations)
 
-These principles were established on **fixed data** (flyvis_62_1). A key goal of this exploration is to test whether they hold with **regenerated data** (flyvis_62_1_gs).
+These principles were established on **fixed data** (flyvis_62_1). A key goal of this exploration is to test whether they hold with **regenerated data** (flyvis_62_1_gs) and whether they produce **robust** results.
 
-### Confirmed Strict Optima (MULTIPLY CONFIRMED)
+### Confirmed Strict Optima (MULTIPLY CONFIRMED on fixed data)
 1. **lr_W=6E-4** — optimal; 5E-4/7E-4/8E-4/1E-3 all worse
 2. **lr=1.2E-3** — STRICTLY optimal; 1.0E-3/1.1E-3/1.4E-3 all catastrophic
 3. **lr_emb=1.55E-3** — STRICTLY optimal; 1.4E-3/1.52E-3/1.57E-3/1.6E-3/1.8E-3 all worse
@@ -119,6 +141,15 @@ These principles were established on **fixed data** (flyvis_62_1). A key goal of
 16. **edge_L1=0.3 favors V_rest; edge_L1=0.28 favors conn_R2**
 17. **W_L2=2E-6 favors conn_R2; W_L2=3E-6 favors V_rest**
 
+### Robustness Hypothesis (to test)
+
+Stronger regularization may improve robustness by constraining the optimization landscape:
+- Higher L2 penalties (W_L2, phi_weight_L2) smooth the loss surface
+- Higher edge_diff may encourage more consistent same-type weight sharing
+- Lower learning rates may reduce sensitivity to data noise
+
+Conversely, configs at sharp optima (e.g., lr_emb=1.55E-3 where +/-0.02E-3 causes collapse) may be inherently fragile across data regenerations.
+
 ## Iteration Loop Structure
 
 Each block = `n_iter_block` iterations (default 24) exploring one parameter subspace.
@@ -142,24 +173,35 @@ You maintain **TWO** files:
 
 - **READ at start of each iteration**
 - **UPDATE at end of each iteration**
-- Contains: established principles + previous blocks summary + current block iterations
+- Contains: established principles + variance estimates + previous blocks summary + current block iterations
 - Fixed size (~500 lines max)
+
+**NEW — Variance Estimates Table** (maintain in memory.md):
+
+```markdown
+### Variance Estimates
+| Config ID | Runs | conn_R2 (mean +/- std) | CV | tau_R2 (mean +/- std) | CV | V_rest_R2 (mean +/- std) | CV | cluster (mean +/- std) | CV | Robust? |
+|-----------|------|------------------------|----|-----------------------|----|--------------------------|----|-----------------------|----|---------|
+| gs_default | 4 | 0.97 +/- 0.01 | 1% | 0.97 +/- 0.02 | 2% | 0.55 +/- 0.18 | 33% | 0.87 +/- 0.03 | 3% | NO (V_rest) |
+```
+
+Update this table every time a config accumulates a new run. This is the most important section of the memory file.
 
 ## Iteration Workflow (Steps 1-5, every iteration)
 
 ### Step 1: Read Working Memory
 
-Read `{config}_memory.md` to recall established principles, previous block findings, current block progress.
+Read `{config}_memory.md` to recall established principles, variance estimates, previous block findings, current block progress.
 
 ### Step 2: Analyze Current Results
 
 **Metrics from `analysis.log`:**
 
-- `connectivity_R2`: R² of learned vs true connectivity weights (PRIMARY)
-- `tau_R2`: R² of learned vs true time constants
-- `V_rest_R2`: R² of learned vs true resting potentials
+- `connectivity_R2`: R2 of learned vs true connectivity weights
+- `tau_R2`: R2 of learned vs true time constants
+- `V_rest_R2`: R2 of learned vs true resting potentials
 - `cluster_accuracy`: neuron type clustering accuracy
-- `test_R2`: R² of one-step prediction
+- `test_R2`: R2 of one-step prediction
 - `test_pearson`: Pearson correlation of one-step prediction
 - `training_time_min`: Training duration in minutes
 
@@ -169,7 +211,7 @@ Read `{config}_memory.md` to recall established principles, previous block findi
 - **Partial**: connectivity_R2 0.3-0.8
 - **Failed**: connectivity_R2 < 0.3
 
-**Robustness assessment** (NEW for gs): When comparing iterations, note whether performance changes are due to parameter changes or data regeneration variance. If a config was tested before, compare to assess stochasticity.
+**Robustness assessment**: When a config has been tested before, update the variance table. Flag any metric with CV > 20% as unstable. If a config was tested >= 3 times, classify it as robust or fragile.
 
 **UCB scores from `ucb_scores.txt`:**
 
@@ -192,6 +234,7 @@ Embedding: [visual observation, e.g., "65 types partially separated" or "no sepa
 Mutation: [param]: [old] -> [new]
 Parent rule: [one line]
 Observation: [one line — note if variance could explain result]
+Variance update: [config_id] now has N runs, CV(conn_R2)=X%, CV(V_rest_R2)=Y%
 Next: parent=P
 ```
 
@@ -202,29 +245,34 @@ Next: parent=P
 Use UCB scores to select parent. Highest UCB = most promising to explore.
 If UCB file is empty (block boundary), use `parent=root`.
 
+**Robustness-aware selection**: Prefer parents with >= 2 runs and low CV. A node with mean conn_R2=0.95 and 3 consistent runs is a better parent than one with conn_R2=0.98 from a single run.
+
 ### Step 5: Propose Next Mutation
 
 Edit the config file with one or two parameter changes. Test one hypothesis at a time.
 
+**When to replicate vs mutate**: If the best-performing config has < 3 runs, replicate it before mutating. Replication is never wasted — it builds the variance estimate.
+
 ## Block Partition (suggested)
 
-Since the gs config is already well-optimized from 144 iterations on flyvis_62_1, the blocks focus on **robustness verification** and **refinement**:
+Since the gs config is already well-optimized from 144 iterations on flyvis_62_1, the blocks focus on **robustness measurement** and **variance reduction**:
 
-| Block | Focus | Parameters to explore |
-|-------|-------|----------------------|
-| 1 | Robustness baseline | Re-run gs defaults (no changes) 4x to establish variance baseline, then test learning rates |
-| 2 | Regularization refinement | coeff_edge_diff (740-760), coeff_edge_weight_L1 (0.26-0.32), coeff_W_L2 (2E-6 to 4E-6) |
-| 3 | V_rest improvement | Explore trade-off: edge_L1, W_L2, edge_norm combinations that maximize V_rest while keeping conn_R2 > 0.95 |
-| 4 | Architecture & augmentation | hidden_dim (64-96), data_augmentation_loop (18-25), batch_size (1-2) |
-| 5 | Combined refinement | Best robust parameters from blocks 1-4 |
+| Block | Focus | Strategy |
+|-------|-------|----------|
+| 1 | Variance baseline | Run gs defaults 8-12 times (across slots) to establish per-metric variance. No parameter changes. |
+| 2 | Identify fragile params | Test each parameter at +/- small perturbation (2-3 runs each) to find which params cause high variance |
+| 3 | Regularization for robustness | Increase L2 penalties (W_L2, phi_L2) and edge_diff to test if stronger regularization reduces CV |
+| 4 | Learning rate robustness | Test slightly lower learning rates (lr_W=5.5E-4, lr=1.1E-3) — slower convergence may improve consistency |
+| 5 | Best robust config | Combine findings from blocks 1-4; replicate best candidates 4+ times to confirm robustness |
 
 ## Block Boundaries
 
 At the end of each block:
 1. Summarize findings in memory.md "Previous Block Summary"
-2. Update "Established Principles" with confirmed insights — distinguish between **fixed-data principles** (from 62_1) and **robust principles** (confirmed on regenerated data)
-3. Clear "Current Block" section for next block
-4. Carry forward the best config as starting point
+2. Update "Variance Estimates" table with all accumulated runs
+3. Update "Established Principles" — distinguish between **fixed-data principles** (from 62_1) and **robust principles** (confirmed with low CV on regenerated data)
+4. Clear "Current Block" section for next block
+5. Carry forward the **most robust** config (not necessarily the highest-scoring one) as starting point
 
 ## Known Results (from prior experiments)
 
@@ -235,4 +283,8 @@ At the end of each block:
 
 ### flyvis_62_1_gs (regenerated data, GNN_Test.py):
 - Latest run: conn_R2=0.9705, tau_R2=0.974, V_rest_R2=0.734, GMM=0.887
-- **V_rest is inconsistent** across regenerations (0.19 to 0.73) — this is the primary problem to solve
+- **V_rest is the most variable metric** across regenerations (observed range: 0.19 to 0.73)
+- conn_R2 and tau_R2 appear more stable but need systematic measurement
+
+### Key question
+The gs config was optimized for peak performance on fixed data. Is it also robust to data regeneration, or does another point in parameter space achieve lower CV at the cost of slightly lower mean performance?

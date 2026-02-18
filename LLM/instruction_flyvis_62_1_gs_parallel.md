@@ -1,4 +1,4 @@
-# Parallel Mode Addendum — FlyVis GS (generate + train)
+# Parallel Mode Addendum — FlyVis GS (generate + train, robustness focus)
 
 This addendum applies when running in **parallel mode** (GNN_LLM_parallel_flyvis.py). Follow all rules from the base instruction file (`instruction_flyvis_62_1_gs.md`), with these modifications.
 
@@ -6,8 +6,9 @@ This addendum applies when running in **parallel mode** (GNN_LLM_parallel_flyvis
 
 Unlike `flyvis_62_1`, each slot **regenerates data** before training. The simulation seed varies per slot, producing different stochastic realizations. This means:
 - Identical configs across slots will produce DIFFERENT results (due to different data)
-- Use this to separate **parameter effects** from **data variance**
-- When 2+ slots have the same config but different results, the spread indicates stochasticity
+- **This is a feature, not a bug** — use it to measure variance within a single batch
+- When 2+ slots have the same config, compute mean/std/CV immediately from the batch
+- 4 identical slots in one batch = 4 data points for the variance estimate
 
 ## Batch Processing
 
@@ -23,35 +24,42 @@ Unlike `flyvis_62_1`, each slot **regenerates data** before training. The simula
 - Only modify `training:` and `graph_model:` parameters (and `claude:` where allowed)
 - **DO NOT change `simulation:` parameters** — only the seed changes per regeneration
 
-## Parallel UCB Strategy
+## Parallel UCB Strategy (Robustness-Focused)
 
-When selecting parents for 4 simultaneous mutations, **diversify** your choices:
+When selecting parents for 4 simultaneous mutations, **prioritize replication**:
 
 | Slot | Role | Description |
 | ---- | ---- | ----------- |
 | 0 | **exploit** | Highest UCB node, conservative mutation |
 | 1 | **exploit** | 2nd highest UCB node, or same parent different param |
-| 2 | **explore** | Under-visited node, or new parameter dimension |
-| 3 | **robustness-check** | Re-run a previous config UNCHANGED to measure data variance |
+| 2 | **replicate** | Re-run a promising config (< 3 runs) to build variance estimate |
+| 3 | **replicate** | Re-run the current best config to build variance estimate |
 
-### Slot 3: Robustness Checking
+**Key principle**: At least 2 of 4 slots should be replicates until the variance table has >= 3 runs for the top 3 configs. After that, reduce to 1 replicate slot.
 
-Since data is regenerated, slot 3 should periodically **re-run the best config unchanged** to build a variance estimate:
+### Replication Strategy
 
-1. Pick the current best-performing config (from UCB or memory)
-2. Copy it verbatim to slot 3 (no parameter changes)
+Since data is regenerated, replication slots build the variance estimate:
+
+1. Pick a config that needs more runs (< 3 runs, or high CV)
+2. Copy it verbatim to the slot (no parameter changes)
 3. In the log entry, write: `Mode/Strategy: robustness-check`
 4. In the Mutation line: `Mutation: [none] — robustness re-run of Node X`
-5. After results, compute the spread vs the original run
-6. Update the "Variance Estimates" section in memory.md
+5. After results, update the "Variance Estimates" table in memory.md
+6. Compute running mean/std/CV
 
-After the first few batches establish a variance baseline, slot 3 can switch to **principle-test** mode (testing Established Principles from the 62_1 exploration).
+### When to Stop Replicating
+
+A config has enough replicates when:
+- It has >= 4 runs AND
+- CV(conn_R2) confidence interval is narrow (std of CV estimate < 2%) AND
+- The robust/fragile classification is clear
 
 ## Start Call (first batch, no results yet)
 
 When the prompt says `PARALLEL START`:
 - Read the base config to understand the current gs parameters
-- Create 4 variations to establish a baseline:
+- **All 4 slots run gs defaults unchanged** (variance baseline):
   - Slot 0: gs defaults unchanged (baseline)
   - Slot 1: gs defaults unchanged (variance measurement)
   - Slot 2: gs defaults unchanged (variance measurement)
@@ -59,9 +67,11 @@ When the prompt says `PARALLEL START`:
 - This first batch establishes the **variance baseline** for regenerated data
 - Write the planned initial variations to the working memory file
 
+**Continue running gs defaults for batch 2 and 3 as well** (12 total baseline runs) to get a reliable variance estimate before making any parameter changes. This is block 1.
+
 ## Logging Format
 
-Same as base instructions, but you write 4 entries per batch:
+Same as base instructions, but you write 4 entries per batch. Add variance update line:
 
 ```
 ## Iter N: [converged/partial/failed]
@@ -73,6 +83,7 @@ Embedding: [visual observation, e.g., "65 types partially separated"]
 Mutation: [param]: [old] -> [new]
 Parent rule: [one line]
 Observation: [one line — note if variance could explain result]
+Variance update: [config_id] now has N runs, CV(conn_R2)=X%, CV(V_rest_R2)=Y%
 Next: parent=P
 ```
 
@@ -81,6 +92,18 @@ Next: parent=P
 **CRITICAL**: The `Next: parent=P` line selects the parent for the **next batch's** mutations. `P` must refer to a node from a **previous** batch or the current batch — but NEVER set `Next: parent=P` where P is `id+1` (the next slot in the same batch).
 
 Write all 4 entries before editing the 4 config files for the next batch.
+
+## After Each Batch: Update Variance Table
+
+After writing all 4 log entries, update the Variance Estimates table in memory.md:
+
+```markdown
+### Variance Estimates
+| Config ID | Runs | conn_R2 (mean +/- std) | CV | tau_R2 (mean +/- std) | CV | V_rest_R2 (mean +/- std) | CV | cluster (mean +/- std) | CV | Robust? |
+|-----------|------|------------------------|----|-----------------------|----|--------------------------|----|-----------------------|----|---------|
+```
+
+Group results by config (same parameters = same config ID). This table drives all decisions.
 
 ## Block Boundaries
 
@@ -93,7 +116,7 @@ Write all 4 entries before editing the 4 config files for the next batch.
 If a slot is marked `[FAILED]` in the prompt:
 - Write a brief `## Iter N: failed` entry noting the failure
 - Still propose a mutation for that slot's config in the next batch
-- With regenerated data, failures may be stochastic — do not draw strong conclusions from a single failure
+- With regenerated data, failures may be stochastic — if a config fails once but succeeded before, note this as high variance (treat as a very low metric value in the CV calculation)
 
 ## Training Time Monitoring
 
