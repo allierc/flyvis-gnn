@@ -3,15 +3,29 @@
 Replaces the packed (N, 9) tensor with named fields.
 Follows the zapbench pattern: data loads directly into dataclass fields,
 classmethods handle I/O, no raw tensor layout leaks outside.
+
+All fields default to None so callers can load only what they need
+(e.g. fields=['index', 'voltage', 'stimulus'] for training).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields as dc_fields
 from pathlib import Path
+from typing import Sequence
 
 import numpy as np
 import torch
+
+# Field classification — used by from_zarr_v3 to pick dtype/shape.
+STATIC_FIELDS = {'index', 'pos', 'group_type', 'neuron_type'}
+DYNAMIC_FIELDS = {'voltage', 'stimulus', 'calcium', 'fluorescence'}
+ALL_FIELDS = STATIC_FIELDS | DYNAMIC_FIELDS
+
+
+def _apply(tensor, fn):
+    """Apply fn to tensor if not None, else return None."""
+    return fn(tensor) if tensor is not None else None
 
 
 @dataclass
@@ -23,27 +37,39 @@ class NeuronState:
 
     Dynamic fields (updated every simulation frame):
         voltage, stimulus, calcium, fluorescence
+
+    All fields default to None — only populated fields are used.
     """
 
     # static
-    index: torch.Tensor        # (N,) long — neuron IDs 0..N-1
-    pos: torch.Tensor          # (N, 2) float32 — spatial (x, y)
-    group_type: torch.Tensor   # (N,) long — grouped neuron type
-    neuron_type: torch.Tensor  # (N,) long — integer neuron type
+    index: torch.Tensor | None = None        # (N,) long — neuron IDs 0..N-1
+    pos: torch.Tensor | None = None          # (N, 2) float32 — spatial (x, y)
+    group_type: torch.Tensor | None = None   # (N,) long — grouped neuron type
+    neuron_type: torch.Tensor | None = None  # (N,) long — integer neuron type
 
     # dynamic
-    voltage: torch.Tensor      # (N,) float32 — membrane voltage u
-    stimulus: torch.Tensor     # (N,) float32 — visual input / excitation
-    calcium: torch.Tensor      # (N,) float32 — calcium concentration
-    fluorescence: torch.Tensor # (N,) float32 — fluorescence readout
+    voltage: torch.Tensor | None = None      # (N,) float32 — membrane voltage u
+    stimulus: torch.Tensor | None = None     # (N,) float32 — visual input / excitation
+    calcium: torch.Tensor | None = None      # (N,) float32 — calcium concentration
+    fluorescence: torch.Tensor | None = None # (N,) float32 — fluorescence readout
 
     @property
     def n_neurons(self) -> int:
-        return self.index.shape[0]
+        """Infer N from the first non-None field."""
+        for f in dc_fields(self):
+            val = getattr(self, f.name)
+            if val is not None:
+                return val.shape[0]
+        raise ValueError("NeuronState has no populated fields")
 
     @property
     def device(self) -> torch.device:
-        return self.voltage.device
+        """Infer device from the first non-None field."""
+        for f in dc_fields(self):
+            val = getattr(self, f.name)
+            if val is not None:
+                return val.device
+        raise ValueError("NeuronState has no populated fields")
 
     def observable(self, calcium_type: str = "none") -> torch.Tensor:
         """Return the observable signal: voltage or calcium, as (N, 1)."""
@@ -73,71 +99,55 @@ class NeuronState:
     def to_packed(self) -> torch.Tensor:
         """Pack back into (N, 9) tensor for legacy compatibility."""
         x = torch.zeros(self.n_neurons, 9, dtype=torch.float32, device=self.device)
-        x[:, 0] = self.index.float()
-        x[:, 1:3] = self.pos
-        x[:, 3] = self.voltage
-        x[:, 4] = self.stimulus
-        x[:, 5] = self.group_type.float()
-        x[:, 6] = self.neuron_type.float()
-        x[:, 7] = self.calcium
-        x[:, 8] = self.fluorescence
+        if self.index is not None:
+            x[:, 0] = self.index.float()
+        if self.pos is not None:
+            x[:, 1:3] = self.pos
+        if self.voltage is not None:
+            x[:, 3] = self.voltage
+        if self.stimulus is not None:
+            x[:, 4] = self.stimulus
+        if self.group_type is not None:
+            x[:, 5] = self.group_type.float()
+        if self.neuron_type is not None:
+            x[:, 6] = self.neuron_type.float()
+        if self.calcium is not None:
+            x[:, 7] = self.calcium
+        if self.fluorescence is not None:
+            x[:, 8] = self.fluorescence
         return x
 
     def to(self, device: torch.device) -> NeuronState:
-        """Move all tensors to device."""
-        return NeuronState(
-            index=self.index.to(device),
-            pos=self.pos.to(device),
-            group_type=self.group_type.to(device),
-            neuron_type=self.neuron_type.to(device),
-            voltage=self.voltage.to(device),
-            stimulus=self.stimulus.to(device),
-            calcium=self.calcium.to(device),
-            fluorescence=self.fluorescence.to(device),
-        )
+        """Move all non-None tensors to device."""
+        return NeuronState(**{
+            f.name: _apply(getattr(self, f.name), lambda t: t.to(device))
+            for f in dc_fields(self)
+        })
 
     def clone(self) -> NeuronState:
-        """Deep clone all tensors."""
-        return NeuronState(
-            index=self.index.clone(),
-            pos=self.pos.clone(),
-            group_type=self.group_type.clone(),
-            neuron_type=self.neuron_type.clone(),
-            voltage=self.voltage.clone(),
-            stimulus=self.stimulus.clone(),
-            calcium=self.calcium.clone(),
-            fluorescence=self.fluorescence.clone(),
-        )
+        """Deep clone all non-None tensors."""
+        return NeuronState(**{
+            f.name: _apply(getattr(self, f.name), lambda t: t.clone())
+            for f in dc_fields(self)
+        })
 
     def detach(self) -> NeuronState:
-        """Detach all tensors from computation graph."""
-        return NeuronState(
-            index=self.index.detach(),
-            pos=self.pos.detach(),
-            group_type=self.group_type.detach(),
-            neuron_type=self.neuron_type.detach(),
-            voltage=self.voltage.detach(),
-            stimulus=self.stimulus.detach(),
-            calcium=self.calcium.detach(),
-            fluorescence=self.fluorescence.detach(),
-        )
+        """Detach all non-None tensors from computation graph."""
+        return NeuronState(**{
+            f.name: _apply(getattr(self, f.name), lambda t: t.detach())
+            for f in dc_fields(self)
+        })
 
     def subset(self, ids) -> NeuronState:
         """Select a subset of neurons by index."""
-        return NeuronState(
-            index=self.index[ids],
-            pos=self.pos[ids],
-            group_type=self.group_type[ids],
-            neuron_type=self.neuron_type[ids],
-            voltage=self.voltage[ids],
-            stimulus=self.stimulus[ids],
-            calcium=self.calcium[ids],
-            fluorescence=self.fluorescence[ids],
-        )
+        return NeuronState(**{
+            f.name: _apply(getattr(self, f.name), lambda t: t[ids])
+            for f in dc_fields(self)
+        })
 
     @classmethod
     def zeros(cls, n_neurons: int, device: torch.device = None) -> NeuronState:
-        """Create zero-initialized NeuronState."""
+        """Create zero-initialized NeuronState (all fields populated)."""
         return cls(
             index=torch.arange(n_neurons, dtype=torch.long, device=device),
             pos=torch.zeros(n_neurons, 2, dtype=torch.float32, device=device),
@@ -156,70 +166,77 @@ class NeuronTimeSeries:
 
     Static fields are stored once (same for all frames).
     Dynamic fields have a leading time dimension (T, N).
+
+    All fields default to None — only populated fields are used.
     """
 
     # static (stored once)
-    index: torch.Tensor        # (N,)
-    pos: torch.Tensor          # (N, 2)
-    group_type: torch.Tensor   # (N,)
-    neuron_type: torch.Tensor  # (N,)
+    index: torch.Tensor | None = None        # (N,)
+    pos: torch.Tensor | None = None          # (N, 2)
+    group_type: torch.Tensor | None = None   # (N,)
+    neuron_type: torch.Tensor | None = None  # (N,)
 
     # dynamic (stored per frame)
-    voltage: torch.Tensor      # (T, N)
-    stimulus: torch.Tensor     # (T, N)
-    calcium: torch.Tensor      # (T, N)
-    fluorescence: torch.Tensor # (T, N)
+    voltage: torch.Tensor | None = None      # (T, N)
+    stimulus: torch.Tensor | None = None     # (T, N)
+    calcium: torch.Tensor | None = None      # (T, N)
+    fluorescence: torch.Tensor | None = None # (T, N)
 
     @property
     def n_frames(self) -> int:
-        return self.voltage.shape[0]
+        """Infer T from the first non-None dynamic field."""
+        for name in DYNAMIC_FIELDS:
+            val = getattr(self, name)
+            if val is not None:
+                return val.shape[0]
+        raise ValueError("NeuronTimeSeries has no dynamic fields")
 
     @property
     def n_neurons(self) -> int:
-        return self.index.shape[0]
+        """Infer N from the first non-None field."""
+        for f in dc_fields(self):
+            val = getattr(self, f.name)
+            if val is not None:
+                return val.shape[-1] if f.name in DYNAMIC_FIELDS else val.shape[0]
+        raise ValueError("NeuronTimeSeries has no populated fields")
 
     def frame(self, t: int) -> NeuronState:
         """Extract single-frame NeuronState at time t.
 
+        Static fields are shared (not cloned).
         Dynamic fields are cloned so the caller can modify them
         without corrupting the timeseries data.
         """
-        return NeuronState(
-            index=self.index,
-            pos=self.pos,
-            group_type=self.group_type,
-            neuron_type=self.neuron_type,
-            voltage=self.voltage[t].clone(),
-            stimulus=self.stimulus[t].clone(),
-            calcium=self.calcium[t].clone(),
-            fluorescence=self.fluorescence[t].clone(),
-        )
+        kwargs = {}
+        for f in dc_fields(self):
+            val = getattr(self, f.name)
+            if val is None:
+                kwargs[f.name] = None
+            elif f.name in DYNAMIC_FIELDS:
+                kwargs[f.name] = val[t].clone()
+            else:
+                kwargs[f.name] = val
+        return NeuronState(**kwargs)
 
     def to(self, device: torch.device) -> NeuronTimeSeries:
-        """Move all tensors to device."""
-        return NeuronTimeSeries(
-            index=self.index.to(device),
-            pos=self.pos.to(device),
-            group_type=self.group_type.to(device),
-            neuron_type=self.neuron_type.to(device),
-            voltage=self.voltage.to(device),
-            stimulus=self.stimulus.to(device),
-            calcium=self.calcium.to(device),
-            fluorescence=self.fluorescence.to(device),
-        )
+        """Move all non-None tensors to device."""
+        return NeuronTimeSeries(**{
+            f.name: _apply(getattr(self, f.name), lambda t: t.to(device))
+            for f in dc_fields(self)
+        })
 
     def subset_neurons(self, ids: np.ndarray | torch.Tensor) -> NeuronTimeSeries:
         """Select a subset of neurons by index."""
-        return NeuronTimeSeries(
-            index=self.index[ids],
-            pos=self.pos[ids],
-            group_type=self.group_type[ids],
-            neuron_type=self.neuron_type[ids],
-            voltage=self.voltage[:, ids],
-            stimulus=self.stimulus[:, ids],
-            calcium=self.calcium[:, ids],
-            fluorescence=self.fluorescence[:, ids],
-        )
+        kwargs = {}
+        for f in dc_fields(self):
+            val = getattr(self, f.name)
+            if val is None:
+                kwargs[f.name] = None
+            elif f.name in DYNAMIC_FIELDS:
+                kwargs[f.name] = val[:, ids]
+            else:
+                kwargs[f.name] = val[ids]
+        return NeuronTimeSeries(**kwargs)
 
     @classmethod
     def from_numpy(cls, arr: np.ndarray) -> NeuronTimeSeries:
@@ -243,100 +260,85 @@ class NeuronTimeSeries:
         )
 
     @classmethod
-    def from_zarr_v2(cls, path: str | Path) -> NeuronTimeSeries:
-        """Load from V2 zarr split format.
+    def from_zarr_v3(cls, path: str | Path, fields: Sequence[str] | None = None) -> NeuronTimeSeries:
+        """Load from V3 per-field zarr format.
 
-        Expects:
-            path/metadata.zarr    — (N, 5) static: [index, xpos, ypos, group_type, type]
-            path/timeseries.zarr  — (T, N, 4) dynamic: [voltage, stimulus, calcium, fluorescence]
+        Args:
+            path: directory containing per-field .zarr arrays
+            fields: list of field names to load (e.g. ['voltage', 'stimulus']).
+                    None means load all available fields.
+
+        Expects per-field zarr arrays under path/:
+            pos.zarr          — (N, 2) float32    (static)
+            group_type.zarr   — (N,) int32        (static)
+            neuron_type.zarr  — (N,) int32        (static)
+            voltage.zarr      — (T, N) float32    (dynamic)
+            stimulus.zarr     — (T, N) float32    (dynamic)
+            calcium.zarr      — (T, N) float32    (dynamic)
+            fluorescence.zarr — (T, N) float32    (dynamic)
+
+        Note: index is not saved on disk — it is constructed as arange(n_neurons).
+              Legacy data with index.zarr is still supported.
         """
         import tensorstore as ts
 
         path = Path(path)
-        metadata_path = path / 'metadata.zarr'
-        timeseries_path = path / 'timeseries.zarr'
+        if fields is None:
+            fields = list(ALL_FIELDS)
 
-        meta_spec = {
-            'driver': 'zarr',
-            'kvstore': {'driver': 'file', 'path': str(metadata_path)},
-        }
-        metadata = ts.open(meta_spec).result().read().result()  # (N, 5)
+        def _read(name):
+            zarr_path = path / f'{name}.zarr'
+            if not zarr_path.exists():
+                return None
+            spec = {
+                'driver': 'zarr',
+                'kvstore': {'driver': 'file', 'path': str(zarr_path)},
+            }
+            return ts.open(spec).result().read().result()
 
-        ts_spec = {
-            'driver': 'zarr',
-            'kvstore': {'driver': 'file', 'path': str(timeseries_path)},
-        }
-        timeseries = ts.open(ts_spec).result().read().result()  # (T, N, 4)
+        kwargs = {}
+        for name in ALL_FIELDS:
+            if name in fields:
+                raw = _read(name)
+                if raw is not None:
+                    if name in ('index', 'group_type', 'neuron_type'):
+                        kwargs[name] = torch.from_numpy(raw.copy()).long()
+                    else:
+                        kwargs[name] = torch.from_numpy(raw.copy()).float()
+                else:
+                    kwargs[name] = None
+            else:
+                kwargs[name] = None
 
-        return cls(
-            index=torch.from_numpy(metadata[:, 0].copy()).long(),
-            pos=torch.from_numpy(metadata[:, 1:3].copy()).float(),
-            group_type=torch.from_numpy(metadata[:, 3].copy()).long(),
-            neuron_type=torch.from_numpy(metadata[:, 4].copy()).long(),
-            voltage=torch.from_numpy(timeseries[:, :, 0].copy()).float(),
-            stimulus=torch.from_numpy(timeseries[:, :, 1].copy()).float(),
-            calcium=torch.from_numpy(timeseries[:, :, 2].copy()).float(),
-            fluorescence=torch.from_numpy(timeseries[:, :, 3].copy()).float(),
-        )
+        ts_obj = cls(**kwargs)
 
-    @classmethod
-    def from_zarr_v1(cls, path: str | Path) -> NeuronTimeSeries:
-        """Load from V1 zarr format (single array, T x N x 9)."""
-        import tensorstore as ts
+        # construct index as arange if not loaded from disk
+        if ts_obj.index is None and 'index' in fields:
+            ts_obj.index = torch.arange(ts_obj.n_neurons, dtype=torch.long)
 
-        zarr_path = Path(str(path) + '.zarr') if not str(path).endswith('.zarr') else Path(path)
-        spec = {
-            'driver': 'zarr',
-            'kvstore': {'driver': 'file', 'path': str(zarr_path)},
-        }
-        arr = ts.open(spec).result().read().result()  # (T, N, 9)
-        return cls.from_numpy(arr)
+        return ts_obj
 
     @classmethod
-    def load(cls, path: str | Path) -> NeuronTimeSeries:
-        """Auto-detect format (zarr_v2, zarr_v1, npy) and load.
+    def load(cls, path: str | Path, fields: Sequence[str] | None = None) -> NeuronTimeSeries:
+        """Load simulation data. V3 zarr is the primary format.
 
-        Checks for:
-            1. V2 zarr directory (path/ with metadata.zarr + timeseries.zarr)
-            2. V1 zarr file (path.zarr with .zarray)
-            3. NumPy file (path.npy)
+        Falls back to .npy for legacy data.
+
+        Args:
+            path: base path (directory for V3, or path without extension for npy)
+            fields: field names to load (V3 only). None = all.
         """
         path = Path(path)
         base_path = path.with_suffix('') if path.suffix in ('.npy', '.zarr') else path
 
-        # check V2 zarr
+        # V3 zarr (per-field arrays)
         if base_path.exists() and base_path.is_dir():
-            if (base_path / 'metadata.zarr').exists() and (base_path / 'timeseries.zarr').exists():
-                return cls.from_zarr_v2(base_path)
+            if (base_path / 'voltage.zarr').exists():
+                return cls.from_zarr_v3(base_path, fields=fields)
 
-        # check V1 zarr
-        zarr_v1_path = Path(str(base_path) + '.zarr')
-        if zarr_v1_path.exists() and zarr_v1_path.is_dir():
-            if (zarr_v1_path / '.zarray').exists():
-                return cls.from_zarr_v1(base_path)
-
-        # check npy
+        # npy fallback (loads all fields, ignores fields param)
         npy_path = Path(str(base_path) + '.npy')
         if npy_path.exists():
             return cls.from_numpy(np.load(npy_path))
 
-        raise FileNotFoundError(f"no .npy or .zarr found at {base_path}")
-
-    def to_packed(self) -> np.ndarray:
-        """Convert to legacy (T, N, 9) numpy array."""
-        T, N = self.n_frames, self.n_neurons
-        full = np.empty((T, N, 9), dtype=np.float32)
-
-        # static — broadcast from (N,) to (T, N)
-        full[:, :, 0] = self.index.cpu().numpy()
-        full[:, :, 1:3] = self.pos.cpu().numpy()
-        full[:, :, 5] = self.group_type.cpu().numpy()
-        full[:, :, 6] = self.neuron_type.cpu().numpy()
-
-        # dynamic
-        full[:, :, 3] = self.voltage.cpu().numpy()
-        full[:, :, 4] = self.stimulus.cpu().numpy()
-        full[:, :, 7] = self.calcium.cpu().numpy()
-        full[:, :, 8] = self.fluorescence.cpu().numpy()
-
-        return full
+        raise FileNotFoundError(f"no V3 zarr or .npy found at {base_path}")

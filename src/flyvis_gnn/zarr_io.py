@@ -337,9 +337,8 @@ class ZarrSimulationWriterV2:
         from flyvis_gnn.utils import to_numpy
 
         if not self._metadata_saved:
-            # build metadata: (N, 5) = [index, xpos, ypos, group_type, neuron_type]
+            # build metadata: (N, 4) = [xpos, ypos, group_type, neuron_type]
             meta = np.column_stack([
-                to_numpy(state.index.float()),
                 to_numpy(state.pos),
                 to_numpy(state.group_type.float()),
                 to_numpy(state.neuron_type.float()),
@@ -433,7 +432,7 @@ class ZarrSimulationWriterV2:
 
 
 _DYNAMIC_FIELDS_V3 = ['voltage', 'stimulus', 'calcium', 'fluorescence']
-_STATIC_FIELDS_V3 = ['index', 'pos', 'group_type', 'neuron_type']
+_STATIC_FIELDS_V3 = ['pos', 'group_type', 'neuron_type']
 
 
 class ZarrSimulationWriterV3:
@@ -441,7 +440,6 @@ class ZarrSimulationWriterV3:
 
     Storage structure:
         path/
-            index.zarr        # (N,) int32 — static
             pos.zarr          # (N, 2) float32 — static
             group_type.zarr   # (N,) int32 — static
             neuron_type.zarr  # (N,) int32 — static
@@ -449,6 +447,8 @@ class ZarrSimulationWriterV3:
             stimulus.zarr     # (T, N) float32 — dynamic
             calcium.zarr      # (T, N) float32 — dynamic
             fluorescence.zarr # (T, N) float32 — dynamic
+
+    Note: index is NOT saved — it is arange(n_neurons) and constructed at load time.
 
     usage:
         writer = ZarrSimulationWriterV3(path, n_neurons=14011)
@@ -480,7 +480,6 @@ class ZarrSimulationWriterV3:
         self.path.mkdir(parents=True, exist_ok=True)
 
         static_data = {
-            'index': to_numpy(state.index).astype(np.int32),
             'pos': to_numpy(state.pos).astype(np.float32),
             'group_type': to_numpy(state.group_type).astype(np.int32),
             'neuron_type': to_numpy(state.neuron_type).astype(np.int32),

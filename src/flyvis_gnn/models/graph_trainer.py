@@ -166,7 +166,6 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     type_list = type_list.to(device)
 
     print(f'dataset: {x_ts.n_frames} frames')
-    x = x_ts.frame(sim.n_frames - 10)
 
     activity = x_ts.voltage
     distrib = activity.flatten()
@@ -180,7 +179,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     print(f'xnorm: {to_numpy(xnorm):0.3f}')
     logger.info(f'xnorm: {to_numpy(xnorm)}')
 
-    n_neurons = x.n_neurons
+    n_neurons = x_ts.n_neurons
     print(f'n neurons: {n_neurons}')
     logger.info(f'N neurons: {n_neurons}')
     config.simulation.n_neurons = n_neurons
