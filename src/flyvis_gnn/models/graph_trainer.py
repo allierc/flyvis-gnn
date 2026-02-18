@@ -148,13 +148,13 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         load_fields.append('pos')
     if sim.calcium_type != 'none':
         load_fields.append('calcium')
-    x_ts = load_simulation_data(f'graphs_data/{config.dataset}/x_list_0', fields=load_fields)
+    x_ts = load_simulation_data(f'graphs_data/{config.dataset}/x_list_0', fields=load_fields).to(device)
     y_data = load_raw_array(f'graphs_data/{config.dataset}/y_list_0')
 
     # extract type_list from loaded data, then construct index (not loaded from disk)
     type_list = x_ts.neuron_type.float().unsqueeze(-1)
     x_ts.neuron_type = None
-    x_ts.index = torch.arange(x_ts.n_neurons, dtype=torch.long)
+    x_ts.index = torch.arange(x_ts.n_neurons, dtype=torch.long, device=device)
 
     if tc.training_selected_neurons:
         selected_neuron_ids = np.array(tc.selected_neuron_ids).astype(int)
@@ -162,19 +162,12 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         y_data = y_data[:, selected_neuron_ids, :]
         type_list = type_list[selected_neuron_ids]
 
-    x_ts = x_ts.to(device)
-    type_list = type_list.to(device)
-
     print(f'dataset: {x_ts.n_frames} frames')
 
-    activity = x_ts.voltage
-    distrib = activity.flatten()
-    valid_distrib = distrib[~torch.isnan(distrib)]
-    if len(valid_distrib) > 0:
-        xnorm = 1.5 * torch.std(valid_distrib)
-    else:
-        print('no valid distribution found, setting xnorm to 1.0')
-        xnorm = torch.tensor(1.0, device=device)
+    _v = x_ts.voltage
+    _valid = _v[~torch.isnan(_v)]
+    xnorm = 1.5 * _valid.std() if len(_valid) > 0 else torch.tensor(1.0, device=device)
+    del _v, _valid
     torch.save(xnorm, os.path.join(log_dir, 'xnorm.pt'))
     print(f'xnorm: {to_numpy(xnorm):0.3f}')
     logger.info(f'xnorm: {to_numpy(xnorm)}')
