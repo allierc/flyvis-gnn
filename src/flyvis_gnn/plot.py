@@ -887,15 +887,15 @@ def plot_activity_traces(
     sampled = activity[sampled_idx]
     offset = sampled + 2 * np.arange(n_traces)[:, None]
 
-    fig, ax = style.figure(aspect=3.0)
+    fig, ax = style.figure(aspect=1.5)
     ax.plot(offset.T, linewidth=0.5, alpha=0.7, color=style.foreground)
     style.xlabel(ax, 'time (frames)')
+    style.ylabel(ax, f'{n_traces} / {n_neurons} neurons')
     ax.set_yticks([])
     ax.set_xlim([0, min(n_frames, max_frames)])
     ax.set_ylim([offset[0].min() - 2, offset[-1].max() + 2])
-    if n_input_neurons > 0:
-        style.annotate(ax, f'{n_input_neurons} neurons', (0.98, 0.98), va='top', ha='right')
 
+    plt.tight_layout()
     style.savefig(fig, output_path)
 
 
