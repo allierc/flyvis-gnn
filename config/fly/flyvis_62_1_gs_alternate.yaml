@@ -1,4 +1,4 @@
-description: "Optimized config from 144-iteration Claude 62_1_gs exploration (winner: Config 03, Node 63)"
+description: "Alternating W/V_rest phase training for flyvis_62_1_gs"
 dataset: flyvis_62_1_gs
 simulation:
   connectivity_file: to be specified
@@ -65,7 +65,15 @@ training:
   coeff_W_L1: 3.3e-05
   coeff_W_L1_rate: 0.5
   coeff_W_L2: 2.5e-06
-  w_init_mode: "randn_scaled"
+  w_init_mode: zeros
+  # Alternating training
+  alternate_training: true
+  n_alternations: 4
+  alternate_vrest_ratio: 0.5
+  alternate_lr_W: 6e-7
+  alternate_lr_edge: 1.2e-6
+  alternate_lr_update: 1.2e-6
+  alternate_lr_embedding: 1.55e-6
 claude:
   n_epochs: 1
   data_augmentation_loop: 25

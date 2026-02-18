@@ -2310,14 +2310,7 @@ def analyze_mlp_phi_embedding(model, n_neurons=300, signal_range=(0, 10), resolu
 
     return fig_2d, output_grid_np
 
-# Example usage:
-# fig_2d_signal, mean_out, std_out = analyze_mlp_phi_function(model, n_sample_pairs=1000, resolution=100, device=device)
-# fig_2d_heatmap, grid_out = analyze_mlp_phi_embedding(model, n_sample_pairs=1000, resolution=50, device=device)
-#
-# fig_2d_signal.savefig(f"./{log_dir}/results/phi_function_signal.png", dpi=300, bbox_inches='tight')
-# fig_2d_heatmap.savefig(f"./{log_dir}/results/phi_function_2d.png", dpi=300, bbox_inches='tight')
-# plt.close(fig_2d_signal)
-# plt.close(fig_2d_heatmap)
+
 def compute_separation_index(connectivity_neurons, odor_responsive_neurons):
     """
     Compute functional separation between high connectivity and high odor-responsive neurons

@@ -313,19 +313,23 @@ def set_trainable_parameters(model=[], lr_embedding=[], lr=[],  lr_update=[], lr
     for name, parameter in model.named_parameters():
         if parameter.requires_grad:
             if name == 'a':
-                param_groups.append({'params': parameter, 'lr': lr_embedding})
+                param_groups.append({'params': parameter, 'lr': lr_embedding, 'name': 'embedding'})
             elif (name=='b') or ('lin_modulation' in name):
-                param_groups.append({'params': parameter, 'lr': lr_modulation})
+                param_groups.append({'params': parameter, 'lr': lr_modulation, 'name': 'modulation'})
             elif 'lin_phi' in name:
-                param_groups.append({'params': parameter, 'lr': lr_update})
+                param_groups.append({'params': parameter, 'lr': lr_update, 'name': 'lin_phi'})
             elif 'W' in name:
-                param_groups.append({'params': parameter, 'lr': lr_W})
+                param_groups.append({'params': parameter, 'lr': lr_W, 'name': 'W'})
             elif 'NNR_f' in name:
-                param_groups.append({'params': parameter, 'lr': learning_rate_NNR_f})
+                param_groups.append({'params': parameter, 'lr': learning_rate_NNR_f, 'name': 'NNR_f'})
             elif 'NNR' in name:
-                param_groups.append({'params': parameter, 'lr': learning_rate_NNR})
+                param_groups.append({'params': parameter, 'lr': learning_rate_NNR, 'name': 'NNR'})
             else:
-                param_groups.append({'params': parameter, 'lr': lr})
+                param_groups.append({'params': parameter, 'lr': lr, 'name': 'lin_edge'})
+
+    # Store base_lr for alternating training phase switching
+    for pg in param_groups:
+        pg['base_lr'] = pg['lr']
 
     # Use foreach=False to avoid CUDA device mismatch issues with multi-GPU setups
     optimizer = torch.optim.Adam(param_groups, foreach=False)

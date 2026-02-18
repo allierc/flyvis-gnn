@@ -104,6 +104,8 @@ def data_train(config=None, erase=False, best_model=None, style=None, device=Non
     if 'fly' in config.dataset:
         if 'RNN' in config.graph_model.signal_model_name or 'LSTM' in config.graph_model.signal_model_name:
             data_train_flyvis_RNN(config, erase, best_model, device)
+        elif config.training.alternate_training:
+            data_train_flyvis_alternate(config, erase, best_model, device, log_file=log_file)
         else:
             data_train_flyvis(config, erase, best_model, device, log_file=log_file)
     else:
@@ -785,6 +787,733 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         if field_R2 is not None:
             log_file.write(f"field_R2: {field_R2:.4f}\n")
             log_file.write(f"field_slope: {field_slope:.4f}\n")
+
+def data_train_flyvis_alternate(config, erase, best_model, device, log_file=None):
+    """Alternating W/V_rest phase training for flyvis models."""
+    sim = config.simulation
+    tc = config.training
+    model_config = config.graph_model
+
+    replace_with_cluster = 'replace' in tc.sparsity
+
+    if config.training.seed != 42:
+        torch.random.fork_rng(devices=device)
+        torch.random.manual_seed(config.training.seed)
+
+    default_style.apply_globally()
+
+    if 'visual' in model_config.field_type:
+        has_visual_field = True
+        if 'instantNGP' in model_config.field_type:
+            print('train with visual field instantNGP')
+        else:
+            print('train with visual field NNR')
+    else:
+        has_visual_field = False
+    if 'test' in model_config.field_type:
+        test_neural_field = True
+        print('train with test field NNR')
+    else:
+        test_neural_field = False
+
+    log_dir, logger = create_log_dir(config, erase)
+
+    load_fields = ['voltage', 'stimulus', 'neuron_type']
+    if has_visual_field or test_neural_field:
+        load_fields.append('pos')
+    if sim.calcium_type != 'none':
+        load_fields.append('calcium')
+    x_ts = load_simulation_data(f'graphs_data/{config.dataset}/x_list_0', fields=load_fields).to(device)
+    y_ts = load_raw_array(f'graphs_data/{config.dataset}/y_list_0')
+
+    # extract type_list from loaded data, then construct index (not loaded from disk)
+    type_list = x_ts.neuron_type.float().unsqueeze(-1)
+    x_ts.neuron_type = None
+    x_ts.index = torch.arange(x_ts.n_neurons, dtype=torch.long, device=device)
+
+    if tc.training_selected_neurons:
+        selected_neuron_ids = np.array(tc.selected_neuron_ids).astype(int)
+        x_ts = x_ts.subset_neurons(selected_neuron_ids)
+        y_ts = y_ts[:, selected_neuron_ids, :]
+        type_list = type_list[selected_neuron_ids]
+
+    # get n_neurons from data, not config file
+    n_neurons = x_ts.n_neurons
+    config.simulation.n_neurons = n_neurons
+    print(f'dataset: {x_ts.n_frames} frames,  n neurons: {n_neurons}')
+    logger.info(f'n neurons: {n_neurons}')
+
+    xnorm = x_ts.xnorm
+    torch.save(xnorm, os.path.join(log_dir, 'xnorm.pt'))
+    print(f'xnorm: {to_numpy(xnorm):0.3f}')
+    logger.info(f'xnorm: {to_numpy(xnorm)}')
+    ynorm = torch.tensor(1.0, device=device)
+    torch.save(ynorm, os.path.join(log_dir, 'ynorm.pt'))
+    print(f'ynorm: {to_numpy(ynorm):0.3f}')
+    logger.info(f'ynorm: {to_numpy(ynorm)}')
+
+    # SVD analysis of activity and visual stimuli (skip if already exists)
+    svd_plot_path = os.path.join(log_dir, 'results', 'svd_analysis.png')
+    if not os.path.exists(svd_plot_path):
+        analyze_data_svd(x_ts, log_dir, config=config, logger=logger, is_flyvis=True)
+    else:
+        print(f'svd analysis already exists: {svd_plot_path}')
+
+    print('create models ...')
+    model = create_model(model_config.signal_model_name,
+                         aggr_type=model_config.aggr_type, config=config, device=device)
+    model = model.to(device)
+
+    # W init mode info
+    w_init_mode = getattr(tc, 'w_init_mode', 'randn')
+    if w_init_mode != 'randn':
+        w_init_scale = getattr(tc, 'w_init_scale', 1.0)
+        print(f'W init mode: {w_init_mode}' + (f' (scale={w_init_scale})' if w_init_mode == 'randn_scaled' else ''))
+
+    start_epoch = 0
+    list_loss = []
+    if (best_model != None) & (best_model != '') & (best_model != '') & (best_model != 'None'):
+        net = f"{log_dir}/models/best_model_with_{tc.n_runs - 1}_graphs_{best_model}.pt"
+        print(f'loading state_dict from {net} ...')
+        state_dict = torch.load(net, map_location=device)
+        model.load_state_dict(state_dict['model_state_dict'])
+        start_epoch = int(best_model.split('_')[0])
+        print(f'state_dict loaded: best_model={best_model}, start_epoch={start_epoch}')
+    elif  tc.pretrained_model !='':
+        net = tc.pretrained_model
+        print(f'loading pretrained state_dict from {net} ...')
+        state_dict = torch.load(net, map_location=device)
+        model.load_state_dict(state_dict['model_state_dict'])
+        print('pretrained state_dict loaded')
+        logger.info(f'pretrained: {net}')
+    else:
+        print('no state_dict loaded - using freshly initialized model')
+
+    # === LLM-MODIFIABLE: OPTIMIZER SETUP START ===
+    # Change optimizer type, learning rate schedule, parameter groups
+
+    n_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f'total parameters: {n_total_params:,}')
+    lr = tc.learning_rate_start
+    if tc.learning_rate_update_start == 0:
+        lr_update = tc.learning_rate_start
+    else:
+        lr_update = tc.learning_rate_update_start
+    lr_embedding = tc.learning_rate_embedding_start
+    lr_W = tc.learning_rate_W_start
+    learning_rate_NNR = tc.learning_rate_NNR
+    learning_rate_NNR_f = tc.learning_rate_NNR_f
+
+    print(f'learning rates: lr_W {lr_W}, lr {lr}, lr_update {lr_update}, lr_embedding {lr_embedding}, learning_rate_NNR {learning_rate_NNR}')
+
+    optimizer, n_total_params = set_trainable_parameters(model=model, lr_embedding=lr_embedding, lr=lr,
+                                                         lr_update=lr_update, lr_W=lr_W, learning_rate_NNR=learning_rate_NNR, learning_rate_NNR_f = learning_rate_NNR_f)
+    # === LLM-MODIFIABLE: OPTIMIZER SETUP END ===
+    model.train()
+
+    net = f"{log_dir}/models/best_model_with_{tc.n_runs - 1}_graphs.pt"
+    print(f'network: {net}')
+    print(f'initial tc.batch_size: {tc.batch_size}')
+
+    gt_weights = torch.load(f'./graphs_data/{config.dataset}/weights.pt', map_location=device)
+    edges = torch.load(f'./graphs_data/{config.dataset}/edge_index.pt', map_location=device)
+    print(f'{edges.shape[1]} edges')
+
+    ids = np.arange(n_neurons)
+
+    if tc.coeff_W_sign > 0:
+        index_weight = []
+        for i in range(n_neurons):
+            # get source neurons that connect to neuron i
+            mask = edges[1] == i
+            index_weight.append(edges[0][mask])
+
+    logger.info(f'coeff_W_L1: {tc.coeff_W_L1} coeff_edge_diff: {tc.coeff_edge_diff} coeff_update_diff: {tc.coeff_update_diff}')
+    print(f'coeff_W_L1: {tc.coeff_W_L1} coeff_edge_diff: {tc.coeff_edge_diff} coeff_update_diff: {tc.coeff_update_diff}')
+     # proximal L1 info
+    coeff_proximal = getattr(tc, 'coeff_W_L1_proximal', 0.0)
+    if coeff_proximal > 0:
+        print(f'proximal L1 soft-thresholding on W: coeff={coeff_proximal}')
+
+    print("start alternating training ...")
+
+    check_and_clear_memory(device=device, iteration_number=0, every_n_iterations=1, memory_percentage_threshold=0.6)
+
+    list_loss_regul = []
+
+    regularizer = LossRegularizer(
+        train_config=tc,
+        model_config=model_config,
+        activity_column=3,  # flyvis uses column 3 for activity
+        plot_frequency=1,   # will be updated per epoch
+        n_neurons=n_neurons,
+        trainer_type='flyvis'
+    )
+
+    loss_components = {'loss': []}
+
+    time.sleep(0.2)
+
+    training_start_time = time.time()
+
+    # Connectivity R2 log with phase info
+    r2_log_path = os.path.join(log_dir, 'tmp_training', 'connectivity_r2.log')
+    with open(r2_log_path, 'w') as f:
+        f.write('epoch,iteration,connectivity_r2,phase\n')
+
+    # Per-phase LR lookup: phase_name -> {param_group_name -> lr}
+    phase_lrs = {
+        'W': {
+            'lin_edge': lr,
+            'W': lr_W,
+            'lin_phi': tc.alternate_lr_update,
+            'embedding': tc.alternate_lr_embedding,
+        },
+        'V_rest': {
+            'lin_edge': tc.alternate_lr_edge,
+            'W': tc.alternate_lr_W,
+            'lin_phi': lr_update,
+            'embedding': lr_embedding,
+        },
+    }
+    print(f'alternate LRs — W-phase: lin_edge={lr}, W={lr_W}, lin_phi={tc.alternate_lr_update}, emb={tc.alternate_lr_embedding}')
+    print(f'alternate LRs — V_rest-phase: lin_edge={tc.alternate_lr_edge}, W={tc.alternate_lr_W}, lin_phi={lr_update}, emb={lr_embedding}')
+
+    for epoch in range(start_epoch, tc.n_epochs):
+
+        Niter = int(sim.n_frames * tc.data_augmentation_loop // tc.batch_size * 0.2)
+        plot_frequency = int(Niter // 20)
+        connectivity_plot_frequency = int(Niter // 10)
+        n_plots_per_epoch = 4
+        plot_iterations = set(int(x) for x in np.linspace(Niter // n_plots_per_epoch, Niter - 1, n_plots_per_epoch))
+        print(f'{Niter} iterations per epoch, plot every {connectivity_plot_frequency} iterations')
+
+        # Build alternating phase schedule
+        n_alt = tc.n_alternations
+        iters_per_cycle = Niter // n_alt
+        w_len = int(iters_per_cycle * (1 - tc.alternate_vrest_ratio))
+        v_len = iters_per_cycle - w_len
+        phases = []
+        pos = 0
+        for cycle in range(n_alt):
+            phases.append(('W', pos, pos + w_len))
+            pos += w_len
+            phases.append(('V_rest', pos, pos + v_len))
+            pos += v_len
+        current_phase_idx = 0
+        current_phase = phases[0][0]
+        print(f'alternating: {n_alt} cycles, W={w_len} iters, V_rest={v_len} iters')
+
+        # Set initial phase LRs (W-phase first)
+        for pg in optimizer.param_groups:
+            pg_name = pg.get('name', '')
+            if pg_name in phase_lrs['W']:
+                pg['lr'] = phase_lrs['W'][pg_name]
+
+        total_loss = 0
+        total_loss_regul = 0
+        k = 0
+
+        loss_noise_level = tc.loss_noise_level * (0.95 ** epoch)
+        regularizer.set_epoch(epoch, plot_frequency)
+
+        last_connectivity_r2 = None
+        field_R2 = None
+        field_slope = None
+        pbar = trange(Niter, ncols=150)
+        # === LLM-MODIFIABLE: TRAINING LOOP START ===
+        # Main training loop with alternating W/V_rest phases.
+        # Suggested changes: loss function, gradient clipping,
+        # data sampling strategy, LR scheduler steps, early stopping.
+        # Do NOT change: function signature, model construction, data loading, return values.
+        for N in pbar:
+
+            # Phase transition check
+            if current_phase_idx < len(phases) - 1 and N >= phases[current_phase_idx + 1][1]:
+                current_phase_idx += 1
+                new_phase = phases[current_phase_idx][0]
+                if new_phase != current_phase:
+                    current_phase = new_phase
+                    for pg in optimizer.param_groups:
+                        pg_name = pg.get('name', '')
+                        if pg_name in phase_lrs[current_phase]:
+                            pg['lr'] = phase_lrs[current_phase][pg_name]
+
+            optimizer.zero_grad()
+
+            state_batch = []
+            y_list = []
+            ids_list = []
+            k_list = []
+            visual_input_list = []
+            ids_index = 0
+
+            loss = 0
+
+            for batch in range(tc.batch_size):
+
+                k = np.random.randint(sim.n_frames - 4 - tc.time_step - tc.time_window) + tc.time_window
+
+                if tc.recurrent_training or tc.neural_ODE_training:
+                    k = k - k % tc.time_step
+
+                x = x_ts.frame(k)
+
+                if tc.time_window > 0:
+                    x_temporal = x_ts.voltage[k - tc.time_window + 1: k + 1].T
+                    # x stays as NeuronState; x_temporal passed separately to temporal model
+
+                if has_visual_field:
+                    visual_input = model.forward_visual(x, k)
+                    x.stimulus[:model.n_input_neurons] = visual_input.squeeze(-1)
+                    x.stimulus[model.n_input_neurons:] = 0
+
+                loss = torch.zeros(1, device=device)
+                regularizer.reset_iteration()
+
+                if not (torch.isnan(x.voltage).any()):
+                    regul_loss = regularizer.compute(
+                        model=model,
+                        x=x,
+                        in_features=None,
+                        ids=ids,
+                        ids_batch=None,
+                        edges=edges,
+                        device=device,
+                        xnorm=xnorm
+                    )
+                    loss = loss + regul_loss
+
+                    if tc.recurrent_training or tc.neural_ODE_training:
+                        y = x_ts.voltage[k + tc.time_step].unsqueeze(-1)
+                    elif test_neural_field:
+                        y = x_ts.stimulus[k, :sim.n_input_neurons].unsqueeze(-1)
+                    else:
+                        y = torch.tensor(y_ts[k], device=device) / ynorm     # loss on activity derivative
+
+
+                    if loss_noise_level>0:
+                        y = y + torch.randn(y.shape, device=device) * loss_noise_level
+
+                    if not (torch.isnan(y).any()):
+
+                        state_batch.append(x)
+                        n = x.n_neurons
+                        y_list.append(y)
+                        ids_list.append(ids + ids_index)
+                        k_list.append(torch.ones((n, 1), dtype=torch.int, device=device) * k)
+                        if test_neural_field:
+                            visual_input_list.append(visual_input)
+                        ids_index += n
+
+
+            if state_batch:
+
+                data_id = torch.zeros((ids_index, 1), dtype=torch.int, device=device)
+                y_batch = torch.cat(y_list, dim=0)
+                ids_batch = np.concatenate(ids_list, axis=0)
+                k_batch = torch.cat(k_list, dim=0)
+
+                total_loss_regul += loss.item()
+
+                if test_neural_field:
+                    visual_input_batch = torch.cat(visual_input_list, dim=0)
+                    loss = loss + (visual_input_batch - y_batch).norm(2)
+
+
+                elif 'MLP_ODE' in model_config.signal_model_name:
+                    batched_state, _ = _batch_frames(state_batch, edges)
+                    batched_x = batched_state.to_packed()
+                    pred = model(batched_x, data_id=data_id, return_all=False)
+
+                    loss = loss + (pred[ids_batch] - y_batch[ids_batch]).norm(2)
+
+                elif 'MLP' in model_config.signal_model_name:
+                    batched_state, _ = _batch_frames(state_batch, edges)
+                    batched_x = batched_state.to_packed()
+                    pred = model(batched_x, data_id=data_id, return_all=False)
+
+                    loss = loss + (pred[ids_batch] - y_batch[ids_batch]).norm(2)
+
+                else: # 'GNN' branch
+
+                    batched_state, batched_edges = _batch_frames(state_batch, edges)
+                    pred, in_features, msg = model(batched_state, batched_edges, data_id=data_id, return_all=True)
+
+                    update_regul = regularizer.compute_update_regul(model, in_features, ids_batch, device)
+                    loss = loss + update_regul
+
+
+                    if tc.neural_ODE_training:
+
+                        ode_state_clamp = getattr(tc, 'ode_state_clamp', 10.0)
+                        ode_stab_lambda = getattr(tc, 'ode_stab_lambda', 0.0)
+                        ode_loss, pred_x = neural_ode_loss_FlyVis(
+                            model=model,
+                            dataset_batch=state_batch,
+                            edge_index=edges,
+                            x_ts=x_ts,
+                            k_batch=k_batch,
+                            time_step=tc.time_step,
+                            batch_size=tc.batch_size,
+                            n_neurons=n_neurons,
+                            ids_batch=ids_batch,
+                            delta_t=sim.delta_t,
+                            device=device,
+                            data_id=data_id,
+                            has_visual_field=has_visual_field,
+                            y_batch=y_batch,
+                            noise_level=tc.noise_recurrent_level,
+                            ode_method=tc.ode_method,
+                            rtol=tc.ode_rtol,
+                            atol=tc.ode_atol,
+                            adjoint=tc.ode_adjoint,
+                            iteration=N,
+                            state_clamp=ode_state_clamp,
+                            stab_lambda=ode_stab_lambda
+                        )
+                        loss = loss + ode_loss
+
+
+                    elif tc.recurrent_training:
+
+                        pred_x = batched_state.voltage.unsqueeze(-1) + sim.delta_t * pred + tc.noise_recurrent_level * torch.randn_like(pred)
+
+                        if tc.time_step > 1:
+                            for step in range(tc.time_step - 1):
+                                neurons_per_sample = state_batch[0].n_neurons
+
+                                for b in range(tc.batch_size):
+                                    start_idx = b * neurons_per_sample
+                                    end_idx = (b + 1) * neurons_per_sample
+
+                                    state_batch[b].voltage = pred_x[start_idx:end_idx].squeeze()
+
+                                    k_current = k_batch[start_idx, 0].item() + step + 1
+
+                                    if has_visual_field:
+                                        visual_input_next = model.forward_visual(state_batch[b], k_current)
+                                        state_batch[b].stimulus[:model.n_input_neurons] = visual_input_next.squeeze(-1)
+                                        state_batch[b].stimulus[model.n_input_neurons:] = 0
+                                    else:
+                                        x_next = x_ts.frame(k_current)
+                                        state_batch[b].stimulus = x_next.stimulus
+
+                                batched_state, batched_edges = _batch_frames(state_batch, edges)
+                                pred, in_features, msg = model(batched_state, batched_edges, data_id=data_id, return_all=True)
+
+                                pred_x = pred_x + sim.delta_t * pred + tc.noise_recurrent_level * torch.randn_like(pred)
+
+                        loss = loss + ((pred_x[ids_batch] - y_batch[ids_batch]) / (sim.delta_t * tc.time_step)).norm(2)
+
+
+                    else:
+
+                        loss = loss + (pred[ids_batch] - y_batch[ids_batch]).norm(2)
+
+
+                # === LLM-MODIFIABLE: BACKWARD AND STEP START ===
+                # Allowed changes: gradient clipping, LR scheduler step, loss scaling
+                loss.backward()
+
+                # debug gradient check for neural ODE training
+                if DEBUG_ODE and tc.neural_ODE_training and (N % 500 == 0):
+                    debug_check_gradients(model, loss, N)
+
+                # W-specific gradient clipping: clip W gradients to force optimizer
+                # to adjust lin_update (which contains V_rest/tau) instead of W
+                if hasattr(tc, 'grad_clip_W') and tc.grad_clip_W > 0 and hasattr(model, 'W'):
+                    if model.W.grad is not None:
+                        torch.nn.utils.clip_grad_norm_([model.W], max_norm=tc.grad_clip_W)
+
+                optimizer.step()
+                # === LLM-MODIFIABLE: BACKWARD AND STEP END ===
+
+                total_loss += loss.item()
+                total_loss_regul += regularizer.get_iteration_total()
+
+                # finalize iteration to record history
+                regularizer.finalize_iteration()
+
+
+                if regularizer.should_record():
+                    # get history from regularizer and add loss component
+                    current_loss = loss.item()
+                    regul_total_this_iter = regularizer.get_iteration_total()
+                    loss_components['loss'].append((current_loss - regul_total_this_iter) / n_neurons)
+
+                    # merge loss_components with regularizer history for plotting
+                    plot_dict = {**regularizer.get_history(), 'loss': loss_components['loss']}
+
+                    # pass per-neuron normalized values to debug (to match dictionary values)
+                    plot_signal_loss(plot_dict, log_dir, epoch=epoch, Niter=N, debug=False,
+                                   current_loss=current_loss / n_neurons, current_regul=regul_total_this_iter / n_neurons,
+                                   total_loss=total_loss, total_loss_regul=total_loss_regul)
+
+                    torch.save(
+                        {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
+                        os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs - 1}_graphs_{epoch}_{N}.pt'))
+
+                if (N % connectivity_plot_frequency == 0) & (not test_neural_field) & (not ('MLP' in model_config.signal_model_name)):
+                    last_connectivity_r2 = plot_training_flyvis(x_ts, model, config, epoch, N, log_dir, device, type_list, gt_weights, edges, n_neurons=n_neurons, n_neuron_types=sim.n_neuron_types)
+                    with open(r2_log_path, 'a') as f:
+                        f.write(f'{epoch},{N},{last_connectivity_r2:.6f},{current_phase}\n')
+
+                if last_connectivity_r2 is not None:
+                    r2 = last_connectivity_r2
+                    color = '\033[92m' if r2 > 0.9 else '\033[93m' if r2 > 0.7 else '\033[38;5;208m' if r2 > 0.3 else '\033[91m'
+                    pbar.set_postfix_str(f'{color}R²={r2:.3f}\033[0m')
+
+
+                if (has_visual_field) & (N in plot_iterations):
+                    with torch.no_grad():
+
+                        # Static XY locations
+                        X1 = to_numpy(x_ts.pos[:sim.n_input_neurons])
+
+                        # group-based selection of 10 traces
+                        groups = 217
+                        group_size = sim.n_input_neurons // groups  # expect 8
+                        assert groups * group_size == sim.n_input_neurons, "Unexpected packing of input neurons"
+                        picked_groups = np.linspace(0, groups - 1, 10, dtype=int)
+                        member_in_group = group_size // 2
+                        trace_ids = (picked_groups * group_size + member_in_group).astype(int)
+
+                        # MP4 writer setup
+                        fps = 10
+                        metadata = dict(title='Field Evolution', artist='Matplotlib', comment='NN Reconstruction over time')
+                        writer = FFMpegWriter(fps=fps, metadata=metadata)
+                        fig = plt.figure(figsize=(12, 4))
+
+                        out_dir = f"./{log_dir}/tmp_training/external_input"
+                        os.makedirs(out_dir, exist_ok=True)
+                        out_path = f"{out_dir}/field_movie_{epoch}_{N}.mp4"
+                        if os.path.exists(out_path):
+                            os.remove(out_path)
+
+                        # rolling buffers
+                        win = 200
+                        offset = 1.25
+                        hist_t = deque(maxlen=win)
+                        hist_gt = {i: deque(maxlen=win) for i in trace_ids}
+                        hist_pred = {i: deque(maxlen=win) for i in trace_ids}
+
+                        step_video = 2
+
+                        # First pass: collect all gt and pred, fit linear transform gt = a*pred + b
+                        all_gt = []
+                        all_pred = []
+                        for k_fit in range(0, 800, step_video):
+                            x_fit = x_ts.frame(k_fit)
+                            pred_fit = to_numpy(model.forward_visual(x_fit, k_fit)).squeeze()
+                            gt_fit = to_numpy(x_ts.stimulus[k_fit, :sim.n_input_neurons]).squeeze()
+                            all_gt.append(gt_fit)
+                            all_pred.append(pred_fit)
+                        all_gt = np.concatenate(all_gt)
+                        all_pred = np.concatenate(all_pred)
+
+                        # Least-squares fit: gt = a * pred + b
+                        A_fit = np.vstack([all_pred, np.ones(len(all_pred))]).T
+                        a_coeff, b_coeff = np.linalg.lstsq(A_fit, all_gt, rcond=None)[0]
+                        logger.info(f"field linear fit: gt = {a_coeff:.4f} * pred + {b_coeff:.4f}")
+
+                        # Compute field_R2 on corrected predictions
+                        pred_corrected_all = a_coeff * all_pred + b_coeff
+                        ss_res = np.sum((all_gt - pred_corrected_all) ** 2)
+                        ss_tot = np.sum((all_gt - np.mean(all_gt)) ** 2)
+                        field_R2 = 1 - ss_res / (ss_tot + 1e-16)
+                        field_slope = a_coeff
+                        logger.info(f"external input R² (corrected): {field_R2:.4f}")
+
+                        # GT value range for consistent color scaling
+                        gt_vmin = float(all_gt.min())
+                        gt_vmax = float(all_gt.max())
+
+                        with writer.saving(fig, out_path, dpi=200):
+                            error_list = []
+
+                            for k in trange(0, 800, step_video, ncols=100):
+                                # inputs and predictions
+                                x = x_ts.frame(k)
+                                pred = to_numpy(model.forward_visual(x, k))
+                                pred_vec = np.asarray(pred).squeeze()  # (sim.n_input_neurons,)
+                                pred_corrected = a_coeff * pred_vec # + b_coeff  # corrected to GT scale
+
+                                gt_vec = to_numpy(x_ts.stimulus[k, :sim.n_input_neurons]).squeeze()
+
+                                # update rolling traces (store corrected predictions)
+                                hist_t.append(k)
+                                for i in trace_ids:
+                                    hist_gt[i].append(gt_vec[i])
+                                    hist_pred[i].append(pred_corrected[i])
+
+                                # draw three panels
+                                fig.clf()
+
+                                # RMSE on corrected predictions
+                                rmse_frame = float(np.sqrt(((pred_corrected - gt_vec) ** 2).mean()))
+                                running_rmse = float(np.mean(error_list + [rmse_frame])) if len(error_list) else rmse_frame
+
+                                # Traces (both on GT scale)
+                                ax3 = fig.add_subplot(1, 3, 3)
+                                ax3.set_axis_off()
+                                ax3.set_facecolor("black")
+
+                                t = np.arange(len(hist_t))
+                                for j, i in enumerate(trace_ids):
+                                    y0 = j * offset
+                                    ax3.plot(t, np.array(hist_gt[i])   + y0, color='lime',  lw=1.6, alpha=0.95)
+                                    ax3.plot(t, np.array(hist_pred[i]) + y0, color='k', lw=1.2, alpha=0.95)
+
+                                ax3.set_xlim(max(0, len(t) - win), len(t))
+                                ax3.set_ylim(-offset * 0.5, offset * (len(trace_ids) + 0.5))
+                                ax3.text(
+                                    0.02, 0.98,
+                                    f"frame: {k}   RMSE: {rmse_frame:.3f}   avg RMSE: {running_rmse:.3f}   a={a_coeff:.3f} b={b_coeff:.3f}",
+                                    transform=ax3.transAxes,
+                                    va='top', ha='left',
+                                    fontsize=6, color='k')
+
+                                # GT field
+                                ax1 = fig.add_subplot(1, 3, 1)
+                                ax1.scatter(X1[:, 0], X1[:, 1], s=256, c=gt_vec, cmap=default_style.cmap, marker='h', vmin=gt_vmin, vmax=gt_vmax)
+                                ax1.set_axis_off()
+                                ax1.set_title('ground truth', fontsize=12)
+
+                                # Predicted field (corrected, same scale as GT)
+                                ax2 = fig.add_subplot(1, 3, 2)
+                                ax2.scatter(X1[:, 0], X1[:, 1], s=256, c=pred_corrected, cmap=default_style.cmap, marker='h')
+                                ax2.set_axis_off()
+                                ax2.set_title('prediction (corrected)', fontsize=12)
+
+                                plt.tight_layout()
+                                writer.grab_frame()
+
+                                error_list.append(rmse_frame)
+
+
+                    if last_connectivity_r2 is not None:
+                        # color code: green (>0.9), yellow (0.7-0.9), orange (0.3-0.7), red (<0.3)
+                        if last_connectivity_r2 > 0.9:
+                            r2_color = '\033[92m'  # green
+                        elif last_connectivity_r2 > 0.7:
+                            r2_color = '\033[93m'  # yellow
+                        elif last_connectivity_r2 > 0.3:
+                            r2_color = '\033[38;5;208m'  # orange
+                        else:
+                            r2_color = '\033[91m'  # red
+                        pbar.set_postfix_str(f'{r2_color}R²={last_connectivity_r2:.3f}\033[0m')
+                    torch.save(
+                        {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
+                        os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs - 1}_graphs_{epoch}_{N}.pt'))
+
+            # check_and_clear_memory(device=device, iteration_number=N, every_n_iterations=Niter // 50, memory_percentage_threshold=0.6)
+
+        # === LLM-MODIFIABLE: TRAINING LOOP END ===
+
+        # Calculate epoch-level losses
+        epoch_total_loss = total_loss / n_neurons
+        epoch_regul_loss = total_loss_regul / n_neurons
+        epoch_pred_loss = (total_loss - total_loss_regul) / n_neurons
+
+        print("epoch {}. loss: {:.6f} (pred: {:.6f}, regul: {:.6f})".format(
+            epoch, epoch_total_loss, epoch_pred_loss, epoch_regul_loss))
+        logger.info("Epoch {}. Loss: {:.6f} (pred: {:.6f}, regul: {:.6f})".format(
+            epoch, epoch_total_loss, epoch_pred_loss, epoch_regul_loss))
+        torch.save({'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict()},
+                   os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs - 1}_graphs_{epoch}.pt'))
+
+        list_loss.append(epoch_pred_loss)
+        list_loss_regul.append(epoch_regul_loss)
+
+        torch.save(list_loss, os.path.join(log_dir, 'loss.pt'))
+
+        fig = plt.figure(figsize=(15, 10))
+
+        # Plot 1: Loss
+        fig.add_subplot(2, 3, 1)
+        plt.plot(list_loss, color=default_style.foreground, linewidth=1)
+        plt.xlim([0, tc.n_epochs])
+        plt.ylabel('loss', fontsize=12)
+        plt.xlabel('epochs', fontsize=12)
+
+        plot_training_summary_panels(fig, log_dir)
+
+        if replace_with_cluster:
+
+            if (epoch % tc.sparsity_freq == tc.sparsity_freq - 1) & (epoch < tc.n_epochs - tc.sparsity_freq):
+                print('replace embedding with clusters ...')
+                eps = tc.cluster_distance_threshold
+                results = clustering_evaluation(to_numpy(model.a), type_list, eps=eps)
+                print(f"eps={eps}: {results['n_clusters_found']} clusters, "
+                      f"accuracy={results['accuracy']:.3f}")
+
+                labels = results['cluster_labels']
+
+                for n in np.unique(labels):
+                    # if n == -1:
+                    #     continue
+                    indices = np.where(labels == n)[0]
+                    if len(indices) > 1:
+                        with torch.no_grad():
+                            model.a[indices, :] = torch.mean(model.a[indices, :], dim=0, keepdim=True)
+
+                fig.add_subplot(2, 3, 6)
+                type_cmap = CustomColorMap(config=config)
+                for n in range(sim.n_neuron_types):
+                    pos = torch.argwhere(type_list == n)
+                    plt.scatter(to_numpy(model.a[pos, 0]), to_numpy(model.a[pos, 1]), s=5, color=type_cmap.color(n),
+                                alpha=0.7, edgecolors='none')
+                plt.xlabel('embedding 0', fontsize=18)
+                plt.ylabel('embedding 1', fontsize=18)
+                plt.xticks([])
+                plt.yticks([])
+                plt.text(0.5, 0.9, f"eps={eps}: {results['n_clusters_found']} clusters, accuracy={results['accuracy']:.3f}")
+
+                if tc.fix_cluster_embedding:
+                    lr_embedding = 1.0E-10
+                    # the embedding is fixed for 1 epoch
+
+            else:
+                lr = tc.learning_rate_start
+                lr_embedding = tc.learning_rate_embedding_start
+                lr_W = tc.learning_rate_W_start
+                learning_rate_NNR = tc.learning_rate_NNR
+
+            logger.info(f'learning rates: lr_W {lr_W}, lr {lr}, lr_update {lr_update}, lr_embedding {lr_embedding}, learning_rate_NNR {learning_rate_NNR}')
+            optimizer, n_total_params = set_trainable_parameters(model=model, lr_embedding=lr_embedding, lr=lr, lr_update=lr_update, lr_W=lr_W,
+                                                                 learning_rate_NNR=learning_rate_NNR)
+
+        plt.tight_layout()
+        plt.savefig(f"./{log_dir}/tmp_training/epoch_{epoch}.png")
+        plt.close()
+
+    # Calculate and log training time
+    training_time = time.time() - training_start_time
+    training_time_min = training_time / 60.0
+    print(f"training completed in {training_time_min:.1f} minutes")
+    logger.info(f"training completed in {training_time_min:.1f} minutes")
+
+    if log_file is not None:
+        log_file.write(f"training_time_min: {training_time_min:.1f}\n")
+        log_file.write(f"n_epochs: {tc.n_epochs}\n")
+        log_file.write(f"data_augmentation_loop: {tc.data_augmentation_loop}\n")
+        log_file.write(f"recurrent_training: {tc.recurrent_training}\n")
+        log_file.write(f"batch_size: {tc.batch_size}\n")
+        log_file.write(f"learning_rate_W: {tc.learning_rate_W_start}\n")
+        log_file.write(f"learning_rate: {tc.learning_rate_start}\n")
+        log_file.write(f"learning_rate_embedding: {tc.learning_rate_embedding_start}\n")
+        log_file.write(f"coeff_edge_diff: {tc.coeff_edge_diff}\n")
+        log_file.write(f"coeff_edge_norm: {tc.coeff_edge_norm}\n")
+        log_file.write(f"coeff_edge_weight_L1: {tc.coeff_edge_weight_L1}\n")
+        log_file.write(f"coeff_phi_weight_L1: {tc.coeff_phi_weight_L1}\n")
+        log_file.write(f"coeff_phi_weight_L2: {tc.coeff_phi_weight_L2}\n")
+        log_file.write(f"coeff_W_L1: {tc.coeff_W_L1}\n")
+        if field_R2 is not None:
+            log_file.write(f"field_R2: {field_R2:.4f}\n")
+            log_file.write(f"field_slope: {field_slope:.4f}\n")
+
 
 
 def data_train_flyvis_RNN(config, erase, best_model, device):
