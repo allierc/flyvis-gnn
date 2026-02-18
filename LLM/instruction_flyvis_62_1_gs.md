@@ -205,6 +205,18 @@ Read `{config}_memory.md` to recall established principles, variance estimates, 
 - `test_pearson`: Pearson correlation of one-step prediction
 - `training_time_min`: Training duration in minutes
 
+**R2 evolution from `connectivity_r2.log`:**
+
+The file `tmp_training/connectivity_r2.log` (in the run's log directory) records `epoch,iteration,connectivity_r2` every time R2 is computed during training. **Always check this file** to assess the R2 trajectory:
+
+- **Healthy training**: R2 should increase monotonically or plateau. Typical pattern: fast rise to ~0.9 in the first third, then gradual climb to 0.95+.
+- **Overshoot-then-decay**: R2 peaks above 0.9 early but then **decreases** below 0.9 by end of training. This indicates the model is over-fitting to the prediction loss at the expense of the connectivity structure. Flag this in the observation.
+- **When overshoot-then-decay is observed**:
+  - Stronger regularization may help (higher `coeff_edge_diff`, `coeff_W_L1`, `coeff_edge_weight_L1`)
+  - Lower learning rates (especially `lr_W`) slow the drift away from good connectivity
+  - Note the **peak R2** and the **final R2** in the log entry
+  - A config where R2 monotonically reaches 0.93 is more reliable than one that peaks at 0.97 but ends at 0.88
+
 **Classification:**
 
 - **Converged**: connectivity_R2 > 0.8
@@ -230,6 +242,7 @@ Node: id=N, parent=P
 Mode/Strategy: [exploit/explore/boundary/robustness-check]
 Config: lr_W=X, lr=Y, lr_emb=Z, coeff_edge_diff=A, coeff_W_L1=B, batch_size=C, hidden_dim=D, recurrent=[T/F]
 Metrics: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, test_pearson=F, training_time_min=G
+R2 trajectory: peak=X at iter Y, final=Z, trend=[rising/stable/decaying]
 Embedding: [visual observation, e.g., "65 types partially separated" or "no separation"]
 Mutation: [param]: [old] -> [new]
 Parent rule: [one line]

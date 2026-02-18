@@ -280,6 +280,11 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
     training_start_time = time.time()
 
+    # Connectivity R2 log: tracks R2 evolution over training iterations
+    r2_log_path = os.path.join(log_dir, 'tmp_training', 'connectivity_r2.log')
+    with open(r2_log_path, 'w') as f:
+        f.write('epoch,iteration,connectivity_r2\n')
+
     for epoch in range(start_epoch, tc.n_epochs):
 
         Niter = int(sim.n_frames * tc.data_augmentation_loop // tc.batch_size * 0.2)
@@ -523,6 +528,8 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
                 if (N % connectivity_plot_frequency == 0) & (not test_neural_field) & (not ('MLP' in model_config.signal_model_name)):
                     last_connectivity_r2 = plot_training_flyvis(x_ts, model, config, epoch, N, log_dir, device, type_list, gt_weights, edges, n_neurons=n_neurons, n_neuron_types=sim.n_neuron_types)
+                    with open(r2_log_path, 'a') as f:
+                        f.write(f'{epoch},{N},{last_connectivity_r2:.6f}\n')
 
                 if last_connectivity_r2 is not None:
                     r2 = last_connectivity_r2

@@ -79,6 +79,7 @@ Node: id=N, parent=P
 Mode/Strategy: [strategy]
 Config: lr_W=X, lr=Y, lr_emb=Z, coeff_edge_diff=A, coeff_W_L1=B, batch_size=C, hidden_dim=D, recurrent=[T/F]
 Metrics: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, test_pearson=F, training_time_min=G
+R2 trajectory: peak=X at iter Y, final=Z, trend=[rising/stable/decaying]
 Embedding: [visual observation, e.g., "65 types partially separated"]
 Mutation: [param]: [old] -> [new]
 Parent rule: [one line]
