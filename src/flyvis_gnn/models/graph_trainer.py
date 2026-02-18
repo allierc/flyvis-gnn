@@ -30,7 +30,7 @@ from flyvis_gnn.models.utils import (
     LossRegularizer,
     _batch_frames,
 )
-from flyvis_gnn.plot import plot_training_flyvis, plot_weight_comparison
+from flyvis_gnn.plot import plot_training_flyvis, plot_weight_comparison, plot_training_summary_panels
 from flyvis_gnn.utils import (
     to_numpy,
     CustomColorMap,
@@ -703,44 +703,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         plt.ylabel('loss', fontsize=12)
         plt.xlabel('epochs', fontsize=12)
 
-        # Find the last saved file to get epoch and N
-        embedding_files = glob.glob(f"./{log_dir}/tmp_training/embedding/*.png")
-        if embedding_files:
-            last_file = max(embedding_files, key=os.path.getctime)  # or use os.path.getmtime for modification time
-            filename = os.path.basename(last_file)
-            last_epoch, last_N = filename.replace('.png', '').split('_')
-
-            # Load and display last saved figures
-            import imageio
-            imread = imageio.imread
-
-            # Plot 2: Last embedding
-            fig.add_subplot(2, 3, 2)
-            img = imread(f"./{log_dir}/tmp_training/embedding/{last_epoch}_{last_N}.png")
-            plt.imshow(img)
-            plt.axis('off')
-            plt.title('Embedding', fontsize=12)
-
-            # Plot 3: Last weight comparison
-            fig.add_subplot(2, 3, 3)
-            img = imread(f"./{log_dir}/tmp_training/matrix/comparison_{last_epoch}_{last_N}.png")
-            plt.imshow(img)
-            plt.axis('off')
-            plt.title('Weight Comparison', fontsize=12)
-
-            # Plot 4: Last edge function
-            fig.add_subplot(2, 3, 4)
-            img = imread(f"./{log_dir}/tmp_training/function/MLP1/func_{last_epoch}_{last_N}.png")
-            plt.imshow(img)
-            plt.axis('off')
-            plt.title('Edge Function', fontsize=12)
-
-            # Plot 5: Last phi function
-            fig.add_subplot(2, 3, 5)
-            img = imread(f"./{log_dir}/tmp_training/function/MLP0/func_{last_epoch}_{last_N}.png")
-            plt.imshow(img)
-            plt.axis('off')
-            plt.title('Phi Function', fontsize=12)
+        plot_training_summary_panels(fig, log_dir)
 
         if replace_with_cluster:
 

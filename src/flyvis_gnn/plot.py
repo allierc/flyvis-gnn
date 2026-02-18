@@ -18,6 +18,42 @@ from flyvis_gnn.utils import to_numpy
 #  Helpers
 # ------------------------------------------------------------------ #
 
+def plot_training_summary_panels(fig, log_dir):
+    """Add embedding, weight comparison, edge function, and phi function panels to a summary figure.
+
+    Finds the last saved training snapshot and loads the PNG images into subplots 2-5
+    of a 2x3 grid figure.
+
+    Args:
+        fig: matplotlib Figure (expected 2x3 subplot layout, panel 1 already used for loss)
+        log_dir: path to the training log directory
+    """
+    import glob
+    import os
+    import imageio
+
+    embedding_files = glob.glob(f"./{log_dir}/tmp_training/embedding/*.png")
+    if not embedding_files:
+        return
+
+    last_file = max(embedding_files, key=os.path.getctime)
+    filename = os.path.basename(last_file)
+    last_epoch, last_N = filename.replace('.png', '').split('_')
+
+    panels = [
+        (2, f"./{log_dir}/tmp_training/embedding/{last_epoch}_{last_N}.png", 'Embedding'),
+        (3, f"./{log_dir}/tmp_training/matrix/comparison_{last_epoch}_{last_N}.png", 'Weight Comparison'),
+        (4, f"./{log_dir}/tmp_training/function/MLP1/func_{last_epoch}_{last_N}.png", 'Edge Function'),
+        (5, f"./{log_dir}/tmp_training/function/MLP0/func_{last_epoch}_{last_N}.png", 'Phi Function'),
+    ]
+    for pos, path, title in panels:
+        fig.add_subplot(2, 3, pos)
+        img = imageio.imread(path)
+        plt.imshow(img)
+        plt.axis('off')
+        plt.title(title, fontsize=12)
+
+
 def get_model_W(model):
     """Get the weight matrix from a model, handling low-rank factorization."""
     if hasattr(model, 'W'):
