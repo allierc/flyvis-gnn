@@ -441,7 +441,7 @@ if __name__ == "__main__":
 
                             # Submit job to cluster via SSH to login1
                             # -W 6000 = 100 hours max wall time, -K makes bsub wait for job completion
-                            ssh_cmd = f"ssh allierc@login1 \"cd {cluster_root_dir} && bsub -n 8 -gpu 'num=1' -q gpu_{claude_node_name} -W 6000 -K 'bash {cluster_script}'\""
+                            ssh_cmd = f"ssh allierc@login2 \"cd {cluster_root_dir} && bsub -n 8 -gpu 'num=1' -q gpu_{claude_node_name} -W 6000 -K 'bash {cluster_script}'\""
 
                             print(f"\033[96msubmitting via SSH: {ssh_cmd}\033[0m")
 
@@ -825,7 +825,7 @@ Current config: {config_path}"""
                 should_save_tree = (block_number == 1) or is_block_end
                 if should_save_tree:
                     ucb_tree_path = f"{tree_save_dir}/ucb_tree_iter_{iteration:03d}.png"
-                    nodes = parse_ucb_scores(ucb_path)
+                    nodes = parse_ucb_scores(ucb_path) if os.path.exists(ucb_path) else []
                 else:
                     nodes = None  # Skip tree generation for intermediate iterations in blocks > 0
                 if nodes:

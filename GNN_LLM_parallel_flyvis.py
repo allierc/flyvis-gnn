@@ -105,7 +105,7 @@ def submit_cluster_job(slot, config_path, analysis_log_path, config_file_field,
     cluster_stderr = f"{cluster_log_dir}/cluster_train_{slot:02d}.err"
 
     ssh_cmd = (
-        f"ssh allierc@login1 \"cd {CLUSTER_ROOT_DIR} && "
+        f"ssh allierc@login2 \"cd {CLUSTER_ROOT_DIR} && "
         f"bsub -n 8 -gpu 'num=1' -q gpu_{node_name} -W 6000 "
         f"-o '{cluster_stdout}' -e '{cluster_stderr}' "
         f"'bash {cluster_script}'\""
@@ -132,7 +132,7 @@ def wait_for_cluster_jobs(job_ids, log_dir=None, poll_interval=60):
 
     while pending:
         ids_str = ' '.join(pending.values())
-        ssh_cmd = f'ssh allierc@login1 "bjobs {ids_str} 2>/dev/null"'
+        ssh_cmd = f'ssh allierc@login2 "bjobs {ids_str} 2>/dev/null"'
         out = subprocess.run(ssh_cmd, shell=True, capture_output=True, text=True)
 
         for slot, jid in list(pending.items()):
@@ -925,7 +925,7 @@ IMPORTANT: Baseline training time is ~45 min/epoch on H100. With n_epochs=1, exp
             tree_save_dir = f"{exploration_dir}/exploration_tree"
             os.makedirs(tree_save_dir, exist_ok=True)
             ucb_tree_path = f"{tree_save_dir}/ucb_tree_iter_{batch_last:03d}.png"
-            nodes = parse_ucb_scores(ucb_path)
+            nodes = parse_ucb_scores(ucb_path) if os.path.exists(ucb_path) else []
             if nodes:
                 config = configs[0]
                 sim_info = f"n_neurons={config.simulation.n_neurons}"
@@ -966,3 +966,4 @@ IMPORTANT: Baseline training time is ~45 min/epoch on H100. With n_epochs=1, exp
 # python GNN_LLM_parallel_flyvis.py -o train_test_plot_Claude_cluster flyvis_62_1 iterations=144 --resume
 # python GNN_LLM_parallel_flyvis.py -o train_test_plot_Claude_cluster flyvis_63_1 iterations=144 --resume
 # python GNN_LLM_parallel_flyvis.py -o generate_train_test_plot_Claude_cluster flyvis_62_1_gs iterations=144 instruction=instruction_flyvis_62_1_gs
+# python GNN_LLM_parallel_flyvis.py -o generate_train_test_plot_Claude_cluster flyvis_62_1_gs_vrest iterations=144 instruction=instruction_flyvis_62_1_gs_vrest

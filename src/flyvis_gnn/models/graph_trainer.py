@@ -163,19 +163,17 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         type_list = type_list[selected_neuron_ids]
 
     print(f'dataset: {x_ts.n_frames} frames')
+    n_neurons = x_ts.n_neurons
+    print(f'n neurons: {n_neurons}')
+    logger.info(f'n neurons: {n_neurons}')
+    config.simulation.n_neurons = n_neurons
 
     xnorm = x_ts.xnorm
     torch.save(xnorm, os.path.join(log_dir, 'xnorm.pt'))
     print(f'xnorm: {to_numpy(xnorm):0.3f}')
     logger.info(f'xnorm: {to_numpy(xnorm)}')
-
-    n_neurons = x_ts.n_neurons
-    print(f'n neurons: {n_neurons}')
-    logger.info(f'N neurons: {n_neurons}')
-    config.simulation.n_neurons = n_neurons
     ynorm = torch.tensor(1.0, device=device)
     torch.save(ynorm, os.path.join(log_dir, 'ynorm.pt'))
-    time.sleep(0.5)
     print(f'ynorm: {to_numpy(ynorm):0.3f}')
     logger.info(f'ynorm: {to_numpy(ynorm)}')
 

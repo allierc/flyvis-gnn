@@ -3,10 +3,43 @@ import os
 import torch
 
 from flyvis_gnn.utils import to_numpy
+from flyvis_gnn.neuron_state import NeuronState
 import numpy as np
 import seaborn as sns
 from scipy.optimize import curve_fit
 from collections import Counter
+
+
+def _batch_frames(frames, edge_index):
+    """Batch multiple NeuronState frames into a single concatenated NeuronState + batched edge_index.
+
+    Replaces PyG DataLoader batching: concatenates node tensors across frames
+    and replicates/offsets edge_index per frame.  Skips None fields.
+
+    Args:
+        frames: list of NeuronState, each with N neurons
+        edge_index: (2, E) tensor — shared connectivity for one frame
+
+    Returns:
+        (batched_state, batched_edges) where batched_state has B*N neurons
+        and batched_edges has B*E edges with properly offset indices.
+    """
+    from dataclasses import fields as dc_fields
+
+    n_per_frame = frames[0].n_neurons
+
+    def _cat(attr):
+        vals = [getattr(f, attr) for f in frames]
+        return torch.cat(vals) if vals[0] is not None else None
+
+    batched = NeuronState(**{
+        f.name: _cat(f.name) for f in dc_fields(NeuronState)
+    })
+    batched_edges = torch.cat(
+        [edge_index + i * n_per_frame for i in range(len(frames))], dim=1
+    )
+    return batched, batched_edges
+
 
 def linear_model(x, a, b):
     return a * x + b
@@ -694,7 +727,7 @@ def analyze_data_svd(data, output_folder, config=None, max_components=100, logge
     bg_color = 'k' if style == 'dark_background' else 'w'
 
     # font sizes
-    TITLE_SIZE = 16
+    TITLE_SIZE = 11
     LABEL_SIZE = 14
     TICK_SIZE = 12
     LEGEND_SIZE = 12

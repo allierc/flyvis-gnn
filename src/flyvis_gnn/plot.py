@@ -193,18 +193,18 @@ def _build_lin_phi_features(rr_flat, emb_flat):
 #  Activity statistics
 # ------------------------------------------------------------------ #
 
-def compute_activity_stats(x_list, device=None):
+def compute_activity_stats(x_ts, device=None):
     """Compute per-neuron mean and std of voltage activity.
 
     Args:
-        x_list: list of NeuronTimeSeries (voltage field is (T, N) tensor).
+        x_ts: NeuronTimeSeries (voltage field is (T, N) tensor).
         device: optional device override.
 
     Returns:
         mu_activity: (N,) tensor of per-neuron mean voltage.
         sigma_activity: (N,) tensor of per-neuron std voltage.
     """
-    voltage = x_list[0].voltage  # (T, N), already on device if x_list was moved
+    voltage = x_ts.voltage  # (T, N), already on device if x_ts was moved
     if device is not None:
         voltage = voltage.to(device)
     mu = voltage.mean(dim=0)
@@ -370,7 +370,7 @@ def compute_corrected_weights(model, edges, slopes_lin_phi, slopes_lin_edge, gra
     return corrected_W
 
 
-def compute_all_corrected_weights(model, config, edges, x_list, device, n_grad_frames=8):
+def compute_all_corrected_weights(model, config, edges, x_ts, device, n_grad_frames=8):
     """High-level: compute corrected W from model state and training data.
 
     Extracts slopes from lin_edge and lin_phi, computes grad_msg averaged
@@ -380,7 +380,7 @@ def compute_all_corrected_weights(model, config, edges, x_list, device, n_grad_f
         model: FlyVisGNN model.
         config: full config object.
         edges: (2, E) edge index tensor.
-        x_list: list of NeuronTimeSeries (training data).
+        x_ts: NeuronTimeSeries (training data).
         device: torch device.
         n_grad_frames: number of frames to sample for grad_msg (default 100).
 
@@ -393,7 +393,7 @@ def compute_all_corrected_weights(model, config, edges, x_list, device, n_grad_f
     n_neurons = model.a.shape[0]
 
     # 1. Activity statistics
-    mu_activity, sigma_activity = compute_activity_stats(x_list, device)
+    mu_activity, sigma_activity = compute_activity_stats(x_ts, device)
 
     # 2. Slope extraction
     slopes_lin_edge = extract_lin_edge_slopes(
@@ -402,7 +402,7 @@ def compute_all_corrected_weights(model, config, edges, x_list, device, n_grad_f
         model, config, n_neurons, mu_activity, sigma_activity, device)
 
     # 3. Compute grad_msg over multiple frames and take median
-    n_frames = x_list[0].voltage.shape[0]
+    n_frames = x_ts.voltage.shape[0]
     frame_indices = np.linspace(n_frames // 10, n_frames - 100, n_grad_frames, dtype=int)
     data_id = torch.zeros((n_neurons, 1), dtype=torch.int, device=device)
 
@@ -411,7 +411,7 @@ def compute_all_corrected_weights(model, config, edges, x_list, device, n_grad_f
 
     grad_list = []
     for k in frame_indices:
-        state = x_list[0].frame(int(k))
+        state = x_ts.frame(int(k))
         with torch.no_grad():
             _, in_features, _ = model(state, edges, data_id=data_id, return_all=True)
         grad_k = compute_grad_msg(model, in_features, config)
@@ -500,19 +500,17 @@ def plot_lin_edge(ax, model, config, n_neurons, type_list, cmap, device, step=20
     Evaluates all selected neurons in one batched MLP pass and draws
     all curves with a single LineCollection.
     """
-    signal_model_name = config.graph_model.signal_model_name
-    lin_edge_positive = config.graph_model.lin_edge_positive
-    xlim = config.plotting.xlim
+    model_config = config.graph_model
     n_pts = 1000
 
     neuron_ids = np.arange(0, n_neurons, step)
     n_sel = len(neuron_ids)
 
-    rr_1d = torch.linspace(xlim[0], xlim[1], n_pts, device=device)
+    rr_1d = torch.linspace(config.plotting.xlim[0], config.plotting.xlim[1], n_pts, device=device)
     rr = rr_1d.unsqueeze(0).expand(n_sel, -1)
 
-    post_fn = (lambda x: x ** 2) if lin_edge_positive else None
-    build_fn = lambda rr_f, emb_f: _build_lin_edge_features(rr_f, emb_f, signal_model_name)
+    post_fn = (lambda x: x ** 2) if model_config.lin_edge_positive else None
+    build_fn = lambda rr_f, emb_f: _build_lin_edge_features(rr_f, emb_f, model_config.signal_model_name)
 
     func = _batched_mlp_eval(
         model.lin_edge, model.a[neuron_ids], rr,
@@ -522,8 +520,8 @@ def plot_lin_edge(ax, model, config, n_neurons, type_list, cmap, device, step=20
     _plot_curves_fast(ax, to_numpy(rr_1d), to_numpy(func),
                       type_np[neuron_ids], cmap, linewidth=1, alpha=0.2)
 
-    ax.set_xlim(xlim)
-    ax.set_ylim([-xlim[1] / 10, xlim[1] * 1.2])
+    ax.set_xlim(config.plotting.xlim)
+    ax.set_ylim([-config.plotting.xlim[1] / 10, config.plotting.xlim[1] * 1.2])
     ax.set_xlabel('$v_j$', fontsize=32)
     ax.set_ylabel(r'learned $\mathrm{MLP_1}(\mathbf{a}_j, v_j)$', fontsize=32)
     ax.tick_params(axis='both', which='major', labelsize=24)
@@ -780,6 +778,7 @@ def plot_kinograph(
     rank_90_inp: int = 0,
     rank_99_inp: int = 0,
     zoom_size: int = 200,
+    zoom_neuron_start: int = 4900,
     style: FigureStyle = default_style,
 ) -> None:
     """2x2 kinograph: full activity + zoom, full stimulus + zoom.
@@ -793,6 +792,7 @@ def plot_kinograph(
         rank_90_inp: effective rank at 90% variance (input).
         rank_99_inp: effective rank at 99% variance (input).
         zoom_size: size of zoom window in neurons and frames.
+        zoom_neuron_start: first neuron index for the activity zoom panel.
         style: FigureStyle instance.
     """
     n_neurons, n_frames = activity.shape
@@ -800,7 +800,7 @@ def plot_kinograph(
     vmax_act = np.abs(activity).max()
     vmax_inp = np.abs(stimulus).max() * 1.2
     zoom_f = min(zoom_size, n_frames)
-    zoom_n_act = min(zoom_size, n_neurons)
+    zoom_n_act = min(zoom_size, n_neurons - zoom_neuron_start)
     zoom_n_inp = min(zoom_size, n_input)
 
     fig, axes = plt.subplots(
@@ -826,14 +826,15 @@ def plot_kinograph(
 
     # top-right: zoom activity
     ax = axes[0, 1]
-    im = ax.imshow(activity[:zoom_n_act, :zoom_f], vmin=-vmax_act, vmax=vmax_act, **imshow_kw)
+    zoom_neuron_end = zoom_neuron_start + zoom_n_act
+    im = ax.imshow(activity[zoom_neuron_start:zoom_neuron_end, :zoom_f], vmin=-vmax_act, vmax=vmax_act, **imshow_kw)
     fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04).ax.tick_params(labelsize=style.tick_font_size)
     style.ylabel(ax, 'neurons')
     style.xlabel(ax, 'time (frames)')
     ax.set_xticks([0, zoom_f - 1])
     ax.set_xticklabels([0, zoom_f], fontsize=style.tick_font_size)
     ax.set_yticks([0, zoom_n_act - 1])
-    ax.set_yticklabels([1, zoom_n_act], fontsize=style.tick_font_size)
+    ax.set_yticklabels([zoom_neuron_start, zoom_neuron_end], fontsize=style.tick_font_size)
 
     # bottom-left: full stimulus
     ax = axes[1, 0]
@@ -940,23 +941,25 @@ def plot_selected_neuron_traces(
 
     true_slice = activity[neuron_indices, start_frame:end_frame]
 
-    fig, ax = style.figure(aspect=3.0)
+    fig, ax = style.figure(aspect=1.5)
     for i in range(n_sel):
         baseline = np.mean(true_slice[i])
         ax.plot(true_slice[i] - baseline + i * step_v,
                 linewidth=style.line_width, c='green', alpha=0.75)
 
-    for i in range(n_sel):
-        ax.text(-100, i * step_v, style._label(names.get(selected_types[i], f'type_{selected_types[i]}')),
-                fontsize=style.tick_font_size, va='center', color=style.foreground)
-
+    # neuron ids as y-tick labels
+    ytick_positions = [i * step_v for i in range(n_sel)]
+    ytick_labels = [names.get(selected_types[i], f'type_{selected_types[i]}') for i in range(n_sel)]
+    ax.set_yticks(ytick_positions)
+    ax.set_yticklabels(ytick_labels, fontsize=style.tick_font_size)
     ax.set_ylim([-step_v, n_sel * step_v])
-    ax.set_yticks([])
+    style.ylabel(ax, 'neuron')
+
     ax.set_xticks([0, end_frame - start_frame])
     ax.set_xticklabels([start_frame, end_frame], fontsize=style.tick_font_size)
     style.xlabel(ax, 'frame')
 
-    plt.subplots_adjust(left=0.05)
+    plt.tight_layout()
     style.savefig(fig, output_path)
 
 
@@ -1165,192 +1168,6 @@ def plot_synaptic_frame_default(X1, x, dataset_name, run, num):
     plt.yticks([])
     plt.tight_layout()
     plt.savefig(f"graphs_data/{dataset_name}/Fig/Fig_{run}_{num}.png", dpi=80)
-    plt.close()
-
-
-def plot_synaptic_activity_traces(x_list, n_neurons, n_frames, dataset_name, model=None, config=None):
-    """Plot activity traces for synaptic simulation."""
-    print('plot activity ...')
-    activity = x_list[:, :, 3:4]
-    activity = activity.squeeze()
-    activity = activity.T
-
-    # Sample 100 traces if n_neurons > 100
-    if n_neurons > 100:
-        sampled_indices = np.random.choice(n_neurons, 100, replace=False)
-        sampled_indices = np.sort(sampled_indices)
-        activity_plot = activity[sampled_indices]
-        n_plot = 100
-    else:
-        activity_plot = activity
-        sampled_indices = np.arange(n_neurons)
-        n_plot = n_neurons
-
-    # Offset traces so neuron 0 is at bottom (consistent with kinograph origin='lower')
-    activity_plot = activity_plot + 10 * np.arange(n_plot)[:, None]
-    plt.figure(figsize=(10, 10))
-
-    # Plot all traces
-    plt.plot(activity_plot.T, linewidth=2, alpha=0.7)
-
-    # Plot external_input trace at the top (from x_list[:, :, 4])
-    external_input = x_list[:, :, 4]  # (n_frames, n_neurons)
-    if np.abs(external_input).max() > 1e-6:  # Only plot if there's external input
-        # Average external input across all neurons or use max
-        external_input_mean = np.mean(external_input, axis=1)  # (n_frames,)
-        # Scale and offset to show at top of plot
-        ext_scale = 20 / (np.abs(external_input_mean).max() + 1e-6)
-        ext_offset = activity_plot.max() + 50
-        frames = np.arange(min(n_frames, external_input.shape[0]))
-        plt.plot(frames, external_input_mean[:len(frames)] * ext_scale + ext_offset,
-                 color='yellow', linewidth=2, linestyle='--')
-        plt.text(-100, ext_offset, 'ext_in', fontsize=12, va='center', ha='right', color='yellow')
-        plt.ylim([activity_plot.min() - 50, ext_offset + 50])
-
-    for i in range(0, n_plot, 5):
-        plt.text(-100, activity_plot[i, 0], str(sampled_indices[i]), fontsize=16, va='center', ha='right')
-
-    ax = plt.gca()
-
-    # Compute and display effective rank
-    from sklearn.utils.extmath import randomized_svd
-    activity_for_svd = x_list[:, :, 3]  # (n_frames, n_neurons)
-    n_components = min(50, min(activity_for_svd.shape) - 1)
-    _, S, _ = randomized_svd(activity_for_svd, n_components=n_components, random_state=0)
-    cumvar = np.cumsum(S**2) / np.sum(S**2)
-    rank_90 = int(np.searchsorted(cumvar, 0.90) + 1)
-    rank_99 = int(np.searchsorted(cumvar, 0.99) + 1)
-    ax.text(0.98, 0.98, f'rank(90%)={rank_90}  rank(99%)={rank_99}', fontsize=14,
-            transform=ax.transAxes, va='top', ha='right')
-
-    # "neurons" label above the top index
-    ax.text(-200, activity_plot[-1, 0] + 30, 'neurons', fontsize=16, va='bottom', ha='right')
-    plt.xlabel("time", fontsize=20)
-    plt.xticks(fontsize=16)
-    ax.spines['left'].set_visible(False)
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.set_yticks([])
-    plt.xlim([0, min(n_frames, 10000)])
-    plt.tight_layout()
-    plt.savefig(f"graphs_data/{dataset_name}/activity.png", dpi=300)
-    plt.close()
-
-
-def plot_synaptic_kinograph(x_list, n_neurons, n_frames, dataset_name):
-    """Plot kinograph: neurons x time heatmap of activity."""
-    print('plot kinograph ...')
-    activity = x_list[:, :, 3]  # (n_frames, n_neurons)
-    activity = activity.T  # (n_neurons, n_frames)
-    n_frames_plot = min(n_frames, activity.shape[1])
-    activity = activity[:, :n_frames_plot]
-
-    vmax = np.abs(activity).max()
-    plt.figure(figsize=(10, 10))
-    plt.imshow(activity, aspect='auto', cmap='viridis', vmin=-vmax, vmax=vmax, origin='lower', interpolation='nearest')
-    cbar = plt.colorbar(fraction=0.046, pad=0.04)
-    cbar.ax.tick_params(labelsize=16)
-    plt.ylabel('neurons', fontsize=20)
-    plt.xlabel('time', fontsize=20)
-    plt.xticks([0, n_frames_plot - 1], [0, n_frames_plot], fontsize=16)
-    plt.yticks([0, n_neurons - 1], [1, n_neurons], fontsize=16)
-    plt.tight_layout()
-    plt.savefig(f"graphs_data/{dataset_name}/kinograph.png", dpi=300)
-    plt.close()
-
-
-def plot_synaptic_mlp_functions(model, x_list, n_neurons, dataset_name, colormap, device, signal_model_name=None):
-    """Plot MLP0 and MLP1 functions for synaptic simulation.
-
-    For PDE_N5, plots a 2x2 montage showing neuron-neuron dependent transfer functions.
-    Each subplot shows target neuron type k receiving from all source neuron types.
-    """
-    if not hasattr(model, 'func'):
-        return
-
-    print('plot MLP0 and MLP1 functions ...')
-    xnorm = np.std(x_list[:, :, 3])
-    import torch
-    rr = torch.linspace(-xnorm, xnorm, 1000).to(device)
-    neuron_types = x_list[0, :, 6].astype(int)  # neuron_type is at column 6
-    n_neuron_types = int(neuron_types.max()) + 1
-    cmap = plt.cm.get_cmap(colormap)
-
-    # For PDE_N5: plot 2x2 montage of neuron-neuron dependent MLP1
-    if signal_model_name == 'PDE_N5' and n_neuron_types == 4:
-        print('  PDE_N5: plotting 2x2 neuron-neuron dependent MLP1 montage ...')
-        fig = plt.figure(figsize=(16, 16))
-        plt.axis('off')
-
-        for k in range(n_neuron_types):  # target neuron type
-            ax = fig.add_subplot(2, 2, k + 1)
-            # Color the subplot border by target neuron type
-            for spine in ax.spines.values():
-                spine.set_edgecolor(cmap(k))
-                spine.set_linewidth(3)
-
-            if k == 0:
-                plt.ylabel(r'$\psi^*(a_i, a_j, x_i)$', fontsize=32)
-
-            # Plot MLP1 for all source neuron types -> target type k
-            for n in range(n_neuron_types):  # source neuron type
-                # Get width (w) from target neuron type k
-                w_target = model.p[k, 4:5]  # width of target
-
-                # Sample multiple neurons of source type n
-                for m in range(250):
-                    # Get threshold (h) from source neuron type n
-                    if model.p.shape[1] >= 6:
-                        h_source = model.p[n, 5:6]
-                    else:
-                        h_source = torch.zeros_like(w_target)
-
-                    # Compute phi((u - h_source) / w_target)
-                    func_phi = model.phi((rr[:, None] - h_source) / w_target)
-                    # Add the log term: - u * log(w_source) / 50
-                    l_source = torch.log(model.p[n, 4:5])
-                    func_phi = func_phi - rr[:, None] * l_source / 50
-
-                    plt.plot(to_numpy(rr), to_numpy(func_phi), color=cmap(n),
-                             linewidth=2, alpha=0.25)
-
-            plt.ylim([-1.1, 1.1])
-            plt.xlim([-5, 5])
-            if k >= 2:  # bottom row
-                plt.xlabel(r'$x_j$', fontsize=32)
-            plt.xticks(fontsize=20)
-            plt.yticks(fontsize=20)
-
-        plt.tight_layout()
-        plt.savefig(f"graphs_data/{dataset_name}/MLP1_neuron_neuron.png", dpi=150)
-        plt.close()
-
-    # Plot MLP1 (message/phi function) - all neurons (standard plot)
-    plt.figure(figsize=(10, 8))
-    for n in range(n_neurons):
-        neuron_type = neuron_types[n]
-        func_phi = model.func(rr, neuron_type, 'phi')
-        plt.plot(to_numpy(rr), to_numpy(func_phi), color=cmap(neuron_type), linewidth=1, alpha=0.5)
-    plt.xlabel('$x$', fontsize=20)
-    plt.ylabel(r'$\mathrm{MLP}_1(x)$', fontsize=20)
-    plt.xticks(fontsize=16)
-    plt.yticks(fontsize=16)
-    plt.tight_layout()
-    plt.savefig(f"graphs_data/{dataset_name}/MLP1_function.png", dpi=300)
-    plt.close()
-
-    # Plot MLP0 (update function) - all neurons
-    plt.figure(figsize=(10, 8))
-    for n in range(n_neurons):
-        neuron_type = neuron_types[n]
-        func_update = model.func(rr, neuron_type, 'update')
-        plt.plot(to_numpy(rr), to_numpy(func_update), color=cmap(neuron_type), linewidth=1, alpha=0.5)
-    plt.xlabel('$x$', fontsize=20)
-    plt.ylabel(r'$\mathrm{MLP}_0(x)$', fontsize=20)
-    plt.xticks(fontsize=16)
-    plt.yticks(fontsize=16)
-    plt.tight_layout()
-    plt.savefig(f"graphs_data/{dataset_name}/MLP0_function.png", dpi=300)
     plt.close()
 
 
@@ -1656,7 +1473,7 @@ def plot_signal_loss(loss_dict, log_dir, epoch=None, Niter=None, debug=False,
 #  CONSOLIDATED FROM models/utils.py
 # ================================================================== #
 
-def plot_training_flyvis(x_list, model, config, epoch, N, log_dir, device, cmap, type_list,
+def plot_training_flyvis(x_ts, model, config, epoch, N, log_dir, device, cmap, type_list,
                          gt_weights, edges, n_neurons=None, n_neuron_types=None):
     from flyvis_gnn.plot import (
         plot_embedding, plot_lin_edge, plot_lin_phi, plot_weight_scatter,
@@ -1692,7 +1509,7 @@ def plot_training_flyvis(x_list, model, config, epoch, N, log_dir, device, cmap,
 
     # Compute corrected weights
     corrected_W, _, _, _ = compute_all_corrected_weights(
-        model, config, edges, x_list, device)
+        model, config, edges, x_ts, device)
 
     # Plot 3: Corrected weight comparison scatter plot
     fig, ax = plt.subplots(figsize=(8, 8))

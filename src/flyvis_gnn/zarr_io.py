@@ -1,9 +1,8 @@
 """zarr/tensorstore I/O utilities for simulation data.
 
 provides:
-- ZarrSimulationWriter: incremental writer (legacy V1 format)
-- ZarrSimulationWriterV2: split metadata/timeseries writer (V2 format)
-- ZarrSimulationWriterV3: per-field writer (V3 format — primary)
+- ZarrSimulationWriterV3: per-field writer for NeuronState data (static + dynamic fields)
+- ZarrArrayWriter: incremental writer for raw (T, N, F) arrays (e.g. derivative targets)
 - detect_format: check if V3 zarr or .npy exists at path
 - load_simulation_data: load as NeuronTimeSeries with optional field selection
 - load_raw_array: load raw numpy array from zarr or npy (for derivative targets etc.)
@@ -20,19 +19,16 @@ import tensorstore as ts
 if TYPE_CHECKING:
     from flyvis_gnn.neuron_state import NeuronState, NeuronTimeSeries
 
-# V2 writer internals: static and dynamic column layout
-_STATIC_COLS = [0, 1, 2, 5, 6]   # INDEX, XPOS, YPOS, GROUP_TYPE, TYPE
-_DYNAMIC_COLS = [3, 4, 7, 8]     # VOLTAGE, STIMULUS, CALCIUM, FLUORESCENCE
-_N_DYNAMIC = len(_DYNAMIC_COLS)
 
+class ZarrArrayWriter:
+    """Incremental writer for raw (T, N, F) zarr arrays.
 
-class ZarrSimulationWriter:
-    """incremental writer - appends frames during generation (legacy V1 format).
+    Used for derivative targets (y_list) and other non-NeuronState data.
 
-    usage:
-        writer = ZarrSimulationWriter(path, n_neurons=1000, n_features=8)
+    Usage:
+        writer = ZarrArrayWriter(path, n_neurons=14011, n_features=1)
         for frame in simulation:
-            writer.append(frame)
+            writer.append(frame)  # frame is (N, F)
         writer.finalize()
     """
 
@@ -41,402 +37,93 @@ class ZarrSimulationWriter:
         path: str | Path,
         n_neurons: int,
         n_features: int,
-        chunks: tuple[int, int, int] | None = None,
+        time_chunks: int = 2000,
         dtype: np.dtype = np.float32,
     ):
-        """initialize zarr writer.
-
-        args:
-            path: output path (without extension, .zarr will be added)
-            n_neurons: number of neurons (second dimension)
-            n_features: number of features per neuron (third dimension)
-            chunks: chunk sizes (time, neurons, features). use -1 for full dimension.
-            dtype: data type for storage
-        """
         self.path = Path(path)
         if not str(self.path).endswith('.zarr'):
             self.path = Path(str(self.path) + '.zarr')
 
         self.n_neurons = n_neurons
         self.n_features = n_features
+        self.time_chunks = time_chunks
         self.dtype = dtype
 
-        # determine chunk sizes
-        if chunks is None:
-            # default: 500 frames, full neurons, full features
-            chunks = (500, n_neurons, n_features)
-        else:
-            # replace -1 with actual dimensions
-            chunks = (
-                chunks[0],
-                n_neurons if chunks[1] == -1 else chunks[1],
-                n_features if chunks[2] == -1 else chunks[2],
-            )
-        self.chunks = chunks
-
-        # buffer for accumulating frames before writing
         self._buffer: list[np.ndarray] = []
         self._total_frames = 0
         self._store: ts.TensorStore | None = None
         self._initialized = False
 
-    def _initialize_store(self, first_frame: np.ndarray):
-        """initialize tensorstore with zarr format."""
-        # ensure parent directory exists
+    def _initialize_store(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
-        # remove existing zarr directory if present (ignore_errors for NFS)
         if self.path.exists():
             import shutil
             shutil.rmtree(self.path, ignore_errors=True)
 
-        # create zarr store with tensorstore
-        # start with initial capacity, will resize as needed
-        initial_time_capacity = max(self.chunks[0] * 10, 1000)
-
+        initial_cap = max(self.time_chunks * 10, 1000)
         spec = {
             'driver': 'zarr',
-            'kvstore': {
-                'driver': 'file',
-                'path': str(self.path),
-            },
+            'kvstore': {'driver': 'file', 'path': str(self.path)},
             'metadata': {
                 'dtype': '<f4' if self.dtype == np.float32 else '<f8',
-                'shape': [initial_time_capacity, self.n_neurons, self.n_features],
-                'chunks': list(self.chunks),
+                'shape': [initial_cap, self.n_neurons, self.n_features],
+                'chunks': [self.time_chunks, self.n_neurons, self.n_features],
                 'compressor': {
-                    'id': 'blosc',
-                    'cname': 'zstd',
-                    'clevel': 3,
-                    'shuffle': 2,  # bitshuffle
+                    'id': 'blosc', 'cname': 'zstd', 'clevel': 3, 'shuffle': 2,
                 },
             },
             'create': True,
             'delete_existing': True,
         }
-
         self._store = ts.open(spec).result()
         self._initialized = True
 
     def append(self, frame: np.ndarray):
-        """append a single frame to the buffer.
-
-        args:
-            frame: array of shape (n_neurons, n_features)
-        """
         if frame.shape != (self.n_neurons, self.n_features):
             raise ValueError(
                 f"frame shape {frame.shape} doesn't match expected "
                 f"({self.n_neurons}, {self.n_features})"
             )
-
         self._buffer.append(frame.astype(self.dtype, copy=False))
+        if len(self._buffer) >= self.time_chunks:
+            self._flush()
 
-        # flush buffer when it reaches chunk size
-        if len(self._buffer) >= self.chunks[0]:
-            self._flush_buffer()
-
-    def _flush_buffer(self):
-        """write buffered frames to zarr store."""
+    def _flush(self):
         if not self._buffer:
             return
+        if not self._initialized:
+            self._initialize_store()
 
-        # stack frames into array
         data = np.stack(self._buffer, axis=0)
         n_frames = data.shape[0]
 
-        if not self._initialized:
-            self._initialize_store(self._buffer[0])
-
-        # check if we need to resize
-        current_shape = self._store.shape
-        needed_size = self._total_frames + n_frames
-        if needed_size > current_shape[0]:
-            # resize to accommodate new data (with some headroom)
-            new_size = max(needed_size, current_shape[0] * 2)
+        needed = self._total_frames + n_frames
+        if needed > self._store.shape[0]:
+            new_size = max(needed, self._store.shape[0] * 2)
             self._store = self._store.resize(
                 exclusive_max=[new_size, self.n_neurons, self.n_features]
             ).result()
 
-        # write data
         self._store[self._total_frames:self._total_frames + n_frames].write(data).result()
-
         self._total_frames += n_frames
         self._buffer.clear()
 
     def finalize(self):
-        """finalize the zarr store - flush remaining buffer and resize to exact size."""
-        # flush any remaining buffered data
-        self._flush_buffer()
-
+        self._flush()
         if self._store is not None and self._total_frames > 0:
-            # resize to exact final size
             self._store = self._store.resize(
                 exclusive_max=[self._total_frames, self.n_neurons, self.n_features]
             ).result()
-
         return self._total_frames
 
 
-class ZarrSimulationWriterV2:
-    """split metadata/timeseries writer for efficient storage (V2 format).
-
-    separates static columns (INDEX, XPOS, YPOS, GROUP_TYPE, TYPE) from
-    dynamic columns (VOLTAGE, STIMULUS, CALCIUM, FLUORESCENCE) to avoid
-    redundant storage of position data.
-
-    storage structure:
-        path/
-            metadata.zarr    # (N, 5) static columns, stored once
-            timeseries.zarr  # (T, N, 4) dynamic columns
-
-    usage:
-        writer = ZarrSimulationWriterV2(path, n_neurons=14011, n_features=9)
-        for frame in simulation:
-            writer.append(frame)  # frame is (N, 9)
-        writer.finalize()
-    """
-
-    def __init__(
-        self,
-        path: str | Path,
-        n_neurons: int,
-        n_features: int = 9,
-        time_chunks: int = 2000,
-        dtype: np.dtype = np.float32,
-    ):
-        """initialize V2 zarr writer.
-
-        args:
-            path: output directory path
-            n_neurons: number of neurons
-            n_features: total features per neuron (must be 9 for flyvis)
-            time_chunks: chunk size along time dimension for timeseries
-            dtype: data type for storage
-        """
-        self.path = Path(path)
-        self.n_neurons = n_neurons
-        self.n_features = n_features
-        self.time_chunks = time_chunks
-        self.dtype = dtype
-
-        # paths for sub-arrays
-        self.metadata_path = self.path / 'metadata.zarr'
-        self.timeseries_path = self.path / 'timeseries.zarr'
-
-        # state
-        self._metadata_saved = False
-        self._metadata: np.ndarray | None = None
-        self._buffer: list[np.ndarray] = []
-        self._total_frames = 0
-        self._ts_store: ts.TensorStore | None = None
-        self._ts_initialized = False
-
-    def _save_metadata(self, frame: np.ndarray):
-        """save static metadata from first frame."""
-        # ensure directory exists
-        self.path.mkdir(parents=True, exist_ok=True)
-
-        # remove existing if present (ignore_errors for NFS race conditions)
-        if self.metadata_path.exists():
-            import shutil
-            shutil.rmtree(self.metadata_path, ignore_errors=True)
-
-        # extract static columns: [INDEX, XPOS, YPOS, GROUP_TYPE, TYPE]
-        self._metadata = frame[:, _STATIC_COLS].astype(self.dtype)  # (N, 5)
-
-        # save metadata as zarr (small, no need for chunking)
-        spec = {
-            'driver': 'zarr',
-            'kvstore': {
-                'driver': 'file',
-                'path': str(self.metadata_path),
-            },
-            'metadata': {
-                'dtype': '<f4' if self.dtype == np.float32 else '<f8',
-                'shape': list(self._metadata.shape),
-                'chunks': list(self._metadata.shape),  # single chunk
-                'compressor': {
-                    'id': 'blosc',
-                    'cname': 'zstd',
-                    'clevel': 3,
-                    'shuffle': 2,
-                },
-            },
-            'create': True,
-            'delete_existing': True,
-        }
-
-        store = ts.open(spec).result()
-        store.write(self._metadata).result()
-        self._metadata_saved = True
-
-    def _initialize_timeseries_store(self):
-        """initialize timeseries zarr store."""
-        if self.timeseries_path.exists():
-            import shutil
-            shutil.rmtree(self.timeseries_path, ignore_errors=True)
-
-        initial_time_capacity = max(self.time_chunks * 10, 1000)
-
-        spec = {
-            'driver': 'zarr',
-            'kvstore': {
-                'driver': 'file',
-                'path': str(self.timeseries_path),
-            },
-            'metadata': {
-                'dtype': '<f4' if self.dtype == np.float32 else '<f8',
-                'shape': [initial_time_capacity, self.n_neurons, _N_DYNAMIC],
-                'chunks': [self.time_chunks, self.n_neurons, 1],  # column-chunked
-                'compressor': {
-                    'id': 'blosc',
-                    'cname': 'zstd',
-                    'clevel': 3,
-                    'shuffle': 2,
-                },
-            },
-            'create': True,
-            'delete_existing': True,
-        }
-
-        self._ts_store = ts.open(spec).result()
-        self._ts_initialized = True
-
-    def append(self, frame: np.ndarray):
-        """append a single frame from packed (N, 9) array.
-
-        args:
-            frame: array of shape (n_neurons, n_features) with all 9 columns
-        """
-        if frame.shape != (self.n_neurons, self.n_features):
-            raise ValueError(
-                f"frame shape {frame.shape} doesn't match expected "
-                f"({self.n_neurons}, {self.n_features})"
-            )
-
-        # save metadata from first frame
-        if not self._metadata_saved:
-            self._save_metadata(frame)
-
-        # extract dynamic columns: [VOLTAGE, STIMULUS, CALCIUM, FLUORESCENCE]
-        dynamic_data = frame[:, _DYNAMIC_COLS].astype(self.dtype)
-        self._buffer.append(dynamic_data)
-
-        # flush when buffer reaches chunk size
-        if len(self._buffer) >= self.time_chunks:
-            self._flush_buffer()
-
-    def append_state(self, state: NeuronState):
-        """append a single frame from NeuronState dataclass.
-
-        On first call, saves static metadata (index, pos, group_type, neuron_type).
-        On every call, buffers dynamic fields (voltage, stimulus, calcium, fluorescence).
-        """
-        from flyvis_gnn.neuron_state import NeuronState as _NS
-        from flyvis_gnn.utils import to_numpy
-
-        if not self._metadata_saved:
-            # build metadata: (N, 4) = [xpos, ypos, group_type, neuron_type]
-            meta = np.column_stack([
-                to_numpy(state.pos),
-                to_numpy(state.group_type.float()),
-                to_numpy(state.neuron_type.float()),
-            ]).astype(self.dtype)
-            self._save_metadata_array(meta)
-
-        # build dynamic: (N, 4) = [voltage, stimulus, calcium, fluorescence]
-        dynamic = np.column_stack([
-            to_numpy(state.voltage),
-            to_numpy(state.stimulus),
-            to_numpy(state.calcium),
-            to_numpy(state.fluorescence),
-        ]).astype(self.dtype)
-        self._buffer.append(dynamic)
-
-        if len(self._buffer) >= self.time_chunks:
-            self._flush_buffer()
-
-    def _save_metadata_array(self, metadata: np.ndarray):
-        """save pre-built metadata array (N, 5)."""
-        self.path.mkdir(parents=True, exist_ok=True)
-
-        # ignore_errors for NFS race conditions on cluster filesystems
-        if self.metadata_path.exists():
-            import shutil
-            shutil.rmtree(self.metadata_path, ignore_errors=True)
-
-        self._metadata = metadata
-
-        spec = {
-            'driver': 'zarr',
-            'kvstore': {
-                'driver': 'file',
-                'path': str(self.metadata_path),
-            },
-            'metadata': {
-                'dtype': '<f4' if self.dtype == np.float32 else '<f8',
-                'shape': list(self._metadata.shape),
-                'chunks': list(self._metadata.shape),
-                'compressor': {
-                    'id': 'blosc',
-                    'cname': 'zstd',
-                    'clevel': 3,
-                    'shuffle': 2,
-                },
-            },
-            'create': True,
-            'delete_existing': True,
-        }
-
-        store = ts.open(spec).result()
-        store.write(self._metadata).result()
-        self._metadata_saved = True
-
-    def _flush_buffer(self):
-        """write buffered timeseries data."""
-        if not self._buffer:
-            return
-
-        data = np.stack(self._buffer, axis=0)  # (chunk_size, N, 4)
-        n_frames = data.shape[0]
-
-        if not self._ts_initialized:
-            self._initialize_timeseries_store()
-
-        # resize if needed
-        current_shape = self._ts_store.shape
-        needed_size = self._total_frames + n_frames
-        if needed_size > current_shape[0]:
-            new_size = max(needed_size, current_shape[0] * 2)
-            self._ts_store = self._ts_store.resize(
-                exclusive_max=[new_size, self.n_neurons, _N_DYNAMIC]
-            ).result()
-
-        # write
-        self._ts_store[self._total_frames:self._total_frames + n_frames].write(data).result()
-
-        self._total_frames += n_frames
-        self._buffer.clear()
-
-    def finalize(self):
-        """finalize - flush buffer and resize to exact size."""
-        self._flush_buffer()
-
-        if self._ts_store is not None and self._total_frames > 0:
-            self._ts_store = self._ts_store.resize(
-                exclusive_max=[self._total_frames, self.n_neurons, _N_DYNAMIC]
-            ).result()
-
-        return self._total_frames
-
-
-_DYNAMIC_FIELDS_V3 = ['voltage', 'stimulus', 'calcium', 'fluorescence']
-_STATIC_FIELDS_V3 = ['pos', 'group_type', 'neuron_type']
+_DYNAMIC_FIELDS = ['voltage', 'stimulus', 'calcium', 'fluorescence']
+_STATIC_FIELDS = ['pos', 'group_type', 'neuron_type']
 
 
 class ZarrSimulationWriterV3:
-    """Per-field zarr writer — each NeuronState key gets its own zarr array.
+    """Per-field zarr writer — each NeuronState field gets its own zarr array.
 
     Storage structure:
         path/
@@ -450,7 +137,7 @@ class ZarrSimulationWriterV3:
 
     Note: index is NOT saved — it is arange(n_neurons) and constructed at load time.
 
-    usage:
+    Usage:
         writer = ZarrSimulationWriterV3(path, n_neurons=14011)
         for state in simulation:
             writer.append_state(state)
@@ -468,7 +155,7 @@ class ZarrSimulationWriterV3:
         self.time_chunks = time_chunks
 
         self._static_saved = False
-        self._buffers: dict[str, list[np.ndarray]] = {f: [] for f in _DYNAMIC_FIELDS_V3}
+        self._buffers: dict[str, list[np.ndarray]] = {f: [] for f in _DYNAMIC_FIELDS}
         self._stores: dict[str, ts.TensorStore] = {}
         self._total_frames = 0
         self._dynamic_initialized = False
@@ -515,7 +202,7 @@ class ZarrSimulationWriterV3:
         """Create zarr stores for dynamic fields."""
         initial_cap = max(self.time_chunks * 10, 1000)
 
-        for name in _DYNAMIC_FIELDS_V3:
+        for name in _DYNAMIC_FIELDS:
             zarr_path = self.path / f'{name}.zarr'
             if zarr_path.exists():
                 import shutil
@@ -564,7 +251,7 @@ class ZarrSimulationWriterV3:
 
         n_frames = len(self._buffers['voltage'])
 
-        for name in _DYNAMIC_FIELDS_V3:
+        for name in _DYNAMIC_FIELDS:
             data = np.stack(self._buffers[name], axis=0)  # (chunk, N)
 
             # resize if needed
@@ -585,7 +272,7 @@ class ZarrSimulationWriterV3:
         """Flush remaining buffer and resize stores to exact size."""
         self._flush_buffer()
 
-        for name in _DYNAMIC_FIELDS_V3:
+        for name in _DYNAMIC_FIELDS:
             if name in self._stores and self._total_frames > 0:
                 self._stores[name] = self._stores[name].resize(
                     exclusive_max=[self._total_frames, self.n_neurons]
@@ -654,7 +341,7 @@ def load_raw_array(path: str | Path) -> np.ndarray:
     path = Path(path)
     base_path = path.with_suffix('') if path.suffix in ('.npy', '.zarr') else path
 
-    # try zarr (V1-style single array)
+    # try zarr (single array)
     zarr_path = Path(str(base_path) + '.zarr')
     if zarr_path.exists() and zarr_path.is_dir():
         spec = {
@@ -669,27 +356,3 @@ def load_raw_array(path: str | Path) -> np.ndarray:
         return np.load(npy_path)
 
     raise FileNotFoundError(f"no .zarr or .npy found at {base_path}")
-
-
-def load_zarr_lazy(path: str | Path) -> ts.TensorStore:
-    """load zarr file as tensorstore handle for lazy access.
-
-    args:
-        path: path to zarr directory
-
-    returns:
-        tensorstore handle
-    """
-    path = Path(path)
-    if not str(path).endswith('.zarr'):
-        path = Path(str(path) + '.zarr')
-
-    spec = {
-        'driver': 'zarr',
-        'kvstore': {
-            'driver': 'file',
-            'path': str(path),
-        },
-    }
-
-    return ts.open(spec).result()

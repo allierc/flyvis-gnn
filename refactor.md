@@ -70,9 +70,9 @@ python GNN_Test.py --config flyvis_62_1_gs --skip-train --skip-plot --no-claude
 
 ---
 
-## Step 2. Eliminating Magic Column Indices with NeuronState and NeuronTimeSeries
+## Step 2. NeuronState, Zarr V3 Storage, and Data Loading Simplification
 
-### The problem
+### 2a. The problem: magic column indices
 
 The original codebase represented neuron state as a packed `(N, 9)` tensor where columns had implicit meaning:
 
@@ -89,7 +89,11 @@ x[:, 8] = fluorescence
 
 This created fragile code full of magic numbers like `x[:, 3:4]`, `x[:, 7:8]`, `x[n, 6]`. Any column reordering or addition would silently break everything. The same indices appeared across `graph_trainer.py`, `utils.py`, `GNN_PlotFigure.py`, and the ODE wrapper — hundreds of occurrences with no single source of truth.
 
-### The solution: NeuronState and NeuronTimeSeries
+The storage layer had the same problem: simulation data was saved as monolithic `(T, N, 9)` zarr arrays (V1) or split into `metadata.zarr (N, 5)` + `timeseries.zarr (T, N, 4)` (V2). Both formats pack multiple fields into column indices. Loading a single field (e.g., just stimulus) required loading the entire array.
+
+The training loader also wrapped data in `x_list` / `y_list` with a `for run in range(n_runs)` loop, even though `n_runs` is always 1. Every downstream function accepted `x_list` (a list) and `run` (an index), adding unnecessary indirection.
+
+### 2b. NeuronState and NeuronTimeSeries
 
 Two dataclasses in `src/flyvis_gnn/neuron_state.py` replace the packed tensor:
 
@@ -127,52 +131,179 @@ class NeuronTimeSeries:
     fluorescence: torch.Tensor # (T, N)
 ```
 
-### Key methods
+Key methods:
 
 - `NeuronState.from_numpy(x)` — convert legacy `(N, 9)` packed tensor to named fields
 - `NeuronState.to_packed()` — convert back for legacy interfaces
-- `NeuronTimeSeries.frame(t)` — extract single-frame `NeuronState` at time t (clones dynamic fields so modifications don't corrupt the timeseries)
-- `NeuronTimeSeries.load(path)` — auto-detect format (zarr_v2, zarr_v1, npy) and load
+- `NeuronTimeSeries.frame(t)` — extract single-frame `NeuronState` at time t
+- `NeuronTimeSeries.load(path)` — auto-detect format (zarr_v3, zarr_v2, zarr_v1, npy) and load
 - `.to(device)`, `.clone()`, `.detach()`, `.subset(ids)`, `.zeros(n)`
 
-### Migration pattern
-
-Before:
+Shape note: NeuronState fields are `(N,)` but model output is `(N, 1)`. Always squeeze when assigning:
 
 ```python
-x = torch.zeros(n_neurons, 9)
-x[:, 3] = initial_voltage
-x[:, 4] = stimulus
-y = model(NeuronState.from_numpy(x), edge_index)
-x[:, 3:4] = x[:, 3:4] + dt * y
-```
-
-After:
-
-```python
-x = NeuronState(index=..., pos=..., voltage=initial_voltage, stimulus=stimulus, ...)
-y = model(x, edge_index)
 x.voltage = x.voltage + dt * y.squeeze(-1)
 ```
+
+### 2c. Zarr V3 per-field storage
+
+Each `NeuronState` field is saved as its own zarr array in a directory:
+
+```
+x_list_0/
+├── index.zarr        # (N,) int32 — static, written once
+├── pos.zarr          # (N, 2) float32 — static, written once
+├── group_type.zarr   # (N,) int32 — static, written once
+├── neuron_type.zarr  # (N,) int32 — static, written once
+├── voltage.zarr      # (T, N) float32 — dynamic, appended per frame
+├── stimulus.zarr     # (T, N) float32 — dynamic, appended per frame
+├── calcium.zarr      # (T, N) float32 — dynamic, appended per frame
+└── fluorescence.zarr # (T, N) float32 — dynamic, appended per frame
+```
+
+Static fields are written once from the first frame. Dynamic fields are buffered and flushed in chunks of `time_chunks` frames (default 2000) using tensorstore with blosc/zstd compression.
+
+```python
+class ZarrSimulationWriterV3:
+    def __init__(self, path, n_neurons, time_chunks=2000)
+    def append_state(self, state: NeuronState)  # buffer + auto-flush
+    def finalize(self)                           # resize to exact frame count
+```
+
+Format auto-detection in `NeuronTimeSeries.load(path)` and `detect_format()`:
+
+1. **V3** — directory contains `voltage.zarr` → `from_zarr_v3`
+2. **V2** — directory contains `metadata.zarr` + `timeseries.zarr` → `from_zarr_v2`
+3. **V1** — `path.zarr` with `.zarray` → `from_zarr_v1`
+4. **npy** — `path.npy` → `from_numpy`
+
+### 2d. x_list → x_ts simplification
+
+Since `n_runs = 1` always, removed the list wrapping across all functions:
+
+```python
+# Before:
+x_list = []
+for run in trange(0, tc.n_runs):
+    x_list.append(load_simulation_data(...))
+x_list = [ts.to(device) for ts in x_list]
+
+# After:
+x_ts = load_simulation_data(f'graphs_data/{config.dataset}/x_list_0')
+x_ts = x_ts.to(device)
+```
+
+All downstream functions updated from `(x_list, run)` to `(x_ts)`:
+
+| Function | Before | After |
+|----------|--------|-------|
+| `plot_training_flyvis` | `x_list` | `x_ts` |
+| `compute_activity_stats` | `x_list[0].voltage` | `x_ts.voltage` |
+| `compute_all_corrected_weights` | `x_list[0].frame(k)` | `x_ts.frame(k)` |
+| `neural_ode_loss_FlyVis` | `x_list, run` | `x_ts` |
+| `integrate_neural_ode_FlyVis` | `x_list, run` | `x_ts` |
+| `GNNODEFunc_FlyVis` | `x_list, run` | `x_ts` |
+| `plot_signal` | `x_list[0]` | `x_ts` |
+| `plot_synaptic_flyvis` | `x_list[0]` | `x_ts` |
+| `data_test_flyvis` (ODE call) | `x_list=None, run=0` | `x_ts=None` |
+
+### 2e. Data loading cleanup (index removal, type_list extraction, xnorm property, y_data → y_ts)
+
+Several related simplifications to the data loading path in `graph_trainer.py` and supporting modules:
+
+**1. `index` no longer saved to disk or loaded**
+
+`index` was always `arange(n_neurons)` — saving it to disk was redundant. Removed from:
+- `ZarrSimulationWriterV3._STATIC_FIELDS_V3`: `['index', 'pos', 'group_type', 'neuron_type']` → `['pos', 'group_type', 'neuron_type']`
+- `ZarrSimulationWriterV3._save_static()`: no longer writes `index.zarr`
+- `ZarrSimulationWriterV2` metadata packing: `(N, 5)` → `(N, 4)` (removed index column)
+- `NeuronTimeSeries.from_zarr_v3()`: gracefully handles missing `index.zarr` (auto-constructs as `arange(n_neurons)`)
+
+Loading code constructs index at runtime:
+```python
+x_ts.index = torch.arange(x_ts.n_neurons, dtype=torch.long, device=device)
+```
+
+**2. `neuron_type` extracted separately as `type_list`**
+
+`neuron_type` is loaded as part of the NeuronTimeSeries, then extracted and cleared to avoid carrying static metadata alongside dynamic tensors:
+
+```python
+load_fields = ['voltage', 'stimulus', 'neuron_type']
+x_ts = load_simulation_data(..., fields=load_fields).to(device)
+
+type_list = x_ts.neuron_type.float().unsqueeze(-1)
+x_ts.neuron_type = None  # clear from timeseries
+x_ts.index = torch.arange(x_ts.n_neurons, dtype=torch.long, device=device)
+```
+
+**3. Chained `.to(device)` on load**
+
+Single-line load + device transfer:
+```python
+# Before:
+x_ts = load_simulation_data(...)
+x_ts = x_ts.to(device)
+
+# After:
+x_ts = load_simulation_data(f'graphs_data/{config.dataset}/x_list_0', fields=load_fields).to(device)
+```
+
+**4. `xnorm` moved to `NeuronTimeSeries.xnorm` property**
+
+Previously, `xnorm` was computed inline in `data_train_flyvis` using intermediate tensors (`activity`, `distrib`, `valid_distrib`) that persisted on GPU:
+
+```python
+# Before (3 persistent GPU tensors):
+activity = x_ts.voltage
+distrib = activity[~torch.isnan(activity)]
+valid_distrib = distrib[distrib != 0]
+xnorm = 1.5 * torch.std(valid_distrib)
+```
+
+Now a property on `NeuronTimeSeries` in `neuron_state.py`:
+
+```python
+@property
+def xnorm(self) -> torch.Tensor:
+    """Voltage normalization: 1.5 * std of all valid voltage values."""
+    v = self.voltage
+    valid = v[~torch.isnan(v)]
+    if len(valid) > 0:
+        return 1.5 * valid.std()
+    return torch.tensor(1.0, device=v.device if v is not None else 'cpu')
+```
+
+Usage: `xnorm = x_ts.xnorm` — no persistent intermediate tensors.
+
+**5. `y_data` → `y_ts` rename**
+
+Renamed for consistency with `x_ts` naming convention. All 3 occurrences in `graph_trainer.py` updated.
+
+**6. Removed dead frame extraction**
+
+`x = x_ts.frame(sim.n_frames - 10)` was assigned but never used — removed. `n_neurons` is now read directly from `x_ts.n_neurons`.
 
 ### What's been migrated
 
 - `Signal_Propagation_FlyVis.forward()` accepts `NeuronState` directly
-- `data_train_flyvis` constructs `x` as `NeuronState`, removes all `isinstance` checks
-- Training data (`x_list`) is loaded as `NeuronTimeSeries`, kept on GPU
-- `data_test_flyvis` still uses packed tensors internally (migration pending)
-- `GNN_PlotFigure.py` — `plot_synaptic_flyvis()` fully migrated
-- `GNN_PlotFigure.py` — `plot_signal()` fully migrated
+- `data_train_flyvis` constructs `x` as `NeuronState`, loads data as single `x_ts`
+- `data_test_flyvis` constructs `x` as `NeuronState`, uses `x_ts` in ODE calls
+- `GNN_PlotFigure.py` — `plot_signal()` and `plot_synaptic_flyvis()` load directly as `x_ts`
 - `plot_synaptic_CElegans` and `plot_synaptic_zebra` removed (non-flyvis datasets)
+- Dead code removed: `load_training_data()` in `GNN_PlotFigure.py`, 3 unused packed-format plot functions in `plot.py`
 
-### Shape considerations
+### Files modified
 
-NeuronState fields are `(N,)` but model output is `(N, 1)`. Always squeeze when assigning:
-
-```python
-x.voltage = x.voltage + dt * y.squeeze(-1)
-x.stimulus[:n_input] = visual_input.squeeze(-1)
-```
+| File | Changes |
+|------|---------|
+| `src/flyvis_gnn/neuron_state.py` | `NeuronState`, `NeuronTimeSeries` dataclasses; `from_zarr_v3`, `load()` with V3 detection |
+| `src/flyvis_gnn/zarr_io.py` | `ZarrSimulationWriterV3`, `_load_zarr_v3`, updated `detect_format` |
+| `src/flyvis_gnn/generators/graph_data_generator.py` | Switched from `ZarrSimulationWriterV2` to `ZarrSimulationWriterV3` |
+| `src/flyvis_gnn/models/graph_trainer.py` | Simplified `data_train_flyvis` and `data_test_flyvis`: x_list → x_ts |
+| `src/flyvis_gnn/models/Neural_ode_wrapper_FlyVis.py` | Updated `GNNODEFunc_FlyVis`, `integrate_neural_ode_FlyVis`, `neural_ode_loss_FlyVis` |
+| `src/flyvis_gnn/plot.py` | Updated signatures; removed 3 dead packed-format functions |
+| `GNN_PlotFigure.py` | Updated `plot_signal`, `plot_synaptic_flyvis`; removed dead `load_training_data` |
 
 ### Validation
 
@@ -282,6 +413,16 @@ Every major function started with 20–54 lines of `variable = config.section.fi
 ### The solution
 
 Three short section aliases (`sim`, `tc`, `model_config`) then direct access: `sim.n_neurons`, `tc.batch_size`. ~88 lines of pure assignment removed, ~300 variable references rewritten.
+
+**Rule**: apply only to variables that are **not modified** after unpacking. Variables like `n_frames` and `n_neurons` that get reassigned later in the function must remain as local variables (initialized from `sim.xxx`).
+
+### Applied to
+
+- `graph_trainer.py`: `data_train_flyvis`, `data_test`, `data_plot`, `data_plot_flyvis`
+- `graph_data_generator.py`: `data_generate_fly_voltage`
+- `generators/utils.py`: `init_neurons`, `init_mesh`
+- `plot.py`: `plot_lin_edge`
+- `GNN_PlotFigure.py`: `_create_true_model`, `create_signal_excitation_subplot`, `plot_signal`, `plot_synaptic_flyvis`, `create_signal_movies`
 
 ### Validation
 
@@ -448,6 +589,118 @@ To make any graph-learning repo LLM-exploration compatible:
 3. **Copy `GNN_LLM.py`** and adapt — change config paths, cluster settings, metric extraction patterns
 4. **Write an instruction file** in `LLM/` — goal, metrics, config parameter table (reference `PARAMS_DOC`), block partition, iteration workflow
 5. **Copy `git_code_tracker.py`** — tracks and auto-commits code modifications
+
+### Validation
+
+```bash
+python GNN_Test.py --config flyvis_62_1_gs --cluster
+```
+
+---
+
+## Step 10. Migrate All Plot Functions to FigureStyle (pending)
+
+### The problem
+
+`FigureStyle` was introduced (Step 4a) as the single source of truth for all visual parameters, but only 4 plot functions actually use it. The remaining 27+ functions use hardcoded font sizes (14, 16, 20, 24, 32, 48, 68pt), the matplotlib dark/default theme is selected via scattered `plt.style.use()` calls in at least 4 files, and a local variable `mc` (main color — `'k'` or `'w'`) is passed around ~80 times across 4 files to select black/white foreground color — this is exactly `style.foreground`.
+
+### Current state
+
+**Functions WITH `style: FigureStyle` parameter (4):**
+
+| Function | File |
+|----------|------|
+| `plot_spatial_activity_grid` | `plot.py` |
+| `plot_kinograph` | `plot.py` |
+| `plot_activity_traces` | `plot.py` |
+| `plot_selected_neuron_traces` | `plot.py` |
+
+**Functions WITHOUT `FigureStyle` (27+):**
+
+| Function | File | Hardcoded sizes |
+|----------|------|-----------------|
+| `plot_lin_phi` | `plot.py` | 32, 24 |
+| `plot_lin_edge` | `plot.py` | 32, 24 |
+| `plot_weight_scatter` | `plot.py` | 32, 24 |
+| `plot_tau` | `plot.py` | 32, 24 |
+| `plot_vrest` | `plot.py` | 32, 24 |
+| `plot_embedding` | `plot.py` | — |
+| `plot_synaptic_frame_visual` | `plot.py` | 24 |
+| `plot_synaptic_frame_modulation` | `plot.py` | 24 |
+| `plot_synaptic_frame_plasticity` | `plot.py` | 24 |
+| `plot_synaptic_frame_default` | `plot.py` | — |
+| `plot_eigenvalue_spectrum` | `plot.py` | — |
+| `plot_connectivity_matrix` | `plot.py` | — |
+| `plot_low_rank_connectivity` | `plot.py` | — |
+| `plot_signal_loss` | `plot.py` | — |
+| `plot_training_flyvis` | `plot.py` | — |
+| `plot_odor_heatmaps` | `plot.py` | — |
+| `plot_weight_comparison` | `plot.py` | hardcoded `color='white'` |
+| `analyze_mlp_edge_lines` | `plot.py` | — |
+| `analyze_mlp_edge_lines_weighted_with_max` | `plot.py` | — |
+| `analyze_embedding_space` | `plot.py` | — |
+| `analyze_mlp_phi_synaptic` | `plot.py` | — |
+| `analyze_mlp_phi_embedding` | `plot.py` | — |
+| `analyze_individual_architectures` | `plot.py` | — |
+| `plot_architecture_analysis_summary` | `plot.py` | — |
+| `analyze_data_svd` | `models/utils.py` | 11, 14, 12 (local constants) |
+| `plot_confusion_matrix` | `GNN_PlotFigure.py` | 12, 10 |
+| `plot_synaptic_flyvis` | `GNN_PlotFigure.py` | 68, 48, 34, 32 |
+| `analyze_neuron_type_reconstruction` | `GNN_PlotFigure.py` | — |
+
+**Scattered `plt.style.use()` calls (should be in FigureStyle):**
+
+| File | Lines | What it does |
+|------|-------|--------------|
+| `graph_data_generator.py` | 78, 124 | `plt.style.use("default")` |
+| `graph_trainer.py` | 127, 559 | `plt.style.use('default')` |
+| `graph_trainer.py` | 1501, 1504 | dark_background / default |
+| `GNN_PlotFigure.py` | 2584, 2587 | dark_background / default |
+| `GNN_PlotFigure.py` | 3784, 3794 | ggplot / default |
+| `GNN_PlotFigure.py` | 4344, 4655, 4658, 4759, 4832 | various style switches |
+| `plot.py` | 1486 | `plt.style.use('default')` |
+| `models/utils.py` | 723 | `plt.style.use(style)` |
+
+**Scattered `mc` (main color) variable — duplicates `style.foreground`:**
+
+`mc` is set to `'k'`/`'black'` or `'w'`/`'white'` then passed through function signatures and used for `color=mc` in plot/scatter/text calls. ~80 occurrences across 4 files:
+
+| File | Occurrences | How `mc` is set |
+|------|-------------|-----------------|
+| `GNN_PlotFigure.py` | ~48 | `mc = 'w'` / `mc = 'k'` conditional on style string |
+| `plot.py` | ~14 | passed as parameter `mc='k'` |
+| `models/utils.py` | ~13 | `mc = 'w' if style == 'dark_background' else 'k'` |
+| `models/graph_trainer.py` | ~6 | `mc = 'k'` / `mc = 'white'` / `mc = 'black'` |
+
+All these are exactly `style.foreground` — which is already `'black'` in `default_style` and `'white'` in `dark_style`.
+
+**No hardcoded black/white colors in plot calls.** Every `color='black'`, `color='white'`, `c='k'`, `c='w'` in scatter/plot/text calls should use `style.foreground` (or `style.background` where appropriate) instead.
+
+### The solution
+
+#### 10a. Dark/default theme via `FigureStyle.apply_globally()`
+
+All `plt.style.use('dark_background')` / `plt.style.use('default')` calls should be replaced by `style.apply_globally()`. The two existing singletons (`default_style`, `dark_style`) already encode the right foreground/background colors. Add `plt.style.use('dark_background')` inside `dark_style.apply_globally()` and `plt.style.use('default')` inside `default_style.apply_globally()` so callers just do:
+
+```python
+style.apply_globally()
+```
+
+No caller should ever call `plt.style.use()` directly.
+
+#### 10b. Add `style: FigureStyle` parameter to all plot functions
+
+Every `def plot_*` and `def analyze_*` function should accept `style: FigureStyle = default_style` and use `style.font_size`, `style.tick_font_size`, `style.label_font_size`, `style.foreground`, `style.background` instead of hardcoded values.
+
+For functions that need larger font sizes (e.g., the 32pt / 68pt in synaptic plots), use `style.font_size * scale_factor` for relative scaling.
+
+#### 10c. Remove `analyze_data_svd` local font constants
+
+Replace the local `TITLE_SIZE`, `LABEL_SIZE`, `TICK_SIZE`, `LEGEND_SIZE` with `style.font_size`, `style.label_font_size`, `style.tick_font_size`.
+
+#### 10d. Eliminate `mc` variable — use `style.foreground`
+
+Remove every `mc = 'k'` / `mc = 'w'` / `mc = 'black'` / `mc = 'white'` assignment. Remove `mc` from all function signatures. Replace all `color=mc`, `c=mc` with `color=style.foreground`, `c=style.foreground`. No hardcoded `'black'` or `'white'` color strings should remain in any plot/scatter/text call — always use `style.foreground` or `style.background`.
 
 ### Validation
 

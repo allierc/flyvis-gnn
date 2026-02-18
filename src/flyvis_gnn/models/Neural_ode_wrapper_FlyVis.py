@@ -23,8 +23,8 @@ class GNNODEFunc_FlyVis(nn.Module):
     """
 
     def __init__(self, model, x_template, edge_index, data_id, neurons_per_sample, batch_size,
-                 has_visual_field=False, x_list=None,
-                 run=0, device=None, k_batch=None, state_clamp=10.0, stab_lambda=0.0):
+                 has_visual_field=False, x_ts=None,
+                 device=None, k_batch=None, state_clamp=10.0, stab_lambda=0.0):
         super().__init__()
         self.model = model
         self.x_template = x_template      # NeuronState (batched, B*N neurons)
@@ -33,8 +33,7 @@ class GNNODEFunc_FlyVis(nn.Module):
         self.neurons_per_sample = neurons_per_sample
         self.batch_size = batch_size
         self.has_visual_field = has_visual_field
-        self.x_list = x_list
-        self.run = run
+        self.x_ts = x_ts
         self.device = device or torch.device('cpu')
         self.k_batch = k_batch  # per-sample k values, shape (batch_size,)
         self.delta_t = 1.0
@@ -65,22 +64,15 @@ class GNNODEFunc_FlyVis(nn.Module):
                 state.stimulus[start_idx:start_idx + n_input] = visual_input.squeeze(-1)
                 state.stimulus[start_idx + n_input:end_idx] = 0
 
-        elif self.x_list is not None:
-            # Update visual input for each batch sample from x_list
-            from flyvis_gnn.neuron_state import NeuronTimeSeries
+        elif self.x_ts is not None:
+            # Update visual input for each batch sample from x_ts
             for b in range(self.batch_size):
                 start_idx = b * self.neurons_per_sample
                 end_idx = (b + 1) * self.neurons_per_sample
                 k_current = int(self.k_batch[b].item()) + k_offset
 
-                x_ts = self.x_list[self.run]
-                n_frames = x_ts.n_frames if isinstance(x_ts, NeuronTimeSeries) else len(x_ts)
-                if k_current < n_frames:
-                    if isinstance(x_ts, NeuronTimeSeries):
-                        state.stimulus[start_idx:end_idx] = x_ts.stimulus[k_current]
-                    else:
-                        x_next = torch.tensor(x_ts[k_current], dtype=torch.float32, device=self.device)
-                        state.stimulus[start_idx:end_idx] = x_next[:, 4]
+                if k_current < self.x_ts.n_frames:
+                    state.stimulus[start_idx:end_idx] = self.x_ts.stimulus[k_current]
 
         pred = self.model(
             state,
@@ -96,7 +88,7 @@ class GNNODEFunc_FlyVis(nn.Module):
 
 def integrate_neural_ode_FlyVis(model, v0, x_template, edge_index, data_id, time_steps, delta_t,
                          neurons_per_sample, batch_size, has_visual_field=False,
-                         x_list=None, run=0, device=None, k_batch=None,
+                         x_ts=None, device=None, k_batch=None,
                          ode_method='dopri5', rtol=1e-4, atol=1e-5,
                          adjoint=True, noise_level=0.0, state_clamp=10.0, stab_lambda=0.0):
     """
@@ -134,8 +126,7 @@ def integrate_neural_ode_FlyVis(model, v0, x_template, edge_index, data_id, time
         neurons_per_sample=neurons_per_sample,
         batch_size=batch_size,
         has_visual_field=has_visual_field,
-        x_list=x_list,
-        run=run,
+        x_ts=x_ts,
         device=device,
         k_batch=k_batch,
         state_clamp=state_clamp,
@@ -167,7 +158,7 @@ def integrate_neural_ode_FlyVis(model, v0, x_template, edge_index, data_id, time
     return v_final, v_trajectory
 
 
-def neural_ode_loss_FlyVis(model, dataset_batch, edge_index, x_list, run, k_batch,
+def neural_ode_loss_FlyVis(model, dataset_batch, edge_index, x_ts, k_batch,
                            time_step, batch_size, n_neurons, ids_batch,
                            delta_t, device,
                            data_id=None, has_visual_field=False,
@@ -228,8 +219,7 @@ def neural_ode_loss_FlyVis(model, dataset_batch, edge_index, x_list, run, k_batc
         neurons_per_sample=neurons_per_sample,
         batch_size=batch_size,
         has_visual_field=has_visual_field,
-        x_list=x_list,
-        run=run,
+        x_ts=x_ts,
         device=device,
         k_batch=k_per_sample,
         ode_method=ode_method,
