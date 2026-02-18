@@ -1,13 +1,14 @@
-description: "Optimized config from 96-iteration Claude exploration (winner: Node N94, iter 54) with SIREN visual field"
+description: "Optimized config from 96-iteration Claude exploration (winner: Node
+  N94, iter 54) with SIREN visual field"
 dataset: flyvis_62_1
 simulation:
   connectivity_file: to be specified
   adjacency_matrix: ""
   params:
-    - - 1.0
-      - 1.0
-      - 1.0
-      - 1.0
+  - - 1.0
+    - 1.0
+    - 1.0
+    - 1.0
   n_neurons: 13741
   n_input_neurons: 1736
   n_neuron_types: 65
@@ -17,6 +18,7 @@ simulation:
   baseline_value: 0
   visual_input_type: DAVIS
   noise_model_level: 0.05
+  seed: 42
 graph_model:
   signal_model_name: flyvis_A
   prediction: first_derivative
@@ -44,11 +46,11 @@ plotting:
   colormap: tab20
   arrow_length: 1
   xlim:
-    - -2.5
-    - 2.5
+  - -2.5
+  - 2.5
   ylim:
-    - -100
-    - 100
+  - -100
+  - 100
 training:
   n_epochs: 5
   n_runs: 1
@@ -75,3 +77,4 @@ training:
   coeff_W_L1_rate: 0.5
   coeff_W_L2: 2.0e-06
   w_init_mode: zeros
+  seed: 42

@@ -105,14 +105,26 @@ For each slot, report:
 **Healthy pattern**: R2 increases during W-phases, holds stable during V_rest-phases, final >= peak.
 **Unhealthy pattern**: R2 drops during V_rest-phases → inactive LR for W/lin_edge may be too high.
 
+## Seed Strategy
+
+The Python script suggests `simulation.seed` and `training.seed` for each slot. You may use these or override them. Two important testing modes:
+
+1. **Training robustness test**: Fix `simulation.seed` across all 4 slots, vary `training.seed`. Same data, different training randomness. This isolates whether metric variance comes from training stochasticity.
+2. **Generalization test**: Vary both `simulation.seed` and `training.seed` across slots. Different data, different training. This tests whether the config generalizes across data realizations.
+
+During baseline measurement (block 1), use **generalization test** mode (different sim seeds) to measure total variance. In later blocks, use **training robustness test** (same sim seed, different training seeds) to isolate training-specific variance for your best configs.
+
+Always set both seeds in the config YAML and log them with rationale.
+
 ## Logging Format
 
-Same as base instructions, but you write 4 entries per batch. Include alternation config and R2 trajectory:
+Same as base instructions, but you write 4 entries per batch. Include alternation config, seeds, and R2 trajectory:
 
 ```
 ## Iter N: [converged/partial/failed]
 Node: id=N, parent=P
 Mode/Strategy: [strategy]
+Seeds: sim_seed=X, train_seed=Y, rationale=[same-data-robustness / different-data-generalization / suggested-default]
 Config: lr_W=X, lr=Y, lr_emb=Z, n_alt=A, vrest_ratio=B, alt_lr_W=C, alt_lr_edge=D, alt_lr_update=E, alt_lr_emb=F
 Metrics: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, test_pearson=F, training_time_min=G
 R2 trajectory: peak=X at iter Y, final=Z, trend=[rising/stable/decaying]

@@ -2,9 +2,27 @@
 
 Each step must be validated by running `python GNN_Test.py --config flyvis_62_1_gs` (with `--cluster` on the compute cluster). The test compares all key metrics against the reference baseline in `config/test_reference.json` and appends results with timestamp to `log/fly/test_history.md`.
 
+**Status key**: [DONE] = merged, [PENDING] = not started, [PARTIAL] = in progress.
+
+| Step | Description | Status |
+|------|-------------|--------|
+| 1 | Regression Test Infrastructure (`GNN_Test.py`) | DONE |
+| 2 | NeuronState, Zarr V3 Storage, Data Loading | DONE |
+| 3 | Vectorizing Per-Neuron Loops | DONE |
+| 4 | FigureStyle, Shared Plot Architecture, Plot Consolidation | PARTIAL |
+| 5 | Eliminating Config Variable Unpacking | DONE |
+| 6 | Model Registry, Naming Cleanup, Dead Code Removal | DONE |
+| 7 | Rename PDE_N9 / fly_N9 → flyvis | DONE |
+| 8 | LLM File Reorganization | DONE |
+| 9 | LLM Exploration Compatibility | DONE |
+| 10 | Connectivity R2 Logging | DONE |
+| 11 | Training Loop Refinements | DONE |
+| 12 | Alternating W/V_rest Phase Training | DONE |
+| 13 | Migrate All Plot Functions to FigureStyle | PENDING |
+
 ---
 
-## Step 1. Regression Test Infrastructure (`GNN_Test.py`)
+## Step 1. Regression Test Infrastructure (`GNN_Test.py`) [DONE]
 
 ### The problem
 
@@ -70,7 +88,7 @@ python GNN_Test.py --config flyvis_62_1_gs --skip-train --skip-plot --no-claude
 
 ---
 
-## Step 2. NeuronState, Zarr V3 Storage, and Data Loading Simplification
+## Step 2. NeuronState, Zarr V3 Storage, and Data Loading Simplification [DONE]
 
 ### 2a. The problem: magic column indices
 
@@ -170,7 +188,7 @@ class ZarrSimulationWriterV3:
     def finalize(self)                           # resize to exact frame count
 ```
 
-Format auto-detection in `NeuronTimeSeries.load(path)` and `detect_format()`:
+V1 and V2 writers have been removed — only `ZarrSimulationWriterV3` remains (`zarr_io.py`, 358 lines). The reader still supports all legacy formats via auto-detection in `NeuronTimeSeries.load(path)` and `detect_format()`:
 
 1. **V3** — directory contains `voltage.zarr` → `from_zarr_v3`
 2. **V2** — directory contains `metadata.zarr` + `timeseries.zarr` → `from_zarr_v2`
@@ -313,7 +331,7 @@ python GNN_Test.py --config flyvis_62_1_gs --cluster
 
 ---
 
-## Step 3. Vectorizing Per-Neuron Loops
+## Step 3. Vectorizing Per-Neuron Loops [DONE]
 
 ### The problem
 
@@ -336,7 +354,7 @@ python GNN_Test.py --config flyvis_62_1_gs --cluster
 
 ---
 
-## Step 4. FigureStyle, Shared Plot Architecture, and Plot Consolidation
+## Step 4. FigureStyle, Shared Plot Architecture, and Plot Consolidation [PARTIAL]
 
 ### 4a. FigureStyle
 
@@ -350,13 +368,13 @@ All plot functions consolidated from 5 scattered locations into a single `src/fl
 
 | File | Before | After | Change |
 |------|--------|-------|--------|
-| `src/flyvis_gnn/plot.py` | 636 | 2998 | +2362 (absorbed all) |
+| `src/flyvis_gnn/plot.py` | 636 | 2845 | +2209 (absorbed all) |
 | `src/flyvis_gnn/generators/plots.py` | 380 | **DELETED** | -380 |
 | `src/flyvis_gnn/models/plot_utils.py` | 1215 | **DELETED** | -1215 |
-| `src/flyvis_gnn/generators/utils.py` | 1166 | 521 | -645 (plot functions removed) |
-| `src/flyvis_gnn/models/utils.py` | 1678 | 1555 | -123 (plot functions removed) |
+| `src/flyvis_gnn/generators/utils.py` | 1166 | 599 | -567 (plot functions removed) |
+| `src/flyvis_gnn/models/utils.py` | 1678 | 1574 | -104 (plot functions removed) |
 
-**Total: 2363 lines of plot code moved from 4 scattered locations into 1 centralized file.**
+**Total: ~2200 lines of plot code moved from 4 scattered locations into 1 centralized file.**
 
 **Result:**
 
@@ -376,25 +394,27 @@ GNN_PlotFigure.py                # Post-training analysis, imports from plot.py
 - `models/graph_trainer.py` — `from flyvis_gnn.plot import plot_training_flyvis, plot_weight_comparison, plot_signal_loss, ...`
 - `GNN_PlotFigure.py` — `from flyvis_gnn.plot import plot_odor_heatmaps, analyze_mlp_edge_lines, ...`
 
-### 4c. GNN_PlotFigure.py dead code removal (pending)
+### 4c. GNN_PlotFigure.py dead code removal [PENDING]
 
-- `plot_signal` (1530 lines) — only used for non-flyvis datasets, not needed in this repo
-- `get_figures` (816 lines) — hardcoded 30+ experiment dispatch, replaced by config-driven approach
-- 5 `create_signal_*_subplot` functions (360 lines) — only called by `plot_signal`
-- `determine_plot_limits_signal` (108 lines) — only called by `plot_signal`
-- `compare_ising_results` (198 lines) — Ising model comparison, not flyvis
+`GNN_PlotFigure.py` is currently 5573 lines. The following functions are dead code (only used for non-flyvis datasets or replaced by config-driven patterns):
+
+- `plot_signal` (~1530 lines) — only used for non-flyvis datasets, not needed in this repo
+- `get_figures` (~816 lines) — hardcoded 30+ experiment dispatch, replaced by config-driven approach
+- 5 `create_signal_*_subplot` functions (~360 lines) — only called by `plot_signal`
+- `determine_plot_limits_signal` (~108 lines) — only called by `plot_signal`
+- `compare_ising_results` (~198 lines) — Ising model comparison, not flyvis
 - Dead code: commented blocks, debug prints (~60 lines)
 
-**Total to remove from GNN_PlotFigure.py: ~3072 lines (5612 → ~2540)**
+**Total to remove: ~3072 lines (5573 → ~2500)**
 
-Remaining in `GNN_PlotFigure.py`:
+What remains after cleanup:
 
-- `plot_synaptic_flyvis` (1014 lines) — calls functions from `plot.py`
-- `data_plot` (55 lines) — entry point
-- `analyze_neuron_type_reconstruction` (159 lines)
-- `compare_gnn_results` (196 lines)
-- `collect_gnn_results_multimodel` (256 lines)
-- Model creation helpers, data loading, movie functions
+- `plot_synaptic_flyvis` — calls shared functions from `plot.py`
+- `data_plot` — entry point
+- `analyze_neuron_type_reconstruction`
+- `compare_gnn_results`
+- `collect_gnn_results_multimodel`
+- Model creation helpers, data loading
 
 ### Validation
 
@@ -404,7 +424,7 @@ python GNN_Test.py --config flyvis_62_1_gs --cluster
 
 ---
 
-## Step 5. Eliminating Config Variable Unpacking
+## Step 5. Eliminating Config Variable Unpacking [DONE]
 
 ### The problem
 
@@ -432,7 +452,7 @@ python GNN_Test.py --config flyvis_62_1_gs --cluster
 
 ---
 
-## Step 6. Model Registry, Naming Cleanup, and Dead Code Removal
+## Step 6. Model Registry, Naming Cleanup, and Dead Code Removal [DONE]
 
 ### The problem
 
@@ -453,7 +473,7 @@ python GNN_Test.py --config flyvis_62_1_gs --cluster
 
 ---
 
-## Step 7. Rename PDE_N9 / fly_N9 → flyvis
+## Step 7. Rename PDE_N9 / fly_N9 → flyvis [DONE]
 
 Comprehensive rename: `PDE_N9_` → `flyvis_`, `fly_N9_` → `flyvis_` across config keys, YAML files, filenames, data directories, log directories, Python source, and exploration artifacts (~900+ files).
 
@@ -465,7 +485,7 @@ python GNN_Test.py --config flyvis_62_1_gs --cluster
 
 ---
 
-## Step 8. LLM File Reorganization
+## Step 8. LLM File Reorganization [DONE]
 
 Instruction files → `LLM/` folder. Output files → their respective `log/Claude_exploration/` directories. Path updates in all 4 `GNN_LLM*.py` scripts using `llm_dir` and `exploration_dir` variables.
 
@@ -477,13 +497,13 @@ python GNN_Test.py --config flyvis_62_1_gs --cluster
 
 ---
 
-## Step 9. LLM Exploration Compatibility
+## Step 9. LLM Exploration Compatibility [DONE]
 
 ### The problem
 
 For an LLM to explore and optimize a GNN training pipeline, it needs three things: (1) what config parameters exist and what they do, (2) what code sections it is allowed to modify, and (3) an orchestration script that runs the loop. Repos without these are opaque to LLM exploration.
 
-### The solution: three components
+### The solution: five components
 
 #### 9a. `PARAMS_DOC` on every GNN model class
 
@@ -590,6 +610,36 @@ To make any graph-learning repo LLM-exploration compatible:
 4. **Write an instruction file** in `LLM/` — goal, metrics, config parameter table (reference `PARAMS_DOC`), block partition, iteration workflow
 5. **Copy `git_code_tracker.py`** — tracks and auto-commits code modifications
 
+#### 9d. Seed management for reproducibility
+
+Each config YAML has two seed fields: `simulation.seed` (controls data generation) and `training.seed` (controls weight initialization and training randomness). Default value is 42 in all configs.
+
+The Python orchestration scripts (`GNN_LLM.py`, `GNN_LLM_parallel*.py`) suggest unique seeds to the LLM in each prompt using the formula:
+
+```
+simulation.seed = iteration
+training.seed   = iteration * 4 + slot_idx   (slot_idx 0-3 in parallel mode)
+```
+
+The LLM is free to override these. Two seed testing modes are documented in the instruction files:
+
+1. **Training robustness test**: Fix `simulation.seed` across all slots, vary `training.seed`. Same data, different training randomness — isolates whether metric variance comes from training stochasticity.
+2. **Generalization test**: Vary both seeds across slots. Different data, different training — tests whether a config generalizes across data realizations.
+
+The LLM logs its seed choices and rationale in each iteration entry:
+
+```
+Seeds: sim_seed=5, train_seed=20, rationale=same-data-robustness
+```
+
+#### 9e. Instruction file deployment
+
+Instruction files live in `LLM/` and are copied to their corresponding `log/Claude_exploration/{instruction_name}_parallel/` directory at launch. This ensures the exploration directory is self-contained with the exact instructions used for that run.
+
+Two instruction files per experiment:
+- `LLM/instruction_{name}.md` — base instruction (goal, metrics, parameters, iteration workflow)
+- `LLM/instruction_{name}_parallel.md` — parallel mode addendum (4-slot strategy, variance tables, seed strategy)
+
 ### Validation
 
 ```bash
@@ -598,11 +648,108 @@ python GNN_Test.py --config flyvis_62_1_gs --cluster
 
 ---
 
-## Step 10. Migrate All Plot Functions to FigureStyle (pending)
+## Step 10. Connectivity R2 Logging [DONE]
 
 ### The problem
 
-`FigureStyle` was introduced (Step 4a) as the single source of truth for all visual parameters, but only 4 plot functions actually use it. The remaining 27+ functions use hardcoded font sizes (14, 16, 20, 24, 32, 48, 68pt), the matplotlib dark/default theme is selected via scattered `plt.style.use()` calls in at least 4 files, and a local variable `mc` (main color — `'k'` or `'w'`) is passed around ~80 times across 4 files to select black/white foreground color — this is exactly `style.foreground`.
+During training, connectivity R² (the key metric for weight reconstruction quality) was only visible in plot images. There was no way to programmatically track R² evolution over iterations, detect decay patterns, or compare trajectories across runs.
+
+### The solution
+
+A CSV log file `tmp_training/connectivity_r2.log` is written during training:
+
+```
+epoch,iteration,connectivity_r2
+0,640,0.4523
+0,1280,0.7189
+0,1920,0.8534
+...
+```
+
+In `data_train_flyvis()`, `plot_training_flyvis()` now returns the current R² value, which is appended to the log at each connectivity plot step. The alternating trainer adds a `phase` column to distinguish W-phase from V_rest-phase R² values.
+
+The LLM exploration instructions use this log for R² trajectory monitoring: peak R², final R², trend (rising/stable/decaying), and per-phase analysis in alternating training.
+
+### Files modified
+
+| File | Changes |
+|------|---------|
+| `src/flyvis_gnn/models/graph_trainer.py` | R² log creation and appending in `data_train_flyvis` and `data_train_flyvis_alternate` |
+| `src/flyvis_gnn/plot.py` | `plot_training_flyvis` returns conn_R² value |
+
+---
+
+## Step 11. Training Loop Refinements [DONE]
+
+Several targeted improvements to the training loop in `data_train_flyvis()`:
+
+- **Batch accumulation simplification**: Replaced manual gradient accumulation bookkeeping with a cleaner pattern that accumulates loss over sub-batches and divides before `.backward()`.
+
+- **Training summary panels**: `plot_training_summary_panels()` moved from inline code in `graph_trainer.py` to `plot.py` (line 21). Generates a multi-panel summary figure at end of training showing loss curves, R² trajectory, and final embedding.
+
+- **Per-slot dataset directories**: When running in parallel mode, each slot writes to its own data directory (e.g., `graphs_data/{dataset}_00/`), preventing NFS write conflicts between concurrent jobs.
+
+- **NFS race condition fix**: `shutil.rmtree` in `zarr_io.py` now retries on `OSError` with exponential backoff, handling stale NFS file handles on shared filesystems.
+
+---
+
+## Step 12. Alternating W/V_rest Phase Training [DONE]
+
+### The problem
+
+The flyvis GNN has two component groups that converge at different speeds:
+- **Fast components**: `lin_edge` (g_phi) and `W` — learn connectivity structure (conn_R²)
+- **Slow components**: `lin_phi` (f_theta) and embedding `a` — learn V_rest, tau dynamics
+
+Standard training causes conn_R² to peak early then decay, because continued full-LR optimization of all components creates interference between fast and slow learning.
+
+### The solution: alternating phase training
+
+A new training function `data_train_flyvis_alternate()` (line 791 in `graph_trainer.py`) splits each epoch into alternating W-phase and V_rest-phase segments:
+
+- **W-phase**: Full LR for `lin_edge` + `W`, reduced LR for `lin_phi` + `embedding`
+- **V_rest-phase**: Full LR for `lin_phi` + `embedding`, reduced LR for `lin_edge` + `W`
+
+Six new config parameters in `TrainingConfig` (`config.py`):
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `alternate_training` | `false` | Enable alternating training |
+| `n_alternations` | `4` | Number of W/V_rest cycles per epoch |
+| `alternate_vrest_ratio` | `0.5` | Fraction of each cycle for V_rest-phase |
+| `alternate_lr_W` | `6e-7` | W learning rate during V_rest-phase |
+| `alternate_lr_edge` | `1.2e-6` | lin_edge learning rate during V_rest-phase |
+| `alternate_lr_update` | `1.2e-6` | lin_phi learning rate during W-phase |
+| `alternate_lr_embedding` | `1.55e-6` | embedding learning rate during W-phase |
+
+Dispatch in `data_train()` routes to the alternating trainer when `config.training.alternate_training` is true. Parameter groups in `set_trainable_parameters()` (`models/utils.py`) have `name` and `base_lr` fields so the phase-switching code can identify and scale learning rates.
+
+The R² log includes a `phase` column for alternating training, enabling per-phase trajectory analysis.
+
+### Files modified
+
+| File | Changes |
+|------|---------|
+| `src/flyvis_gnn/config.py` | 6 new `TrainingConfig` fields |
+| `src/flyvis_gnn/models/graph_trainer.py` | `data_train_flyvis_alternate()` (new), dispatch in `data_train()` |
+| `src/flyvis_gnn/models/utils.py` | `name` and `base_lr` fields on param groups |
+| `config/fly/flyvis_62_1_gs_alternate.yaml` | New config with `alternate_training: true` |
+| `LLM/instruction_flyvis_62_1_gs_alternate.md` | Base instruction for alternating exploration |
+| `LLM/instruction_flyvis_62_1_gs_alternate_parallel.md` | Parallel mode addendum |
+
+### Validation
+
+```bash
+python GNN_LLM_parallel_flyvis.py -o generate_train_test_plot_Claude_cluster flyvis_62_1_gs_alternate iterations=144 instruction=instruction_flyvis_62_1_gs_alternate
+```
+
+---
+
+## Step 13. Migrate All Plot Functions to FigureStyle [PENDING]
+
+### The problem
+
+`FigureStyle` was introduced (Step 4a) as the single source of truth for all visual parameters, but only 4 plot functions actually use it. The remaining 27+ functions use hardcoded font sizes (14, 16, 20, 24, 32, 48, 68pt), the matplotlib dark/default theme is selected via `plt.style.use()` calls in 2 files (`graph_trainer.py`, `GNN_PlotFigure.py`), and a local variable `mc` (main color — `'k'` or `'w'`) is used ~24 times across 4 files to select black/white foreground color — this is exactly `style.foreground`.
 
 ### Current state
 
@@ -648,29 +795,27 @@ python GNN_Test.py --config flyvis_62_1_gs --cluster
 | `plot_synaptic_flyvis` | `GNN_PlotFigure.py` | 68, 48, 34, 32 |
 | `analyze_neuron_type_reconstruction` | `GNN_PlotFigure.py` | — |
 
-**Scattered `plt.style.use()` calls (should be in FigureStyle):**
+**Remaining `plt.style.use()` calls (should be in FigureStyle):**
 
 | File | Lines | What it does |
 |------|-------|--------------|
-| `graph_data_generator.py` | 78, 124 | `plt.style.use("default")` |
-| `graph_trainer.py` | 127, 559 | `plt.style.use('default')` |
-| `graph_trainer.py` | 1501, 1504 | dark_background / default |
-| `GNN_PlotFigure.py` | 2584, 2587 | dark_background / default |
-| `GNN_PlotFigure.py` | 3784, 3794 | ggplot / default |
-| `GNN_PlotFigure.py` | 4344, 4655, 4658, 4759, 4832 | various style switches |
-| `plot.py` | 1486 | `plt.style.use('default')` |
-| `models/utils.py` | 723 | `plt.style.use(style)` |
+| `graph_trainer.py` | 2176, 2179 | dark_background / default |
+| `GNN_PlotFigure.py` | 2585, 2588 | dark_background / default |
+| `GNN_PlotFigure.py` | 3785, 3795 | ggplot / default |
+| `GNN_PlotFigure.py` | 4345, 4656, 4659, 4760, 4833 | various style switches |
+
+Previously also in `graph_data_generator.py`, `plot.py`, and `models/utils.py` — those have been cleaned up.
 
 **Scattered `mc` (main color) variable — duplicates `style.foreground`:**
 
-`mc` is set to `'k'`/`'black'` or `'w'`/`'white'` then passed through function signatures and used for `color=mc` in plot/scatter/text calls. ~80 occurrences across 4 files:
+`mc` is set to `'k'`/`'black'` or `'w'`/`'white'` then passed through function signatures and used for `color=mc` in plot/scatter/text calls. ~24 occurrences across 4 files:
 
 | File | Occurrences | How `mc` is set |
 |------|-------------|-----------------|
-| `GNN_PlotFigure.py` | ~48 | `mc = 'w'` / `mc = 'k'` conditional on style string |
-| `plot.py` | ~14 | passed as parameter `mc='k'` |
-| `models/utils.py` | ~13 | `mc = 'w' if style == 'dark_background' else 'k'` |
-| `models/graph_trainer.py` | ~6 | `mc = 'k'` / `mc = 'white'` / `mc = 'black'` |
+| `GNN_PlotFigure.py` | ~17 | `mc = 'w'` / `mc = 'k'` conditional on style string |
+| `models/utils.py` | ~4 | `mc = 'w' if style == 'dark_background' else 'k'` |
+| `models/graph_trainer.py` | ~2 | `mc = 'k'` / `mc = 'white'` |
+| `plot.py` | ~1 | passed as parameter `mc='k'` |
 
 All these are exactly `style.foreground` — which is already `'black'` in `default_style` and `'white'` in `dark_style`.
 
@@ -678,7 +823,7 @@ All these are exactly `style.foreground` — which is already `'black'` in `defa
 
 ### The solution
 
-#### 10a. Dark/default theme via `FigureStyle.apply_globally()`
+#### 13a. Dark/default theme via `FigureStyle.apply_globally()`
 
 All `plt.style.use('dark_background')` / `plt.style.use('default')` calls should be replaced by `style.apply_globally()`. The two existing singletons (`default_style`, `dark_style`) already encode the right foreground/background colors. Add `plt.style.use('dark_background')` inside `dark_style.apply_globally()` and `plt.style.use('default')` inside `default_style.apply_globally()` so callers just do:
 
@@ -688,17 +833,17 @@ style.apply_globally()
 
 No caller should ever call `plt.style.use()` directly.
 
-#### 10b. Add `style: FigureStyle` parameter to all plot functions
+#### 13b. Add `style: FigureStyle` parameter to all plot functions
 
 Every `def plot_*` and `def analyze_*` function should accept `style: FigureStyle = default_style` and use `style.font_size`, `style.tick_font_size`, `style.label_font_size`, `style.foreground`, `style.background` instead of hardcoded values.
 
 For functions that need larger font sizes (e.g., the 32pt / 68pt in synaptic plots), use `style.font_size * scale_factor` for relative scaling.
 
-#### 10c. Remove `analyze_data_svd` local font constants
+#### 13c. Remove `analyze_data_svd` local font constants
 
 Replace the local `TITLE_SIZE`, `LABEL_SIZE`, `TICK_SIZE`, `LEGEND_SIZE` with `style.font_size`, `style.label_font_size`, `style.tick_font_size`.
 
-#### 10d. Eliminate `mc` variable — use `style.foreground`
+#### 13d. Eliminate `mc` variable — use `style.foreground`
 
 Remove every `mc = 'k'` / `mc = 'w'` / `mc = 'black'` / `mc = 'white'` assignment. Remove `mc` from all function signatures. Replace all `color=mc`, `c=mc` with `color=style.foreground`, `c=style.foreground`. No hardcoded `'black'` or `'white'` color strings should remain in any plot/scatter/text call — always use `style.foreground` or `style.background`.
 

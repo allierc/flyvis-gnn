@@ -20,6 +20,7 @@ simulation:
   visual_input_type: "DAVIS"
   noise_model_level: 0.05
 
+  seed: 42
 graph_model:
   signal_model_name: "flyvis_A"
   prediction: "first_derivative"
@@ -36,7 +37,7 @@ graph_model:
   embedding_dim: 2
 
   update_type: "generic"
-  lin_edge_positive: True
+  lin_edge_positive: true
 
 plotting:
   colormap: "tab20"
@@ -49,10 +50,10 @@ training:
   n_runs: 1
   device: "auto"
 
-  recurrent_training: False
+  recurrent_training: false
   batch_size: 1
   batch_ratio: 1
-  small_init_batch_size: False
+  small_init_batch_size: false
 
   sparsity: "none"
   data_augmentation_loop: 25
@@ -78,6 +79,7 @@ training:
 
   w_init_mode: "zeros"
 
+  seed: 42
 claude:
   n_epochs: 1
   data_augmentation_loop: 25

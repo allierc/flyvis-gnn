@@ -1,5 +1,5 @@
 description: designed by Claude (parallel flyvis)
-dataset: flyvis_62_1
+dataset: flyvis_62_1_gs_vrest_01
 simulation:
   connectivity_file: to be specified
   adjacency_matrix: ''
@@ -21,26 +21,17 @@ simulation:
 graph_model:
   signal_model_name: flyvis_A
   prediction: first_derivative
-  field_type: visual
   input_size: 3
   n_layers: 3
-  hidden_dim: 64
+  hidden_dim: 80
   output_size: 1
   input_size_update: 5
   n_layers_update: 3
-  hidden_dim_update: 64
+  hidden_dim_update: 80
   aggr_type: add
   embedding_dim: 2
   update_type: generic
   lin_edge_positive: true
-  input_size_nnr_f: 3
-  hidden_dim_nnr_f: 2048
-  n_layers_nnr_f: 3
-  outermost_linear_nnr_f: true
-  output_size_nnr_f: 1
-  nnr_f_xy_period: 1.0
-  nnr_f_T_period: 64000
-  omega_f: 2048
 plotting:
   colormap: tab20
   arrow_length: 1
@@ -55,31 +46,34 @@ training:
   n_runs: 1
   device: auto
   recurrent_training: false
-  batch_size: 1
+  batch_size: 2
   batch_ratio: 1
+  small_init_batch_size: false
   sparsity: none
   data_augmentation_loop: 20
-  learning_rate_W_start: 0.00059
+  learning_rate_W_start: 0.0006
   learning_rate_start: 0.0012
-  learning_rate_embedding_start: 0.0015
-  learning_rate_NNR_f: 1.0e-08
+  learning_rate_update_start: 0
+  learning_rate_embedding_start: 0.00155
   coeff_edge_diff: 750
-  coeff_update_u_diff: 0
+  coeff_update_u_diff: 0.1
   coeff_update_msg_diff: 0
-  coeff_edge_norm: 1.0
-  coeff_edge_weight_L1: 0.5
+  coeff_edge_norm: 0.9
+  coeff_edge_weight_L1: 0.29
   coeff_phi_weight_L1: 0.5
-  coeff_phi_weight_L1_rate: 0.5
+  coeff_phi_weight_L1_rate: 0.4
   coeff_edge_weight_L2: 0
   coeff_phi_weight_L2: 0.001
-  coeff_W_L1: 3.0e-05
+  coeff_W_L1: 3.5e-05
   coeff_W_L1_rate: 0.5
-  coeff_W_L2: 1.0e-06
+  coeff_W_L2: 2.5e-06
   w_init_mode: zeros
+  grad_clip_W: 0
+  time_step: 1
   seed: 42
 claude:
   n_epochs: 1
   data_augmentation_loop: 25
-  n_iter_block: 24
+  n_iter_block: 12
   ucb_c: 1.414
   node_name: h100

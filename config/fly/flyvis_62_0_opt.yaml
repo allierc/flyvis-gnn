@@ -1,4 +1,5 @@
-description: optimal config from 144-iteration Claude exploration (Node 125, R2=0.929)
+description: optimal config from 144-iteration Claude exploration (Node 125, 
+  R2=0.929)
 dataset: flyvis_62_0
 simulation:
   connectivity_file: to be specified
@@ -17,6 +18,7 @@ simulation:
   baseline_value: 0
   visual_input_type: DAVIS
   noise_model_level: 0.0
+  seed: 42
 graph_model:
   signal_model_name: flyvis_A
   prediction: first_derivative
@@ -65,3 +67,4 @@ training:
   coeff_W_L1: 5.0e-05
   coeff_W_L1_rate: 0.5
   w_init_mode: zeros
+  seed: 42

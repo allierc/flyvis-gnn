@@ -17,6 +17,7 @@ simulation:
   baseline_value: 0
   visual_input_type: DAVIS
   noise_model_level: 0.05
+  seed: 42
 graph_model:
   signal_model_name: flyvis_A
   prediction: first_derivative
@@ -66,6 +67,7 @@ training:
   coeff_W_L1_rate: 0.5
   coeff_W_L2: 3.0e-06
   w_init_mode: zeros
+  seed: 42
 claude:
   n_epochs: 1
   data_augmentation_loop: 25

@@ -18,6 +18,17 @@ Find an **alternating training schedule** that prevents the conn_R2 overshoot-th
 
 **Data is RE-GENERATED each iteration** — see `instruction_flyvis_62_1_gs.md` for robustness principles.
 
+## Seed Strategy
+
+Each config has two seed fields: `simulation.seed` (controls data generation) and `training.seed` (controls weight initialization and training randomness). The Python script suggests seeds in each prompt — you may use them or override them.
+
+**Two testing modes** (use both across the exploration):
+
+1. **Training robustness test**: Fix `simulation.seed` across slots, vary `training.seed`. Same data, different training randomness. This isolates whether metric variance comes from training stochasticity.
+2. **Generalization test**: Vary both `simulation.seed` and `training.seed` across slots. Different data, different training. This tests whether the config generalizes across data realizations.
+
+Always set both seeds in the config YAML and log them. When reporting variance, note which seed mode was used.
+
 ## Alternating Training Mechanism
 
 The epoch's Niter iterations are split into `n_alternations` cycles. Each cycle has a W-phase and a V_rest-phase. The `alternate_vrest_ratio` controls the fraction of each cycle devoted to V_rest-phase.
@@ -119,6 +130,7 @@ Log format includes R2 trajectory and alternation config:
 ## Iter N: [converged/partial/failed]
 Node: id=N, parent=P
 Mode/Strategy: [strategy]
+Seeds: sim_seed=X, train_seed=Y, rationale=[same-data-robustness / different-data-generalization / suggested-default]
 Config: lr_W=X, lr=Y, lr_emb=Z, n_alt=A, vrest_ratio=B, alt_lr_W=C, alt_lr_edge=D, alt_lr_update=E, alt_lr_emb=F
 Metrics: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, test_pearson=F, training_time_min=G
 R2 trajectory: peak=X at iter Y, final=Z, trend=[rising/stable/decaying]
