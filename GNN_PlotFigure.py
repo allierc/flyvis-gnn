@@ -2590,7 +2590,7 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
     time.sleep(0.5)
     print('load simulation data...')
     x_ts = load_simulation_data(f'graphs_data/{config.dataset}/x_list_0',
-                                fields=['voltage', 'stimulus', 'neuron_type', 'group_type'])
+                                fields=['index', 'voltage', 'stimulus', 'neuron_type', 'group_type'])
     y_data = load_raw_array(f'graphs_data/{config.dataset}/y_list_0')
 
     ynorm = torch.load(os.path.join(log_dir, 'ynorm.pt'), map_location=device)

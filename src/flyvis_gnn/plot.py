@@ -1473,17 +1473,18 @@ def plot_signal_loss(loss_dict, log_dir, epoch=None, Niter=None, debug=False,
 #  CONSOLIDATED FROM models/utils.py
 # ================================================================== #
 
-def plot_training_flyvis(x_ts, model, config, epoch, N, log_dir, device, cmap, type_list,
+def plot_training_flyvis(x_ts, model, config, epoch, N, log_dir, device, type_list,
                          gt_weights, edges, n_neurons=None, n_neuron_types=None):
     from flyvis_gnn.plot import (
         plot_embedding, plot_lin_edge, plot_lin_phi, plot_weight_scatter,
         compute_all_corrected_weights, get_model_W,
     )
+    from flyvis_gnn.utils import CustomColorMap
 
     if n_neurons is None:
         n_neurons = len(type_list)
 
-    plt.style.use('default')
+    cmap = CustomColorMap(config=config)
 
     # Plot 1: Embedding scatter plot
     fig, ax = plt.subplots(figsize=(8, 8))

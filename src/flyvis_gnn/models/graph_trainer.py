@@ -42,7 +42,7 @@ from flyvis_gnn.utils import (
     compute_trace_metrics,
     get_datavis_root_dir,
 )
-from flyvis_gnn.figure_style import dark_style
+from flyvis_gnn.figure_style import default_style, dark_style
 from flyvis_gnn.plot import plot_spatial_activity_grid, INDEX_TO_NAME
 from flyvis_gnn.models.flyvis_gnn import FlyVisGNN
 from flyvis_gnn.models.registry import create_model
@@ -123,9 +123,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         torch.random.fork_rng(devices=device)
         torch.random.manual_seed(config.training.seed)
 
-    cmap = CustomColorMap(config=config)
-    plt.style.use('default')
-    mc = 'k'
+    default_style.apply_globally()
 
     if 'visual' in model_config.field_type:
         has_visual_field = True
@@ -162,11 +160,11 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         y_ts = y_ts[:, selected_neuron_ids, :]
         type_list = type_list[selected_neuron_ids]
 
-    print(f'dataset: {x_ts.n_frames} frames')
+    # get n_neurons from data, not config file
     n_neurons = x_ts.n_neurons
-    print(f'n neurons: {n_neurons}')
-    logger.info(f'n neurons: {n_neurons}')
     config.simulation.n_neurons = n_neurons
+    print(f'dataset: {x_ts.n_frames} frames,  n neurons: {n_neurons}')
+    logger.info(f'n neurons: {n_neurons}')
 
     xnorm = x_ts.xnorm
     torch.save(xnorm, os.path.join(log_dir, 'xnorm.pt'))
@@ -187,7 +185,6 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     print('create models ...')
     model = create_model(model_config.signal_model_name,
                          aggr_type=model_config.aggr_type, config=config, device=device)
-
     model = model.to(device)
 
     # W init mode info
@@ -195,19 +192,6 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     if w_init_mode != 'randn':
         w_init_scale = getattr(tc, 'w_init_scale', 1.0)
         print(f'W init mode: {w_init_mode}' + (f' (scale={w_init_scale})' if w_init_mode == 'randn_scaled' else ''))
-
-    # proximal L1 info
-    coeff_proximal = getattr(tc, 'coeff_W_L1_proximal', 0.0)
-    if coeff_proximal > 0:
-        print(f'proximal L1 soft-thresholding on W: coeff={coeff_proximal}')
-
-    # lin_edge mode bypass
-    lin_edge_mode = getattr(tc, 'lin_edge_mode', 'mlp')
-    if lin_edge_mode != 'mlp':
-        print(f'lin_edge mode: {lin_edge_mode} (MLP bypassed)')
-
-    n_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f'total parameters: {n_total_params:,}')
 
     start_epoch = 0
     list_loss = []
@@ -230,6 +214,9 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
     # === LLM-MODIFIABLE: OPTIMIZER SETUP START ===
     # Change optimizer type, learning rate schedule, parameter groups
+
+    n_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f'total parameters: {n_total_params:,}')
     lr = tc.learning_rate_start
     if tc.learning_rate_update_start == 0:
         lr_update = tc.learning_rate_start
@@ -251,7 +238,6 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     print(f'network: {net}')
     print(f'initial tc.batch_size: {tc.batch_size}')
 
-    # connectivity = torch.load(f'./graphs_data/{config.dataset}/connectivity.pt', map_location=device)
     gt_weights = torch.load(f'./graphs_data/{config.dataset}/weights.pt', map_location=device)
     edges = torch.load(f'./graphs_data/{config.dataset}/edge_index.pt', map_location=device)
     print(f'{edges.shape[1]} edges')
@@ -267,6 +253,10 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
     logger.info(f'coeff_W_L1: {tc.coeff_W_L1} coeff_edge_diff: {tc.coeff_edge_diff} coeff_update_diff: {tc.coeff_update_diff}')
     print(f'coeff_W_L1: {tc.coeff_W_L1} coeff_edge_diff: {tc.coeff_edge_diff} coeff_update_diff: {tc.coeff_update_diff}')
+     # proximal L1 info
+    coeff_proximal = getattr(tc, 'coeff_W_L1_proximal', 0.0)
+    if coeff_proximal > 0:
+        print(f'proximal L1 soft-thresholding on W: coeff={coeff_proximal}')
 
     print("start training ...")
 
@@ -540,7 +530,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                         os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs - 1}_graphs_{epoch}_{N}.pt'))
 
                 if (N > 0) & (N % connectivity_plot_frequency == 0) & (not test_neural_field) & (not ('MLP' in model_config.signal_model_name)):
-                    last_connectivity_r2 = plot_training_flyvis(x_ts, model, config, epoch, N, log_dir, device, cmap, type_list, gt_weights, edges, n_neurons=n_neurons, n_neuron_types=sim.n_neuron_types)
+                    last_connectivity_r2 = plot_training_flyvis(x_ts, model, config, epoch, N, log_dir, device, type_list, gt_weights, edges, n_neurons=n_neurons, n_neuron_types=sim.n_neuron_types)
 
                 if last_connectivity_r2 is not None:
                     if last_connectivity_r2 > 0.9:
@@ -556,7 +546,6 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
                 if (has_visual_field) & (N in plot_iterations):
                     with torch.no_grad():
-                        plt.style.use('default')
 
                         # Static XY locations
                         X1 = to_numpy(x_ts.pos[:sim.n_input_neurons])
@@ -666,13 +655,13 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
                                 # GT field
                                 ax1 = fig.add_subplot(1, 3, 1)
-                                ax1.scatter(X1[:, 0], X1[:, 1], s=256, c=gt_vec, cmap="viridis", marker='h', vmin=gt_vmin, vmax=gt_vmax)
+                                ax1.scatter(X1[:, 0], X1[:, 1], s=256, c=gt_vec, cmap=default_style.cmap, marker='h', vmin=gt_vmin, vmax=gt_vmax)
                                 ax1.set_axis_off()
                                 ax1.set_title('ground truth', fontsize=12)
 
                                 # Predicted field (corrected, same scale as GT)
                                 ax2 = fig.add_subplot(1, 3, 2)
-                                ax2.scatter(X1[:, 0], X1[:, 1], s=256, c=pred_corrected, cmap="viridis", marker='h')
+                                ax2.scatter(X1[:, 0], X1[:, 1], s=256, c=pred_corrected, cmap=default_style.cmap, marker='h')
                                 ax2.set_axis_off()
                                 ax2.set_title('prediction (corrected)', fontsize=12)
 
@@ -723,7 +712,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
         # Plot 1: Loss
         fig.add_subplot(2, 3, 1)
-        plt.plot(list_loss, color=mc, linewidth=1) # noqa F821
+        plt.plot(list_loss, color=default_style.foreground, linewidth=1)
         plt.xlim([0, tc.n_epochs])
         plt.ylabel('loss', fontsize=12)
         plt.xlabel('epochs', fontsize=12)
@@ -787,9 +776,10 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                             model.a[indices, :] = torch.mean(model.a[indices, :], dim=0, keepdim=True)
 
                 fig.add_subplot(2, 3, 6)
+                type_cmap = CustomColorMap(config=config)
                 for n in range(sim.n_neuron_types):
                     pos = torch.argwhere(type_list == n)
-                    plt.scatter(to_numpy(model.a[pos, 0]), to_numpy(model.a[pos, 1]), s=5, color=cmap.color(n),
+                    plt.scatter(to_numpy(model.a[pos, 0]), to_numpy(model.a[pos, 1]), s=5, color=type_cmap.color(n),
                                 alpha=0.7, edgecolors='none')
                 plt.xlabel('embedding 0', fontsize=18)
                 plt.ylabel('embedding 1', fontsize=18)
