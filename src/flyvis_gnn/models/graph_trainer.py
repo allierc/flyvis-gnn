@@ -28,6 +28,7 @@ from flyvis_gnn.models.utils import (
     set_trainable_parameters,
     analyze_data_svd,
     LossRegularizer,
+    _batch_frames,
 )
 from flyvis_gnn.plot import plot_training_flyvis, plot_weight_comparison
 from flyvis_gnn.utils import (
@@ -49,7 +50,7 @@ from flyvis_gnn.models.Neural_ode_wrapper_FlyVis import (
     integrate_neural_ode_FlyVis, neural_ode_loss_FlyVis,
     debug_check_gradients, DEBUG_ODE
 )
-from flyvis_gnn.zarr_io import load_simulation_data, load_simulation_data_raw
+from flyvis_gnn.zarr_io import load_simulation_data, load_raw_array
 from flyvis_gnn.neuron_state import NeuronState
 
 from flyvis_gnn.sparsify import EmbeddingCluster, sparsify_cluster, clustering_evaluation
@@ -82,37 +83,6 @@ from collections import deque
 from tqdm import tqdm, trange
 from prettytable import PrettyTable
 import imageio
-
-
-def _batch_frames(frames, edge_index):
-    """Batch multiple NeuronState frames into a single concatenated NeuronState + batched edge_index.
-
-    Replaces PyG DataLoader batching: concatenates node tensors across frames
-    and replicates/offsets edge_index per frame.
-
-    Args:
-        frames: list of NeuronState, each with N neurons
-        edge_index: (2, E) tensor — shared connectivity for one frame
-
-    Returns:
-        (batched_state, batched_edges) where batched_state has B*N neurons
-        and batched_edges has B*E edges with properly offset indices.
-    """
-    n_per_frame = frames[0].n_neurons
-    batched = NeuronState(
-        index=torch.cat([f.index for f in frames]),
-        pos=torch.cat([f.pos for f in frames]),
-        group_type=torch.cat([f.group_type for f in frames]),
-        neuron_type=torch.cat([f.neuron_type for f in frames]),
-        voltage=torch.cat([f.voltage for f in frames]),
-        stimulus=torch.cat([f.stimulus for f in frames]),
-        calcium=torch.cat([f.calcium for f in frames]),
-        fluorescence=torch.cat([f.fluorescence for f in frames]),
-    )
-    batched_edges = torch.cat(
-        [edge_index + i * n_per_frame for i in range(len(frames))], dim=1
-    )
-    return batched, batched_edges
 
 
 def data_train(config=None, erase=False, best_model=None, style=None, device=None, log_file=None):
@@ -173,27 +143,32 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
     log_dir, logger = create_log_dir(config, erase)
 
-    x_list = []
-    y_list = []
-    for run in trange(0, tc.n_runs, ncols=50):
-        x = load_simulation_data(f'graphs_data/{config.dataset}/x_list_{run}')
-        y = load_simulation_data_raw(f'graphs_data/{config.dataset}/y_list_{run}')
+    load_fields = ['voltage', 'stimulus', 'neuron_type']
+    if has_visual_field or test_neural_field:
+        load_fields.append('pos')
+    if sim.calcium_type != 'none':
+        load_fields.append('calcium')
+    x_ts = load_simulation_data(f'graphs_data/{config.dataset}/x_list_0', fields=load_fields)
+    y_data = load_raw_array(f'graphs_data/{config.dataset}/y_list_0')
 
-        if tc.training_selected_neurons:
-            selected_neuron_ids = np.array(tc.selected_neuron_ids).astype(int)
-            x = x.subset_neurons(selected_neuron_ids)
-            y = y[:, selected_neuron_ids, :]
+    # extract type_list from loaded data, then construct index (not loaded from disk)
+    type_list = x_ts.neuron_type.float().unsqueeze(-1)
+    x_ts.neuron_type = None
+    x_ts.index = torch.arange(x_ts.n_neurons, dtype=torch.long)
 
-        x_list.append(x)
-        y_list.append(y)
+    if tc.training_selected_neurons:
+        selected_neuron_ids = np.array(tc.selected_neuron_ids).astype(int)
+        x_ts = x_ts.subset_neurons(selected_neuron_ids)
+        y_data = y_data[:, selected_neuron_ids, :]
+        type_list = type_list[selected_neuron_ids]
 
-    # Move all timeseries to GPU to avoid per-iteration CPU→GPU transfers
-    x_list = [ts.to(device) for ts in x_list]
+    x_ts = x_ts.to(device)
+    type_list = type_list.to(device)
 
-    print(f'dataset: {len(x_list)} run, {x_list[0].n_frames} frames')
-    x = x_list[0].frame(sim.n_frames - 10)
+    print(f'dataset: {x_ts.n_frames} frames')
+    x = x_ts.frame(sim.n_frames - 10)
 
-    activity = x_list[0].voltage
+    activity = x_ts.voltage
     distrib = activity.flatten()
     valid_distrib = distrib[~torch.isnan(distrib)]
     if len(valid_distrib) > 0:
@@ -209,7 +184,6 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     print(f'n neurons: {n_neurons}')
     logger.info(f'N neurons: {n_neurons}')
     config.simulation.n_neurons = n_neurons
-    type_list = x.neuron_type.float().unsqueeze(-1).to(device)
     ynorm = torch.tensor(1.0, device=device)
     torch.save(ynorm, os.path.join(log_dir, 'ynorm.pt'))
     time.sleep(0.5)
@@ -219,7 +193,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     # SVD analysis of activity and visual stimuli (skip if already exists)
     svd_plot_path = os.path.join(log_dir, 'results', 'svd_analysis.png')
     if not os.path.exists(svd_plot_path):
-        analyze_data_svd(x_list[0], log_dir, config=config, logger=logger, is_flyvis=True)
+        analyze_data_svd(x_ts, log_dir, config=config, logger=logger, is_flyvis=True)
     else:
         print(f'svd analysis already exists: {svd_plot_path}')
 
@@ -364,7 +338,6 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
             ids_index = 0
 
             loss = 0
-            run = np.random.randint(tc.n_runs)
 
             for batch in range(tc.batch_size):
 
@@ -373,10 +346,10 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                 if tc.recurrent_training or tc.neural_ODE_training:
                     k = k - k % tc.time_step
 
-                x = x_list[run].frame(k)
+                x = x_ts.frame(k)
 
                 if tc.time_window > 0:
-                    x_temporal = x_list[run].voltage[k - tc.time_window + 1: k + 1].T
+                    x_temporal = x_ts.voltage[k - tc.time_window + 1: k + 1].T
                     # x stays as NeuronState; x_temporal passed separately to temporal model
 
                 if has_visual_field:
@@ -401,11 +374,11 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                     loss = loss + regul_loss
 
                     if tc.recurrent_training or tc.neural_ODE_training:
-                        y = x_list[run].voltage[k + tc.time_step].unsqueeze(-1)
+                        y = x_ts.voltage[k + tc.time_step].unsqueeze(-1)
                     elif test_neural_field:
-                        y = x_list[run].stimulus[k, :sim.n_input_neurons].unsqueeze(-1)
+                        y = x_ts.stimulus[k, :sim.n_input_neurons].unsqueeze(-1)
                     else:
-                        y = torch.tensor(y_list[run][k], device=device) / ynorm     # loss on activity derivative
+                        y = torch.tensor(y_data[k], device=device) / ynorm     # loss on activity derivative
 
 
                     if loss_noise_level>0:
@@ -417,7 +390,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
                         n = x.n_neurons
                         if len(state_batch) == 1:
-                            data_id = torch.ones((n, 1), dtype=torch.int, device=device) * run
+                            data_id = torch.zeros((n, 1), dtype=torch.int, device=device)
                             v_batch = x.voltage.unsqueeze(-1)
                             y_batch = y
                             ids_batch = ids
@@ -425,7 +398,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                             if test_neural_field:
                                 visual_input_batch = visual_input
                         else:
-                            data_id = torch.cat((data_id, torch.ones((n, 1), dtype=torch.int, device=device) * run), dim=0)
+                            data_id = torch.cat((data_id, torch.zeros((n, 1), dtype=torch.int, device=device)), dim=0)
                             v_batch = torch.cat((v_batch, x.voltage.unsqueeze(-1)), dim=0)
                             y_batch = torch.cat((y_batch, y), dim=0)
                             ids_batch = np.concatenate((ids_batch, ids + ids_index), axis=0)
@@ -476,8 +449,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                             model=model,
                             dataset_batch=state_batch,
                             edge_index=edges,
-                            x_list=x_list,
-                            run=run,
+                            x_ts=x_ts,
                             k_batch=k_batch,
                             time_step=tc.time_step,
                             batch_size=tc.batch_size,
@@ -521,7 +493,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                                         state_batch[b].stimulus[:model.n_input_neurons] = visual_input_next.squeeze(-1)
                                         state_batch[b].stimulus[model.n_input_neurons:] = 0
                                     else:
-                                        x_next = x_list[run].frame(k_current)
+                                        x_next = x_ts.frame(k_current)
                                         state_batch[b].stimulus = x_next.stimulus
 
                                 batched_state, batched_edges = _batch_frames(state_batch, edges)
@@ -545,6 +517,12 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                 # debug gradient check for neural ODE training
                 if DEBUG_ODE and tc.neural_ODE_training and (N % 500 == 0):
                     debug_check_gradients(model, loss, N)
+
+                # W-specific gradient clipping: clip W gradients to force optimizer
+                # to adjust lin_update (which contains V_rest/tau) instead of W
+                if hasattr(tc, 'grad_clip_W') and tc.grad_clip_W > 0 and hasattr(model, 'W'):
+                    if model.W.grad is not None:
+                        torch.nn.utils.clip_grad_norm_([model.W], max_norm=tc.grad_clip_W)
 
                 optimizer.step()
                 # === LLM-MODIFIABLE: BACKWARD AND STEP END ===
@@ -575,7 +553,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                         os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs - 1}_graphs_{epoch}_{N}.pt'))
 
                 if (N > 0) & (N % connectivity_plot_frequency == 0) & (not test_neural_field) & (not ('MLP' in model_config.signal_model_name)):
-                    last_connectivity_r2 = plot_training_flyvis(x_list, model, config, epoch, N, log_dir, device, cmap, type_list, gt_weights, edges, n_neurons=n_neurons, n_neuron_types=sim.n_neuron_types)
+                    last_connectivity_r2 = plot_training_flyvis(x_ts, model, config, epoch, N, log_dir, device, cmap, type_list, gt_weights, edges, n_neurons=n_neurons, n_neuron_types=sim.n_neuron_types)
 
                 if last_connectivity_r2 is not None:
                     if last_connectivity_r2 > 0.9:
@@ -593,8 +571,8 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                     with torch.no_grad():
                         plt.style.use('default')
 
-                        # Static XY locations (take from first frame of this run)
-                        X1 = to_numpy(x_list[run].pos[:sim.n_input_neurons])
+                        # Static XY locations
+                        X1 = to_numpy(x_ts.pos[:sim.n_input_neurons])
 
                         # group-based selection of 10 traces
                         groups = 217
@@ -629,9 +607,9 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                         all_gt = []
                         all_pred = []
                         for k_fit in range(0, 800, step_video):
-                            x_fit = x_list[run].frame(k_fit)
+                            x_fit = x_ts.frame(k_fit)
                             pred_fit = to_numpy(model.forward_visual(x_fit, k_fit)).squeeze()
-                            gt_fit = to_numpy(x_list[0].stimulus[k_fit, :sim.n_input_neurons]).squeeze()
+                            gt_fit = to_numpy(x_ts.stimulus[k_fit, :sim.n_input_neurons]).squeeze()
                             all_gt.append(gt_fit)
                             all_pred.append(pred_fit)
                         all_gt = np.concatenate(all_gt)
@@ -659,12 +637,12 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
                             for k in trange(0, 800, step_video, ncols=100):
                                 # inputs and predictions
-                                x = x_list[run].frame(k)
+                                x = x_ts.frame(k)
                                 pred = to_numpy(model.forward_visual(x, k))
                                 pred_vec = np.asarray(pred).squeeze()  # (sim.n_input_neurons,)
                                 pred_corrected = a_coeff * pred_vec # + b_coeff  # corrected to GT scale
 
-                                gt_vec = to_numpy(x_list[0].stimulus[k, :sim.n_input_neurons]).squeeze()
+                                gt_vec = to_numpy(x_ts.stimulus[k, :sim.n_input_neurons]).squeeze()
 
                                 # update rolling traces (store corrected predictions)
                                 hist_t.append(k)
@@ -2048,8 +2026,7 @@ def data_test_flyvis(
                                 neurons_per_sample=n_neurons,
                                 batch_size=1,
                                 has_visual_field='visual' in model_config.field_type,
-                                x_list=None,
-                                run=0,
+                                x_ts=None,
                                 device=device,
                                 k_batch=torch.tensor([it], device=device),
                                 ode_method=tc.ode_method,

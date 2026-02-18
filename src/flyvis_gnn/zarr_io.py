@@ -1,10 +1,12 @@
 """zarr/tensorstore I/O utilities for simulation data.
 
 provides:
-- ZarrSimulationWriter: incremental writer that appends frames during generation
-- ZarrSimulationWriterV2: split metadata/timeseries writer for efficient storage
-- detect_format: check if .npy or .zarr exists at path
-- load_simulation_data: auto-detect format and load as NeuronTimeSeries
+- ZarrSimulationWriter: incremental writer (legacy V1 format)
+- ZarrSimulationWriterV2: split metadata/timeseries writer (V2 format)
+- ZarrSimulationWriterV3: per-field writer (V3 format — primary)
+- detect_format: check if V3 zarr or .npy exists at path
+- load_simulation_data: load as NeuronTimeSeries with optional field selection
+- load_raw_array: load raw numpy array from zarr or npy (for derivative targets etc.)
 """
 
 from __future__ import annotations
@@ -430,142 +432,244 @@ class ZarrSimulationWriterV2:
         return self._total_frames
 
 
-def detect_format(path: str | Path) -> Literal['npy', 'zarr_v2', 'zarr_v1', 'none']:
+_DYNAMIC_FIELDS_V3 = ['voltage', 'stimulus', 'calcium', 'fluorescence']
+_STATIC_FIELDS_V3 = ['index', 'pos', 'group_type', 'neuron_type']
+
+
+class ZarrSimulationWriterV3:
+    """Per-field zarr writer — each NeuronState key gets its own zarr array.
+
+    Storage structure:
+        path/
+            index.zarr        # (N,) int32 — static
+            pos.zarr          # (N, 2) float32 — static
+            group_type.zarr   # (N,) int32 — static
+            neuron_type.zarr  # (N,) int32 — static
+            voltage.zarr      # (T, N) float32 — dynamic
+            stimulus.zarr     # (T, N) float32 — dynamic
+            calcium.zarr      # (T, N) float32 — dynamic
+            fluorescence.zarr # (T, N) float32 — dynamic
+
+    usage:
+        writer = ZarrSimulationWriterV3(path, n_neurons=14011)
+        for state in simulation:
+            writer.append_state(state)
+        writer.finalize()
+    """
+
+    def __init__(
+        self,
+        path: str | Path,
+        n_neurons: int,
+        time_chunks: int = 2000,
+    ):
+        self.path = Path(path)
+        self.n_neurons = n_neurons
+        self.time_chunks = time_chunks
+
+        self._static_saved = False
+        self._buffers: dict[str, list[np.ndarray]] = {f: [] for f in _DYNAMIC_FIELDS_V3}
+        self._stores: dict[str, ts.TensorStore] = {}
+        self._total_frames = 0
+        self._dynamic_initialized = False
+
+    def _save_static(self, state: NeuronState):
+        """Save static fields from first NeuronState frame."""
+        from flyvis_gnn.utils import to_numpy
+
+        self.path.mkdir(parents=True, exist_ok=True)
+
+        static_data = {
+            'index': to_numpy(state.index).astype(np.int32),
+            'pos': to_numpy(state.pos).astype(np.float32),
+            'group_type': to_numpy(state.group_type).astype(np.int32),
+            'neuron_type': to_numpy(state.neuron_type).astype(np.int32),
+        }
+
+        for name, data in static_data.items():
+            zarr_path = self.path / f'{name}.zarr'
+            if zarr_path.exists():
+                import shutil
+                shutil.rmtree(zarr_path, ignore_errors=True)
+
+            dtype_str = '<i4' if data.dtype in (np.int32, np.int64) else '<f4'
+            spec = {
+                'driver': 'zarr',
+                'kvstore': {'driver': 'file', 'path': str(zarr_path)},
+                'metadata': {
+                    'dtype': dtype_str,
+                    'shape': list(data.shape),
+                    'chunks': list(data.shape),
+                    'compressor': {
+                        'id': 'blosc', 'cname': 'zstd', 'clevel': 3, 'shuffle': 2,
+                    },
+                },
+                'create': True,
+                'delete_existing': True,
+            }
+            store = ts.open(spec).result()
+            store.write(data).result()
+
+        self._static_saved = True
+
+    def _initialize_dynamic_stores(self):
+        """Create zarr stores for dynamic fields."""
+        initial_cap = max(self.time_chunks * 10, 1000)
+
+        for name in _DYNAMIC_FIELDS_V3:
+            zarr_path = self.path / f'{name}.zarr'
+            if zarr_path.exists():
+                import shutil
+                shutil.rmtree(zarr_path, ignore_errors=True)
+
+            spec = {
+                'driver': 'zarr',
+                'kvstore': {'driver': 'file', 'path': str(zarr_path)},
+                'metadata': {
+                    'dtype': '<f4',
+                    'shape': [initial_cap, self.n_neurons],
+                    'chunks': [self.time_chunks, self.n_neurons],
+                    'compressor': {
+                        'id': 'blosc', 'cname': 'zstd', 'clevel': 3, 'shuffle': 2,
+                    },
+                },
+                'create': True,
+                'delete_existing': True,
+            }
+            self._stores[name] = ts.open(spec).result()
+
+        self._dynamic_initialized = True
+
+    def append_state(self, state: NeuronState):
+        """Append one frame from NeuronState."""
+        from flyvis_gnn.utils import to_numpy
+
+        if not self._static_saved:
+            self._save_static(state)
+
+        self._buffers['voltage'].append(to_numpy(state.voltage).astype(np.float32))
+        self._buffers['stimulus'].append(to_numpy(state.stimulus).astype(np.float32))
+        self._buffers['calcium'].append(to_numpy(state.calcium).astype(np.float32))
+        self._buffers['fluorescence'].append(to_numpy(state.fluorescence).astype(np.float32))
+
+        if len(self._buffers['voltage']) >= self.time_chunks:
+            self._flush_buffer()
+
+    def _flush_buffer(self):
+        """Write buffered dynamic data to zarr stores."""
+        if not self._buffers['voltage']:
+            return
+
+        if not self._dynamic_initialized:
+            self._initialize_dynamic_stores()
+
+        n_frames = len(self._buffers['voltage'])
+
+        for name in _DYNAMIC_FIELDS_V3:
+            data = np.stack(self._buffers[name], axis=0)  # (chunk, N)
+
+            # resize if needed
+            current_shape = self._stores[name].shape
+            needed = self._total_frames + n_frames
+            if needed > current_shape[0]:
+                new_size = max(needed, current_shape[0] * 2)
+                self._stores[name] = self._stores[name].resize(
+                    exclusive_max=[new_size, self.n_neurons]
+                ).result()
+
+            self._stores[name][self._total_frames:self._total_frames + n_frames].write(data).result()
+            self._buffers[name].clear()
+
+        self._total_frames += n_frames
+
+    def finalize(self):
+        """Flush remaining buffer and resize stores to exact size."""
+        self._flush_buffer()
+
+        for name in _DYNAMIC_FIELDS_V3:
+            if name in self._stores and self._total_frames > 0:
+                self._stores[name] = self._stores[name].resize(
+                    exclusive_max=[self._total_frames, self.n_neurons]
+                ).result()
+
+        return self._total_frames
+
+
+def detect_format(path: str | Path) -> Literal['npy', 'zarr_v3', 'none']:
     """check what format exists at path.
 
     args:
         path: base path without extension
 
     returns:
+        'zarr_v3' if V3 zarr directory exists (per-field .zarr arrays)
         'npy' if .npy file exists
-        'zarr_v2' if V2 zarr directory exists (with metadata.zarr + timeseries.zarr)
-        'zarr_v1' if V1 zarr directory exists (with .zarray file)
         'none' if nothing exists
     """
     path = Path(path)
-
-    # strip any existing extension
     base_path = path.with_suffix('') if path.suffix in ('.npy', '.zarr') else path
 
-    npy_path = Path(str(base_path) + '.npy')
-    zarr_v1_path = Path(str(base_path) + '.zarr')
-
-    # check for V2 zarr format (directory with metadata.zarr and timeseries.zarr)
+    # check for V3 zarr format (directory with per-field .zarr arrays)
     if base_path.exists() and base_path.is_dir():
-        metadata_path = base_path / 'metadata.zarr'
-        timeseries_path = base_path / 'timeseries.zarr'
-        if metadata_path.exists() and timeseries_path.exists():
-            return 'zarr_v2'
-
-    # check for V1 zarr format (directory with .zarray file)
-    if zarr_v1_path.exists() and zarr_v1_path.is_dir():
-        zarray_path = zarr_v1_path / '.zarray'
-        if zarray_path.exists():
-            return 'zarr_v1'
+        if (base_path / 'voltage.zarr').exists():
+            return 'zarr_v3'
 
     # check for npy
+    npy_path = Path(str(base_path) + '.npy')
     if npy_path.exists():
         return 'npy'
 
     return 'none'
 
 
-def _load_zarr_v1(path: Path) -> np.ndarray:
-    """load V1 zarr format (simple zarr array)."""
-    zarr_path = Path(str(path) + '.zarr')
-    spec = {
-        'driver': 'zarr',
-        'kvstore': {'driver': 'file', 'path': str(zarr_path)},
-    }
-    return ts.open(spec).result().read().result()
-
-
-def _load_zarr_v2(path: Path) -> np.ndarray:
-    """load V2 zarr split format and reconstruct full (T, N, 9) array."""
-    metadata_path = path / 'metadata.zarr'
-    timeseries_path = path / 'timeseries.zarr'
-
-    # load metadata (N, 5)
-    meta_spec = {
-        'driver': 'zarr',
-        'kvstore': {'driver': 'file', 'path': str(metadata_path)},
-    }
-    metadata = ts.open(meta_spec).result().read().result()  # (N, 5)
-
-    # load timeseries (T, N, 4)
-    ts_spec = {
-        'driver': 'zarr',
-        'kvstore': {'driver': 'file', 'path': str(timeseries_path)},
-    }
-    timeseries = ts.open(ts_spec).result().read().result()  # (T, N, 4)
-
-    T, N = timeseries.shape[:2]
-
-    # reconstruct full array
-    full = np.empty((T, N, 9), dtype=np.float32)
-
-    # static columns - broadcast from (N,) to (T, N)
-    full[:, :, 0] = metadata[:, 0]  # INDEX
-    full[:, :, 1] = metadata[:, 1]  # XPOS
-    full[:, :, 2] = metadata[:, 2]  # YPOS
-    full[:, :, 5] = metadata[:, 3]  # GROUP_TYPE
-    full[:, :, 6] = metadata[:, 4]  # TYPE
-
-    # dynamic columns
-    full[:, :, 3] = timeseries[:, :, 0]  # VOLTAGE
-    full[:, :, 4] = timeseries[:, :, 1]  # STIMULUS
-    full[:, :, 7] = timeseries[:, :, 2]  # CALCIUM
-    full[:, :, 8] = timeseries[:, :, 3]  # FLUORESCENCE
-
-    return full
-
-
-def load_simulation_data(path: str | Path) -> NeuronTimeSeries:
-    """load simulation data as NeuronTimeSeries from zarr or npy format.
+def load_simulation_data(path: str | Path, fields=None) -> NeuronTimeSeries:
+    """load simulation data as NeuronTimeSeries (V3 zarr or npy).
 
     args:
         path: base path (with or without extension)
+        fields: list of field names to load (V3 only, e.g. ['voltage', 'stimulus']).
+                None = all fields.
 
     returns:
-        NeuronTimeSeries with named fields
+        NeuronTimeSeries with requested fields (others are None)
 
     raises:
         FileNotFoundError: if no data found at path
     """
     from flyvis_gnn.neuron_state import NeuronTimeSeries
-    return NeuronTimeSeries.load(path)
+    return NeuronTimeSeries.load(path, fields=fields)
 
 
-def load_simulation_data_raw(path: str | Path) -> np.ndarray:
-    """load simulation data as raw (T, N, 9) numpy array (legacy).
+def load_raw_array(path: str | Path) -> np.ndarray:
+    """load a raw numpy array from .zarr or .npy (for y_list derivative targets etc.).
 
     args:
         path: base path (with or without extension)
 
     returns:
-        numpy array with simulation data
+        numpy array
 
     raises:
         FileNotFoundError: if no data found at path
     """
     path = Path(path)
-    fmt = detect_format(path)
-
-    # get base path without extension
     base_path = path.with_suffix('') if path.suffix in ('.npy', '.zarr') else path
 
-    if fmt == 'none':
-        raise FileNotFoundError(f"no .npy or .zarr found at {base_path}")
+    # try zarr (V1-style single array)
+    zarr_path = Path(str(base_path) + '.zarr')
+    if zarr_path.exists() and zarr_path.is_dir():
+        spec = {
+            'driver': 'zarr',
+            'kvstore': {'driver': 'file', 'path': str(zarr_path)},
+        }
+        return ts.open(spec).result().read().result()
 
-    if fmt == 'npy':
-        npy_path = Path(str(base_path) + '.npy')
+    # try npy
+    npy_path = Path(str(base_path) + '.npy')
+    if npy_path.exists():
         return np.load(npy_path)
 
-    if fmt == 'zarr_v1':
-        return _load_zarr_v1(base_path)
-
-    # zarr_v2 format - load and reconstruct full array
-    return _load_zarr_v2(base_path)
+    raise FileNotFoundError(f"no .zarr or .npy found at {base_path}")
 
 
 def load_zarr_lazy(path: str | Path) -> ts.TensorStore:
