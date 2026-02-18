@@ -1,13 +1,13 @@
-description: designed by Claude (parallel flyvis)
+description: "Optimized config from 144-iteration Claude exploration (winner: Config 03, Node 144)"
 dataset: flyvis_62_1_gs
 simulation:
   connectivity_file: to be specified
-  adjacency_matrix: ''
+  adjacency_matrix: ""
   params:
-  - - 1.0
-    - 1.0
-    - 1.0
-    - 1.0
+    - - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
   n_neurons: 13741
   n_input_neurons: 1736
   n_neuron_types: 65
@@ -35,11 +35,11 @@ plotting:
   colormap: tab20
   arrow_length: 1
   xlim:
-  - -2.5
-  - 2.5
+    - -2.5
+    - 2.5
   ylim:
-  - -100
-  - 100
+    - -100
+    - 100
 training:
   n_epochs: 1
   n_runs: 1
@@ -57,18 +57,12 @@ training:
   coeff_update_u_diff: 0
   coeff_update_msg_diff: 0
   coeff_edge_norm: 0.9
-  coeff_edge_weight_L1: 0.29
+  coeff_edge_weight_L1: 0.28
   coeff_phi_weight_L1: 0.5
-  coeff_phi_weight_L1_rate: 0.4
+  coeff_phi_weight_L1_rate: 0.5
   coeff_edge_weight_L2: 0
   coeff_phi_weight_L2: 0.001
-  coeff_W_L1: 3.5e-05
+  coeff_W_L1: 5.0e-05
   coeff_W_L1_rate: 0.5
-  coeff_W_L2: 2.5e-06
+  coeff_W_L2: 3.0e-06
   w_init_mode: zeros
-claude:
-  n_epochs: 1
-  data_augmentation_loop: 25
-  n_iter_block: 12
-  ucb_c: 1.414
-  node_name: h100
