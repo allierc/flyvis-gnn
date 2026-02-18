@@ -309,9 +309,10 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
             optimizer.zero_grad()
 
             state_batch = []
-            ids_batch = []
-            k_batch = []
-            visual_input_batch = []
+            y_list = []
+            ids_list = []
+            k_list = []
+            visual_input_list = []
             ids_index = 0
 
             loss = 0
@@ -364,34 +365,26 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                     if not (torch.isnan(y).any()):
 
                         state_batch.append(x)
-
                         n = x.n_neurons
-                        if len(state_batch) == 1:
-                            data_id = torch.zeros((n, 1), dtype=torch.int, device=device)
-                            v_batch = x.voltage.unsqueeze(-1)
-                            y_batch = y
-                            ids_batch = ids
-                            k_batch = torch.ones((n, 1), dtype=torch.int, device=device) * k
-                            if test_neural_field:
-                                visual_input_batch = visual_input
-                        else:
-                            data_id = torch.cat((data_id, torch.zeros((n, 1), dtype=torch.int, device=device)), dim=0)
-                            v_batch = torch.cat((v_batch, x.voltage.unsqueeze(-1)), dim=0)
-                            y_batch = torch.cat((y_batch, y), dim=0)
-                            ids_batch = np.concatenate((ids_batch, ids + ids_index), axis=0)
-                            k_batch = torch.cat((k_batch, torch.ones((n, 1), dtype=torch.int, device=device) * k), dim=0)
-                            if test_neural_field:
-                                visual_input_batch = torch.cat((visual_input_batch, visual_input), dim=0)
-
+                        y_list.append(y)
+                        ids_list.append(ids + ids_index)
+                        k_list.append(torch.ones((n, 1), dtype=torch.int, device=device) * k)
+                        if test_neural_field:
+                            visual_input_list.append(visual_input)
                         ids_index += n
 
 
             if state_batch:
 
+                data_id = torch.zeros((ids_index, 1), dtype=torch.int, device=device)
+                y_batch = torch.cat(y_list, dim=0)
+                ids_batch = np.concatenate(ids_list, axis=0)
+                k_batch = torch.cat(k_list, dim=0)
+
                 total_loss_regul += loss.item()
 
-
                 if test_neural_field:
+                    visual_input_batch = torch.cat(visual_input_list, dim=0)
                     loss = loss + (visual_input_batch - y_batch).norm(2)
 
 
@@ -409,7 +402,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
                     loss = loss + (pred[ids_batch] - y_batch[ids_batch]).norm(2)
 
-                else: # GNN branch
+                else: # 'GNN' branch
 
                     batched_state, batched_edges = _batch_frames(state_batch, edges)
                     pred, in_features, msg = model(batched_state, batched_edges, data_id=data_id, return_all=True)
@@ -451,7 +444,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
                     elif tc.recurrent_training:
 
-                        pred_x = v_batch + sim.delta_t * pred + tc.noise_recurrent_level * torch.randn_like(pred)
+                        pred_x = batched_state.voltage.unsqueeze(-1) + sim.delta_t * pred + tc.noise_recurrent_level * torch.randn_like(pred)
 
                         if tc.time_step > 1:
                             for step in range(tc.time_step - 1):
@@ -482,7 +475,6 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
 
                     else:
-
 
                         loss = loss + (pred[ids_batch] - y_batch[ids_batch]).norm(2)
 
@@ -529,19 +521,13 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                         {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
                         os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs - 1}_graphs_{epoch}_{N}.pt'))
 
-                if (N > 0) & (N % connectivity_plot_frequency == 0) & (not test_neural_field) & (not ('MLP' in model_config.signal_model_name)):
+                if (N % connectivity_plot_frequency == 0) & (not test_neural_field) & (not ('MLP' in model_config.signal_model_name)):
                     last_connectivity_r2 = plot_training_flyvis(x_ts, model, config, epoch, N, log_dir, device, type_list, gt_weights, edges, n_neurons=n_neurons, n_neuron_types=sim.n_neuron_types)
 
                 if last_connectivity_r2 is not None:
-                    if last_connectivity_r2 > 0.9:
-                        r2_color = '\033[92m'  # green
-                    elif last_connectivity_r2 > 0.7:
-                        r2_color = '\033[93m'  # yellow
-                    elif last_connectivity_r2 > 0.3:
-                        r2_color = '\033[38;5;208m'  # orange
-                    else:
-                        r2_color = '\033[91m'  # red
-                    pbar.set_postfix_str(f'{r2_color}R²={last_connectivity_r2:.3f}\033[0m')
+                    r2 = last_connectivity_r2
+                    color = '\033[92m' if r2 > 0.9 else '\033[93m' if r2 > 0.7 else '\033[38;5;208m' if r2 > 0.3 else '\033[91m'
+                    pbar.set_postfix_str(f'{color}R²={r2:.3f}\033[0m')
 
 
                 if (has_visual_field) & (N in plot_iterations):
