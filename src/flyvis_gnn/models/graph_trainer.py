@@ -164,10 +164,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
     print(f'dataset: {x_ts.n_frames} frames')
 
-    _v = x_ts.voltage
-    _valid = _v[~torch.isnan(_v)]
-    xnorm = 1.5 * _valid.std() if len(_valid) > 0 else torch.tensor(1.0, device=device)
-    del _v, _valid
+    xnorm = x_ts.xnorm
     torch.save(xnorm, os.path.join(log_dir, 'xnorm.pt'))
     print(f'xnorm: {to_numpy(xnorm):0.3f}')
     logger.info(f'xnorm: {to_numpy(xnorm)}')

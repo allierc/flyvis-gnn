@@ -200,6 +200,15 @@ class NeuronTimeSeries:
                 return val.shape[-1] if f.name in DYNAMIC_FIELDS else val.shape[0]
         raise ValueError("NeuronTimeSeries has no populated fields")
 
+    @property
+    def xnorm(self) -> torch.Tensor:
+        """Voltage normalization: 1.5 * std of all valid voltage values."""
+        v = self.voltage
+        valid = v[~torch.isnan(v)]
+        if len(valid) > 0:
+            return 1.5 * valid.std()
+        return torch.tensor(1.0, device=v.device if v is not None else 'cpu')
+
     def frame(self, t: int) -> NeuronState:
         """Extract single-frame NeuronState at time t.
 
