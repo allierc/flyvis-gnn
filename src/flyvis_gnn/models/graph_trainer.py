@@ -149,7 +149,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     if sim.calcium_type != 'none':
         load_fields.append('calcium')
     x_ts = load_simulation_data(f'graphs_data/{config.dataset}/x_list_0', fields=load_fields).to(device)
-    y_data = load_raw_array(f'graphs_data/{config.dataset}/y_list_0')
+    y_ts = load_raw_array(f'graphs_data/{config.dataset}/y_list_0')
 
     # extract type_list from loaded data, then construct index (not loaded from disk)
     type_list = x_ts.neuron_type.float().unsqueeze(-1)
@@ -159,7 +159,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     if tc.training_selected_neurons:
         selected_neuron_ids = np.array(tc.selected_neuron_ids).astype(int)
         x_ts = x_ts.subset_neurons(selected_neuron_ids)
-        y_data = y_data[:, selected_neuron_ids, :]
+        y_ts = y_ts[:, selected_neuron_ids, :]
         type_list = type_list[selected_neuron_ids]
 
     print(f'dataset: {x_ts.n_frames} frames')
@@ -367,7 +367,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                     elif test_neural_field:
                         y = x_ts.stimulus[k, :sim.n_input_neurons].unsqueeze(-1)
                     else:
-                        y = torch.tensor(y_data[k], device=device) / ynorm     # loss on activity derivative
+                        y = torch.tensor(y_ts[k], device=device) / ynorm     # loss on activity derivative
 
 
                     if loss_noise_level>0:
