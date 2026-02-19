@@ -1,4 +1,4 @@
-# Parallel Mode Addendum — FlyVis GS Alternating Training
+# Parallel Mode Addendum — FlyVis GS Two-Stage Alternate Training
 
 This addendum applies when running in **parallel mode** (GNN_LLM_parallel_flyvis.py). Follow all rules from the base instruction file (`instruction_flyvis_62_1_gs_alternate.md`), with these modifications.
 
@@ -23,7 +23,7 @@ Unlike `flyvis_62_1`, each slot **regenerates data** before training. The simula
 - Each config's `dataset` field is pre-set to route data to separate directories — **DO NOT change the `dataset` field**
 - Only modify `training:` and `graph_model:` parameters (and `claude:` where allowed)
 - **DO NOT change `simulation:` parameters** — only the seed changes per regeneration
-- **DO NOT change `alternate_training: true`** — this selects the alternate trainer
+- **DO NOT change `alternate_training: true`** — this selects the two-stage trainer
 
 ## Parallel UCB Strategy (Robustness-Focused)
 
@@ -59,51 +59,51 @@ A config has enough replicates when:
 ## Start Call (first batch, no results yet)
 
 When the prompt says `PARALLEL START`:
-- Read the base config to understand the current alternating training parameters
-- **All 4 slots run alternate defaults unchanged** (variance baseline):
-  - Slot 0: alternate defaults unchanged (baseline)
-  - Slot 1: alternate defaults unchanged (variance measurement)
-  - Slot 2: alternate defaults unchanged (variance measurement)
-  - Slot 3: alternate defaults unchanged (variance measurement)
-- This first batch establishes the **variance baseline** for alternating training with regenerated data
+- Read the base config to understand the current two-stage training parameters
+- **All 4 slots run two-stage defaults unchanged** (variance baseline):
+  - Slot 0: two-stage defaults unchanged (baseline) — joint_ratio=0.4, lr_ratio=0.1, n_epochs=2
+  - Slot 1: two-stage defaults unchanged (variance measurement) — joint_ratio=0.4, lr_ratio=0.1, n_epochs=2
+  - Slot 2: two-stage defaults unchanged (variance measurement) — joint_ratio=0.4, lr_ratio=0.1, n_epochs=2
+  - Slot 3: two-stage defaults unchanged (variance measurement) — joint_ratio=0.4, lr_ratio=0.1, n_epochs=2
+- This first batch establishes the **variance baseline** for two-stage training with regenerated data
 - Write the planned initial variations to the working memory file
 
-**Continue running alternate defaults for batch 2 and 3 as well** (12 total baseline runs) to get a reliable variance estimate before making any parameter changes. This is block 1.
+**Continue running two-stage defaults for batch 2 and 3 as well** (12 total baseline runs) to get a reliable variance estimate before making any parameter changes. This is block 1.
 
-## Explorable Parameters (alternating-specific)
+## Explorable Parameters (two-stage-specific)
 
-These parameters are unique to alternating training and should be explored in addition to the standard regularization params:
+These parameters are unique to two-stage training and should be explored in addition to the standard regularization params:
 
 | Parameter | Default | Explore Range | Description |
 |-----------|---------|---------------|-------------|
-| `n_alternations` | 4 | 2, 4, 6, 8 | Number of W/V_rest cycles per epoch |
-| `alternate_vrest_ratio` | 0.5 | 0.3, 0.5, 0.7 | Fraction of each cycle for V_rest-phase |
-| `alternate_lr_W` | 6E-7 | 0, 1E-7, 6E-7, 6E-6 | W learning rate during V_rest-phase |
-| `alternate_lr_edge` | 1.2E-6 | 0, 1E-7, 1.2E-6, 1.2E-5 | lin_edge learning rate during V_rest-phase |
-| `alternate_lr_update` | 1.2E-6 | 0, 1E-7, 1.2E-6, 1.2E-5 | lin_phi learning rate during W-phase |
-| `alternate_lr_embedding` | 1.55E-6 | 0, 1E-7, 1.55E-6, 1.55E-5 | embedding learning rate during W-phase |
+| `alternate_joint_ratio` | 0.4 | 0.2, 0.3, 0.4, 0.5, 0.6 | Fraction of total iterations for joint phase |
+| `alternate_lr_ratio` | 0.1 | 0.01, 0.05, 0.1, 0.2, 0.3 | LR multiplier for W/lin_edge during V_rest focus phase |
+| `n_epochs` | 2 | 2, 3 | Number of epochs (doubled vs standard) |
+| `data_augmentation_loop` | 20 | 20, 25, 30 | Data augmentation multiplier |
 
-**DO NOT change** the active-phase learning rates (`learning_rate_start`, `learning_rate_W_start`, `learning_rate_embedding_start`) — these are strictly optimal from 144 iterations of flyvis_62_1 exploration.
+**DO NOT change** the active-phase learning rates (`learning_rate_start`, `learning_rate_W_start`, `learning_rate_embedding_start`) — these are strictly optimal from prior exploration and confirmed at gold standard.
 
-## R2 Trajectory Monitoring (Critical)
+## Metrics Log Monitoring (Critical)
 
-After each batch, check `tmp_training/connectivity_r2.log` for every slot. The log includes a `phase` column:
+After each batch, check `tmp_training/metrics.log` for every slot. The log tracks all R² metrics with a `phase` column:
 ```
-epoch,iteration,connectivity_r2,phase
-0,640,0.45,W
-0,1280,0.72,W
-0,1920,0.71,V_rest
-0,2560,0.85,W
+epoch,iteration,connectivity_r2,vrest_r2,tau_r2,phase
+0,2560,0.45,0.02,0.10,joint
+0,5120,0.72,0.05,0.35,joint
+0,12800,0.88,0.08,0.60,joint
+0,51200,0.85,0.15,0.65,V_rest
+0,64000,0.87,0.25,0.70,V_rest
 ```
 
 For each slot, report:
-- **Peak R2** and which phase/iteration it occurred in
-- **Final R2** and the trend (rising/stable/decaying)
-- **R2 stability during V_rest-phase**: Does R2 hold steady or drop?
-- **R2 gains during W-phase**: How much does R2 increase per W-phase?
+- **Peak conn_R2** and which phase/iteration it occurred in
+- **Final conn_R2** and the trend (rising/stable/decaying)
+- **vrest_R2 trajectory**: Does vrest_R2 increase during V_rest focus phase?
+- **tau_R2 trajectory**: Does tau_R2 increase during V_rest focus phase?
+- **conn_R2 stability during V_rest focus**: Does conn_R2 hold steady or drop?
 
-**Healthy pattern**: R2 increases during W-phases, holds stable during V_rest-phases, final >= peak.
-**Unhealthy pattern**: R2 drops during V_rest-phases → inactive LR for W/lin_edge may be too high.
+**Healthy pattern**: conn_R2 rises during joint phase to ≈ 0.85–0.90, holds steady during V_rest focus. vrest_R2 and tau_R2 increase during V_rest focus phase. Final conn_R2 ≈ peak conn_R2.
+**Unhealthy pattern**: conn_R2 drops significantly during V_rest focus → alternate_lr_ratio too low (W/lin_edge drift too much). vrest_R2 flat during V_rest focus → alternate_lr_ratio too high (fast components still dominate gradients).
 
 ## Seed Strategy
 
@@ -118,25 +118,25 @@ Always set both seeds in the config YAML and log them with rationale.
 
 ## Logging Format
 
-Same as base instructions, but you write 4 entries per batch. Include alternation config, seeds, and R2 trajectory:
+Same as base instructions, but you write 4 entries per batch. Include two-stage config, seeds, and R2 trajectory:
 
 ```
 ## Iter N: [converged/partial/failed]
 Node: id=N, parent=P
 Mode/Strategy: [strategy]
 Seeds: sim_seed=X, train_seed=Y, rationale=[same-data-robustness / different-data-generalization / suggested-default]
-Config: lr_W=X, lr=Y, lr_emb=Z, n_alt=A, vrest_ratio=B, alt_lr_W=C, alt_lr_edge=D, alt_lr_update=E, alt_lr_emb=F
+Config: lr_W=X, lr=Y, lr_emb=Z, joint_ratio=A, lr_ratio=B, n_epochs=C, aug_loop=D
 Metrics: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, test_pearson=F, training_time_min=G
-R2 trajectory: peak=X at iter Y, final=Z, trend=[rising/stable/decaying]
+R2 trajectory: conn peak=X final=Y trend=[...], vrest peak=X final=Y trend=[...], tau peak=X final=Y trend=[...]
 Embedding: [visual observation]
 Mutation: [param]: [old] -> [new]
 Parent rule: [one line]
-Observation: [one line — compare to standard training R2 decay pattern]
+Observation: [one line]
 Variance update: [config_id] now has N runs, CV(conn_R2)=X%, CV(V_rest_R2)=Y%
 Next: parent=P
 ```
 
-**CRITICAL**: The `Mutation:` line is parsed by the UCB tree builder. Always include the exact parameter change (e.g., `Mutation: n_alternations: 4 -> 6`). For robustness-check slots, use `Mutation: [none] — robustness re-run of Node X`.
+**CRITICAL**: The `Mutation:` line is parsed by the UCB tree builder. Always include the exact parameter change (e.g., `Mutation: alternate_joint_ratio: 0.4 -> 0.3`). For robustness-check slots, use `Mutation: [none] — robustness re-run of Node X`.
 
 **CRITICAL**: The `Next: parent=P` line selects the parent for the **next batch's** mutations. `P` must refer to a node from a **previous** batch or the current batch — but NEVER set `Next: parent=P` where P is `id+1` (the next slot in the same batch).
 
@@ -152,7 +152,7 @@ After writing all 4 log entries, update the Variance Estimates table in memory.m
 |-----------|------|------------------------|----|---------|-----------------------|----|--------------------------|----|-----------------------|----|---------|
 ```
 
-The `R2 trend` column should indicate whether final R2 >= peak R2 across runs. Group results by config (same parameters = same config ID). This table drives all decisions.
+The `R2 trend` column should indicate whether conn_R2 holds during V_rest focus phase and whether vrest_R2 improves during V_rest focus phase. Group results by config (same parameters = same config ID). This table drives all decisions.
 
 ## Block Boundaries
 
@@ -169,19 +169,19 @@ If a slot is marked `[FAILED]` in the prompt:
 
 ## Training Time Monitoring
 
-Check `training_time_min` for every successful slot. Data generation adds ~5 minutes. If any slot exceeds 60 minutes total:
+Check `training_time_min` for every successful slot. Two-stage training with 2 epochs takes approximately double standard training time (~76 minutes on H100). Data generation adds ~5 minutes. If any slot exceeds 90 minutes total:
 - Flag it in the observation
-- Reduce complexity in the next mutation (smaller hidden_dim, lower data_augmentation_loop)
+- Reduce complexity in the next mutation (lower data_augmentation_loop, fewer epochs)
 - Do NOT propose architecture changes that would increase training time beyond the limit
 
 ## Comparison to Standard Training
 
 Always keep the standard training baseline in mind:
-- **Standard training**: conn_R2 peaks 0.95-0.98, may decay to 0.88-0.93
-- **Goal**: alternating training should achieve final conn_R2 >= peak conn_R2 (no decay)
-- **Secondary**: V_rest_R2 should improve with dedicated slow-component training
+- **Standard training (gold standard)**: conn_R2=0.944 mean (CV=3.8%), V_rest_R2 0.19–0.73 (highly variable)
+- **Goal**: two-stage training should maintain conn_R2 ≈ 0.94 AND improve V_rest_R2 mean and reduce V_rest_R2 variance
+- **Secondary**: tau_R2 should remain stable (~0.97)
 
-If alternating training consistently underperforms standard training on conn_R2, consider:
-1. The inactive LRs may be too high (causing drift)
-2. The V_rest-phase may be too long (reducing effective W training time)
-3. The number of alternations may be too low (not enough fine-grained switching)
+If two-stage training consistently underperforms standard training on conn_R2, consider:
+1. The alternate_lr_ratio may be too low (W/lin_edge drift during V_rest focus)
+2. The joint phase may be too short (connectivity not established before V_rest focus)
+3. More epochs may be needed to recover connectivity after V_rest focus

@@ -473,15 +473,9 @@ class TrainingConfig(BaseModel):
     w_init_scale: float = 1.0  # scaling factor for 'randn_scaled' mode
     coeff_W_L1_proximal: float = 0.0  # proximal L1 soft-thresholding on W after optimizer step, 0 = disabled
 
-    alternate_training: bool = False  # alternate W-phase (fast: lin_edge+W) and V_rest-phase (slow: lin_phi+embedding)
-    n_alternations: int = 4  # number of W/V_rest cycles per epoch
-    alternate_vrest_ratio: float = 0.5  # fraction of each cycle spent on V_rest-phase (0.5 = equal)
-    # LRs during V_rest-phase (fast components reduced):
-    alternate_lr_W: float = 6e-7  # lr for W during V_rest-phase (default: lr_W * 0.001)
-    alternate_lr_edge: float = 1.2e-6  # lr for lin_edge during V_rest-phase (default: lr * 0.001)
-    # LRs during W-phase (slow components reduced):
-    alternate_lr_update: float = 1.2e-6  # lr for lin_phi during W-phase (default: lr * 0.001)
-    alternate_lr_embedding: float = 1.55e-6  # lr for embedding during W-phase (default: lr_emb * 0.001)
+    alternate_training: bool = False  # two-stage training: joint warmup then V_rest focus
+    alternate_joint_ratio: float = 0.4  # fraction of total iterations for joint phase (all components at full LR)
+    alternate_lr_ratio: float = 0.1  # LR multiplier for W/lin_edge during V_rest focus phase
 
     time_step: int = 1
     recurrent_sequence: str = ""

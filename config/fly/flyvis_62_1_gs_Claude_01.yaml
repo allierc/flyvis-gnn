@@ -17,7 +17,7 @@ simulation:
   baseline_value: 0
   visual_input_type: DAVIS
   noise_model_level: 0.05
-  seed: 2
+  seed: 86
 graph_model:
   signal_model_name: flyvis_A
   prediction: first_derivative
@@ -51,8 +51,8 @@ training:
   small_init_batch_size: false
   sparsity: none
   data_augmentation_loop: 20
-  learning_rate_W_start: 0.0006
-  learning_rate_start: 0.0012
+  learning_rate_W_start: 0.0005
+  learning_rate_start: 0.00115
   learning_rate_embedding_start: 0.00155
   coeff_edge_diff: 750
   coeff_update_u_diff: 0
@@ -62,12 +62,12 @@ training:
   coeff_phi_weight_L1: 0.5
   coeff_phi_weight_L1_rate: 0.4
   coeff_edge_weight_L2: 0
-  coeff_phi_weight_L2: 0.001
+  coeff_phi_weight_L2: 0.0015
   coeff_W_L1: 3.3e-05
   coeff_W_L1_rate: 0.5
-  coeff_W_L2: 2.5e-06
-  w_init_mode: "randn_scaled"
-  seed: 9
+  coeff_W_L2: 3.75e-06
+  w_init_mode: randn_scaled
+  seed: 345
 claude:
   n_epochs: 1
   data_augmentation_loop: 25

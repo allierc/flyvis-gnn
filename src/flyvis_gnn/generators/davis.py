@@ -807,6 +807,7 @@ class AugmentedVideoDataset(MultiTaskDavis):
             indices: Optional[List[int]] = None,
             unittest: bool = False,
             shuffle_sequences: bool = True,
+            shuffle_seed: int = 42,
             skip_short_videos: bool = True,
             **kwargs,
     ):
@@ -857,6 +858,7 @@ class AugmentedVideoDataset(MultiTaskDavis):
         self.n_rotations = n_rotations
         self.temporal_split = temporal_split
         self.shuffle_sequences = shuffle_sequences
+        self.shuffle_seed = shuffle_seed
 
         self.config.update({
             'root_dir': str(root_dir),
@@ -864,6 +866,7 @@ class AugmentedVideoDataset(MultiTaskDavis):
             'n_rotations': self.n_rotations,
             'temporal_split': self.temporal_split,
             'shuffle_sequences': self.shuffle_sequences,
+            'shuffle_seed': self.shuffle_seed,
             'indices': self.indices,
             'center_crop_fraction': center_crop_fraction,
         })
@@ -939,9 +942,9 @@ class AugmentedVideoDataset(MultiTaskDavis):
         # SHUFFLE the sequences to mix different rotations/flips of different base sequences
         if self.shuffle_sequences:
             import random
-            random.seed(42)  # Reproducible shuffling
+            random.seed(self.shuffle_seed)
             random.shuffle(self.cached_sequences)
-            logger.info(f"Shuffled {len(self.cached_sequences)} augmented sequences for better variety")
+            logger.info(f"Shuffled {len(self.cached_sequences)} augmented sequences (seed={self.shuffle_seed})")
 
         if self.indices is not None:
             # Apply indices selection after shuffling

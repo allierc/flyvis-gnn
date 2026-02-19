@@ -3,6 +3,7 @@
 Used by both the training loop (graph_trainer.py / utils.py) and
 post-training analysis (GNN_PlotFigure.py).
 """
+import os
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 from matplotlib.ticker import FormatStrFormatter
@@ -52,6 +53,36 @@ def plot_training_summary_panels(fig, log_dir):
         plt.imshow(img)
         plt.axis('off')
         plt.title(title, fontsize=12)
+
+    # Panel 6: R² metrics trajectory
+    metrics_log_path = os.path.join(log_dir, 'tmp_training', 'metrics.log')
+    if os.path.exists(metrics_log_path):
+        r2_iters, conn_vals, vrest_vals, tau_vals = [], [], [], []
+        try:
+            with open(metrics_log_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('epoch'):
+                        continue
+                    parts = line.split(',')
+                    r2_iters.append(int(parts[1]))
+                    conn_vals.append(float(parts[2]))
+                    vrest_vals.append(float(parts[3]) if len(parts) > 3 else 0.0)
+                    tau_vals.append(float(parts[4]) if len(parts) > 4 else 0.0)
+        except Exception:
+            pass
+        if conn_vals:
+            ax6 = fig.add_subplot(2, 3, 6)
+            ax6.plot(r2_iters, conn_vals, color='#d62728', linewidth=1.5, marker='o', markersize=3, label='conn')
+            ax6.plot(r2_iters, vrest_vals, color='#1f77b4', linewidth=1.5, marker='s', markersize=3, label='V_rest')
+            ax6.plot(r2_iters, tau_vals, color='#2ca02c', linewidth=1.5, marker='^', markersize=3, label='tau')
+            ax6.axhline(y=0.9, color='green', linestyle='--', alpha=0.4, linewidth=1)
+            ax6.set_ylim(-0.05, 1.05)
+            ax6.set_xlabel('iteration', fontsize=10)
+            ax6.set_ylabel('R²', fontsize=10)
+            ax6.set_title('R² Metrics', fontsize=12)
+            ax6.legend(fontsize=8, loc='lower right')
+            ax6.grid(True, alpha=0.3)
 
 
 def get_model_W(model):
@@ -319,6 +350,43 @@ def extract_lin_phi_slopes(model, config, n_neurons, mu_activity, sigma_activity
     slopes, offsets = _vectorized_linear_fit(rr, func)
 
     return slopes, offsets
+
+
+def compute_dynamics_r2(model, x_ts, config, device, n_neurons):
+    """Compute V_rest R² and tau R² during training (lightweight, no plots).
+
+    Extracts learned V_rest and tau from lin_phi slopes/offsets and compares
+    against ground truth V_i_rest.pt and tau_i.pt.
+
+    Returns:
+        (vrest_r2, tau_r2): tuple of float R² values.
+    """
+    gt_V_rest_tensor = torch.load(f'./graphs_data/{config.dataset}/V_i_rest.pt',
+                                  map_location=device, weights_only=True)
+    gt_tau_tensor = torch.load(f'./graphs_data/{config.dataset}/tau_i.pt',
+                               map_location=device, weights_only=True)
+    gt_V_rest = to_numpy(gt_V_rest_tensor[:n_neurons])
+    gt_tau = to_numpy(gt_tau_tensor[:n_neurons])
+
+    mu, sigma = compute_activity_stats(x_ts, device)
+    slopes, offsets = extract_lin_phi_slopes(model, config, n_neurons, mu, sigma, device)
+
+    # V_rest = -offset / slope (x-intercept of linearized lin_phi)
+    learned_V_rest = np.where(slopes != 0, -offsets / slopes, 1.0)[:n_neurons]
+    # tau = 1 / (-slope)
+    learned_tau = np.where(slopes != 0, 1.0 / -slopes, 1.0)[:n_neurons]
+    learned_tau = np.clip(learned_tau, 0, 1)
+
+    try:
+        vrest_r2, _ = compute_r_squared(gt_V_rest, learned_V_rest)
+    except Exception:
+        vrest_r2 = 0.0
+    try:
+        tau_r2, _ = compute_r_squared(gt_tau, learned_tau)
+    except Exception:
+        tau_r2 = 0.0
+
+    return vrest_r2, tau_r2
 
 
 # ------------------------------------------------------------------ #
@@ -1381,8 +1449,8 @@ def plot_signal_loss(loss_dict, log_dir, epoch=None, Niter=None, debug=False,
     """
     Plot stratified loss components over training iterations.
 
-    Creates a two-panel figure showing loss and regularization terms in both
-    linear and log scale. Saves to {log_dir}/tmp_training/loss.tif.
+    Creates a three-panel figure showing loss and regularization terms in both
+    linear and log scale, plus connectivity R2 trajectory. Saves to {log_dir}/tmp_training/loss.tif.
 
     Parameters:
     -----------
@@ -1451,7 +1519,7 @@ def plot_signal_loss(loss_dict, log_dir, epoch=None, Niter=None, debug=False,
             print("\n⚠️  WARNING: Negative prediction loss! regul > total loss")
         print("="*60)
 
-    fig_loss, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 10))
+    fig_loss, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(30, 10))
 
     # Add epoch and iteration info as text annotation
     info_text = ""
@@ -1498,6 +1566,50 @@ def plot_signal_loss(loss_dict, log_dir, epoch=None, Niter=None, debug=False,
     ax2.legend(fontsize=10, loc='best', ncol=2)
     ax2.grid(True, alpha=0.3, which='both')
     ax2.tick_params(labelsize=14)
+
+    # R2 metrics panel (conn, V_rest, tau)
+    metrics_log_path = os.path.join(log_dir, 'tmp_training', 'metrics.log')
+    if os.path.exists(metrics_log_path):
+        r2_iters, conn_vals, vrest_vals, tau_vals = [], [], [], []
+        try:
+            with open(metrics_log_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('epoch'):
+                        continue
+                    parts = line.split(',')
+                    ep = int(parts[0])
+                    it = int(parts[1])
+                    global_iter = ep * (Niter if Niter else 0) + it
+                    r2_iters.append(global_iter)
+                    conn_vals.append(float(parts[2]))
+                    vrest_vals.append(float(parts[3]) if len(parts) > 3 else 0.0)
+                    tau_vals.append(float(parts[4]) if len(parts) > 4 else 0.0)
+        except Exception:
+            pass
+        if conn_vals:
+            ax3.plot(r2_iters, conn_vals, color='#d62728', linewidth=2.5, marker='o',
+                     markersize=4, label='Connectivity R²')
+            ax3.plot(r2_iters, vrest_vals, color='#1f77b4', linewidth=2.5, marker='s',
+                     markersize=4, label='V_rest R²')
+            ax3.plot(r2_iters, tau_vals, color='#2ca02c', linewidth=2.5, marker='^',
+                     markersize=4, label='Tau R²')
+            ax3.axhline(y=0.9, color='green', linestyle='--', alpha=0.4, linewidth=1)
+            ax3.set_ylim(-0.05, 1.05)
+            ax3.set_xlabel('iteration', fontsize=16)
+            ax3.set_ylabel('R²', fontsize=16)
+            ax3.set_title('R² Metrics vs iteration', fontsize=18)
+            ax3.legend(fontsize=12, loc='lower right')
+            ax3.grid(True, alpha=0.3)
+            ax3.tick_params(labelsize=14)
+        else:
+            ax3.text(0.5, 0.5, 'No R² data yet', ha='center', va='center',
+                     transform=ax3.transAxes, fontsize=16, color='gray')
+            ax3.set_title('R² Metrics', fontsize=18)
+    else:
+        ax3.text(0.5, 0.5, 'No R² data yet', ha='center', va='center',
+                 transform=ax3.transAxes, fontsize=16, color='gray')
+        ax3.set_title('R² Metrics', fontsize=18)
 
     plt.tight_layout()
     plt.savefig(f'{log_dir}/tmp_training/loss.tif', dpi=150)

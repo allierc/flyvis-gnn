@@ -30,7 +30,7 @@ from flyvis_gnn.models.utils import (
     LossRegularizer,
     _batch_frames,
 )
-from flyvis_gnn.plot import plot_training_flyvis, plot_weight_comparison, plot_training_summary_panels
+from flyvis_gnn.plot import plot_training_flyvis, plot_weight_comparison, plot_training_summary_panels, compute_dynamics_r2
 from flyvis_gnn.utils import (
     to_numpy,
     CustomColorMap,
@@ -282,19 +282,22 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
     training_start_time = time.time()
 
-    # Connectivity R2 log: tracks R2 evolution over training iterations
-    r2_log_path = os.path.join(log_dir, 'tmp_training', 'connectivity_r2.log')
-    with open(r2_log_path, 'w') as f:
-        f.write('epoch,iteration,connectivity_r2\n')
+    # Metrics log: tracks R2 evolution over training iterations
+    metrics_log_path = os.path.join(log_dir, 'tmp_training', 'metrics.log')
+    with open(metrics_log_path, 'w') as f:
+        f.write('epoch,iteration,connectivity_r2,vrest_r2,tau_r2\n')
 
     for epoch in range(start_epoch, tc.n_epochs):
 
         Niter = int(sim.n_frames * tc.data_augmentation_loop // tc.batch_size * 0.2)
         plot_frequency = int(Niter // 20)
         connectivity_plot_frequency = int(Niter // 10)
+        # Early-phase R2: 4 extra checkpoints in [1, connectivity_plot_frequency)
+        early_r2_frequency = max(1, connectivity_plot_frequency // 5)
         n_plots_per_epoch = 4
         plot_iterations = set(int(x) for x in np.linspace(Niter // n_plots_per_epoch, Niter - 1, n_plots_per_epoch))
-        print(f'{Niter} iterations per epoch, plot every {connectivity_plot_frequency} iterations')
+        print(f'{Niter} iterations per epoch, plot every {connectivity_plot_frequency} iterations '
+              f'(early-phase every {early_r2_frequency} iterations)')
 
         total_loss = 0
         total_loss_regul = 0
@@ -304,6 +307,8 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         regularizer.set_epoch(epoch, plot_frequency)
 
         last_connectivity_r2 = None
+        last_vrest_r2 = 0.0
+        last_tau_r2 = 0.0
         field_R2 = None
         field_slope = None
         pbar = trange(Niter, ncols=150)
@@ -528,15 +533,19 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                         {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
                         os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs - 1}_graphs_{epoch}_{N}.pt'))
 
-                if (N % connectivity_plot_frequency == 0) & (not test_neural_field) & (not ('MLP' in model_config.signal_model_name)):
+                # R2 checkpoint: regular interval + early-phase extra points
+                is_regular_r2 = (N > 0) and (N % connectivity_plot_frequency == 0)
+                is_early_r2 = (N > 0) and (N < connectivity_plot_frequency) and (N % early_r2_frequency == 0)
+                if (is_regular_r2 or is_early_r2) & (not test_neural_field) & (not ('MLP' in model_config.signal_model_name)):
                     last_connectivity_r2 = plot_training_flyvis(x_ts, model, config, epoch, N, log_dir, device, type_list, gt_weights, edges, n_neurons=n_neurons, n_neuron_types=sim.n_neuron_types)
-                    with open(r2_log_path, 'a') as f:
-                        f.write(f'{epoch},{N},{last_connectivity_r2:.6f}\n')
+                    last_vrest_r2, last_tau_r2 = compute_dynamics_r2(model, x_ts, config, device, n_neurons)
+                    with open(metrics_log_path, 'a') as f:
+                        f.write(f'{epoch},{N},{last_connectivity_r2:.6f},{last_vrest_r2:.6f},{last_tau_r2:.6f}\n')
 
                 if last_connectivity_r2 is not None:
                     r2 = last_connectivity_r2
                     color = '\033[92m' if r2 > 0.9 else '\033[93m' if r2 > 0.7 else '\033[38;5;208m' if r2 > 0.3 else '\033[91m'
-                    pbar.set_postfix_str(f'{color}R²={r2:.3f}\033[0m')
+                    pbar.set_postfix_str(f'{color}conn={r2:.3f} Vr={last_vrest_r2:.3f} τ={last_tau_r2:.3f}\033[0m')
 
 
                 if (has_visual_field) & (N in plot_iterations):
@@ -956,59 +965,53 @@ def data_train_flyvis_alternate(config, erase, best_model, device, log_file=None
 
     training_start_time = time.time()
 
-    # Connectivity R2 log with phase info
-    r2_log_path = os.path.join(log_dir, 'tmp_training', 'connectivity_r2.log')
-    with open(r2_log_path, 'w') as f:
-        f.write('epoch,iteration,connectivity_r2,phase\n')
+    # Metrics log with phase info
+    metrics_log_path = os.path.join(log_dir, 'tmp_training', 'metrics.log')
+    with open(metrics_log_path, 'w') as f:
+        f.write('epoch,iteration,connectivity_r2,vrest_r2,tau_r2,phase\n')
 
-    # Per-phase LR lookup: phase_name -> {param_group_name -> lr}
+    # Two-stage LR lookup: phase_name -> {param_group_name -> lr}
     phase_lrs = {
-        'W': {
+        'joint': {
             'lin_edge': lr,
             'W': lr_W,
-            'lin_phi': tc.alternate_lr_update,
-            'embedding': tc.alternate_lr_embedding,
+            'lin_phi': lr_update,
+            'embedding': lr_embedding,
         },
         'V_rest': {
-            'lin_edge': tc.alternate_lr_edge,
-            'W': tc.alternate_lr_W,
+            'lin_edge': lr * tc.alternate_lr_ratio,
+            'W': lr_W * tc.alternate_lr_ratio,
             'lin_phi': lr_update,
             'embedding': lr_embedding,
         },
     }
-    print(f'alternate LRs — W-phase: lin_edge={lr}, W={lr_W}, lin_phi={tc.alternate_lr_update}, emb={tc.alternate_lr_embedding}')
-    print(f'alternate LRs — V_rest-phase: lin_edge={tc.alternate_lr_edge}, W={tc.alternate_lr_W}, lin_phi={lr_update}, emb={lr_embedding}')
+    print(f'two-stage LRs — joint: all at full LR')
+    print(f'two-stage LRs — V_rest focus: lin_edge={lr * tc.alternate_lr_ratio:.2e}, W={lr_W * tc.alternate_lr_ratio:.2e}, lin_phi={lr_update}, emb={lr_embedding}')
 
     for epoch in range(start_epoch, tc.n_epochs):
 
         Niter = int(sim.n_frames * tc.data_augmentation_loop // tc.batch_size * 0.2)
         plot_frequency = int(Niter // 20)
         connectivity_plot_frequency = int(Niter // 10)
+        # Early-phase R2: 4 extra checkpoints in [1, connectivity_plot_frequency)
+        early_r2_frequency = max(1, connectivity_plot_frequency // 5)
         n_plots_per_epoch = 4
         plot_iterations = set(int(x) for x in np.linspace(Niter // n_plots_per_epoch, Niter - 1, n_plots_per_epoch))
-        print(f'{Niter} iterations per epoch, plot every {connectivity_plot_frequency} iterations')
+        print(f'{Niter} iterations per epoch, plot every {connectivity_plot_frequency} iterations '
+              f'(early-phase every {early_r2_frequency} iterations)')
 
-        # Build alternating phase schedule
-        n_alt = tc.n_alternations
-        iters_per_cycle = Niter // n_alt
-        w_len = int(iters_per_cycle * (1 - tc.alternate_vrest_ratio))
-        v_len = iters_per_cycle - w_len
-        phases = []
-        pos = 0
-        for cycle in range(n_alt):
-            phases.append(('W', pos, pos + w_len))
-            pos += w_len
-            phases.append(('V_rest', pos, pos + v_len))
-            pos += v_len
+        # Build two-stage phase schedule: joint warmup then V_rest focus
+        joint_iters = int(Niter * tc.alternate_joint_ratio)
+        phases = [('joint', 0, joint_iters), ('V_rest', joint_iters, Niter)]
         current_phase_idx = 0
         current_phase = phases[0][0]
-        print(f'alternating: {n_alt} cycles, W={w_len} iters, V_rest={v_len} iters')
+        print(f'two-stage: joint={joint_iters} iters ({tc.alternate_joint_ratio:.0%}), V_rest focus={Niter - joint_iters} iters ({1 - tc.alternate_joint_ratio:.0%})')
 
-        # Set initial phase LRs (W-phase first)
+        # Set initial phase LRs (joint phase = all at full LR)
         for pg in optimizer.param_groups:
             pg_name = pg.get('name', '')
-            if pg_name in phase_lrs['W']:
-                pg['lr'] = phase_lrs['W'][pg_name]
+            if pg_name in phase_lrs['joint']:
+                pg['lr'] = phase_lrs['joint'][pg_name]
 
         total_loss = 0
         total_loss_regul = 0
@@ -1018,11 +1021,13 @@ def data_train_flyvis_alternate(config, erase, best_model, device, log_file=None
         regularizer.set_epoch(epoch, plot_frequency)
 
         last_connectivity_r2 = None
+        last_vrest_r2 = 0.0
+        last_tau_r2 = 0.0
         field_R2 = None
         field_slope = None
         pbar = trange(Niter, ncols=150)
         # === LLM-MODIFIABLE: TRAINING LOOP START ===
-        # Main training loop with alternating W/V_rest phases.
+        # Main training loop with two-stage joint/V_rest phases.
         # Suggested changes: loss function, gradient clipping,
         # data sampling strategy, LR scheduler steps, early stopping.
         # Do NOT change: function signature, model construction, data loading, return values.
@@ -1034,6 +1039,7 @@ def data_train_flyvis_alternate(config, erase, best_model, device, log_file=None
                 new_phase = phases[current_phase_idx][0]
                 if new_phase != current_phase:
                     current_phase = new_phase
+                    print(f'\n>>> Phase transition at iter {N}: {current_phase} (lr_ratio={tc.alternate_lr_ratio if current_phase == "V_rest" else 1.0})')
                     for pg in optimizer.param_groups:
                         pg_name = pg.get('name', '')
                         if pg_name in phase_lrs[current_phase]:
@@ -1254,15 +1260,19 @@ def data_train_flyvis_alternate(config, erase, best_model, device, log_file=None
                         {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
                         os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs - 1}_graphs_{epoch}_{N}.pt'))
 
-                if (N % connectivity_plot_frequency == 0) & (not test_neural_field) & (not ('MLP' in model_config.signal_model_name)):
+                # R2 checkpoint: regular interval + early-phase extra points
+                is_regular_r2 = (N > 0) and (N % connectivity_plot_frequency == 0)
+                is_early_r2 = (N > 0) and (N < connectivity_plot_frequency) and (N % early_r2_frequency == 0)
+                if (is_regular_r2 or is_early_r2) & (not test_neural_field) & (not ('MLP' in model_config.signal_model_name)):
                     last_connectivity_r2 = plot_training_flyvis(x_ts, model, config, epoch, N, log_dir, device, type_list, gt_weights, edges, n_neurons=n_neurons, n_neuron_types=sim.n_neuron_types)
-                    with open(r2_log_path, 'a') as f:
-                        f.write(f'{epoch},{N},{last_connectivity_r2:.6f},{current_phase}\n')
+                    last_vrest_r2, last_tau_r2 = compute_dynamics_r2(model, x_ts, config, device, n_neurons)
+                    with open(metrics_log_path, 'a') as f:
+                        f.write(f'{epoch},{N},{last_connectivity_r2:.6f},{last_vrest_r2:.6f},{last_tau_r2:.6f},{current_phase}\n')
 
                 if last_connectivity_r2 is not None:
                     r2 = last_connectivity_r2
                     color = '\033[92m' if r2 > 0.9 else '\033[93m' if r2 > 0.7 else '\033[38;5;208m' if r2 > 0.3 else '\033[91m'
-                    pbar.set_postfix_str(f'{color}R²={r2:.3f}\033[0m')
+                    pbar.set_postfix_str(f'{color}conn={r2:.3f} Vr={last_vrest_r2:.3f} τ={last_tau_r2:.3f} [{current_phase}]\033[0m')
 
 
                 if (has_visual_field) & (N in plot_iterations):
@@ -2237,7 +2247,9 @@ def data_test_flyvis(
             "vertical_splits": 1,
             "center_crop_fraction": 0.6,
             "augment": False,
-            "unittest": False
+            "unittest": False,
+            "shuffle_sequences": True,
+            "shuffle_seed": sim.seed,
         }
 
         # create dataset(s)

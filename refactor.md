@@ -15,9 +15,9 @@ Each step must be validated by running `python GNN_Test.py --config flyvis_62_1_
 | 7 | Rename PDE_N9 / fly_N9 → flyvis | DONE |
 | 8 | LLM File Reorganization | DONE |
 | 9 | LLM Exploration Compatibility | DONE |
-| 10 | Connectivity R2 Logging | DONE |
+| 10 | Training Metrics Logging (conn, V_rest, tau R²) | DONE |
 | 11 | Training Loop Refinements | DONE |
-| 12 | Alternating W/V_rest Phase Training | DONE |
+| 12 | Two-Stage Training (Joint → V_rest Focus) | DONE |
 | 13 | Migrate All Plot Functions to FigureStyle | PENDING |
 
 ---
@@ -648,34 +648,43 @@ python GNN_Test.py --config flyvis_62_1_gs --cluster
 
 ---
 
-## Step 10. Connectivity R2 Logging [DONE]
+## Step 10. Training Metrics Logging (conn, V_rest, tau R²) [DONE]
 
 ### The problem
 
-During training, connectivity R² (the key metric for weight reconstruction quality) was only visible in plot images. There was no way to programmatically track R² evolution over iterations, detect decay patterns, or compare trajectories across runs.
+During training, connectivity R² was only visible in plot images. V_rest R² and tau R² were never computed during training at all — only post-training in `GNN_PlotFigure.py`. There was no way to programmatically track any R² evolution over iterations, detect decay patterns, or compare trajectories across runs.
 
 ### The solution
 
-A CSV log file `tmp_training/connectivity_r2.log` is written during training:
+A unified CSV log file `tmp_training/metrics.log` is written during training, tracking all three R² metrics:
 
 ```
-epoch,iteration,connectivity_r2
-0,640,0.4523
-0,1280,0.7189
-0,1920,0.8534
+epoch,iteration,connectivity_r2,vrest_r2,tau_r2
+0,640,0.4523,0.0012,0.3201
+0,1280,0.7189,0.1534,0.5678
+0,1920,0.8534,0.3201,0.7123
 ...
 ```
 
-In `data_train_flyvis()`, `plot_training_flyvis()` now returns the current R² value, which is appended to the log at each connectivity plot step. The alternating trainer adds a `phase` column to distinguish W-phase from V_rest-phase R² values.
+The alternating trainer adds a `phase` column (`joint`/`V_rest`) to distinguish training phases.
 
-The LLM exploration instructions use this log for R² trajectory monitoring: peak R², final R², trend (rising/stable/decaying), and per-phase analysis in alternating training.
+A new function `compute_dynamics_r2()` in `plot.py` computes V_rest R² and tau R² during training by:
+1. Loading ground truth `V_i_rest.pt` and `tau_i.pt`
+2. Extracting linearized slopes/offsets from `lin_phi` via `extract_lin_phi_slopes()`
+3. Computing `learned_V_rest = -offset / slope` and `learned_tau = 1 / (-slope)`
+4. Returning `(vrest_r2, tau_r2)` via `compute_r_squared()`
+
+Early-phase R² checkpoints (5x frequency in the first interval) provide finer resolution during the critical initial learning period.
+
+The loss plot (`plot_signal_loss`) and training summary panels now show all three R² curves. The LLM exploration instructions use `metrics.log` for trajectory monitoring: peak R², final R², trend (rising/stable/decaying), and per-phase analysis in alternating training.
 
 ### Files modified
 
 | File | Changes |
 |------|---------|
-| `src/flyvis_gnn/models/graph_trainer.py` | R² log creation and appending in `data_train_flyvis` and `data_train_flyvis_alternate` |
-| `src/flyvis_gnn/plot.py` | `plot_training_flyvis` returns conn_R² value |
+| `src/flyvis_gnn/models/graph_trainer.py` | `metrics.log` creation and appending in `data_train_flyvis` and `data_train_flyvis_alternate`, early-phase R² checkpoints |
+| `src/flyvis_gnn/plot.py` | `compute_dynamics_r2()` (new), `plot_signal_loss` + `plot_training_summary_panels` updated for 3 R² curves |
+| `src/flyvis_gnn/models/utils.py` | `save_exploration_artifacts_flyvis` copies `metrics.log` instead of `connectivity_r2.log` |
 
 ---
 
@@ -693,7 +702,7 @@ Several targeted improvements to the training loop in `data_train_flyvis()`:
 
 ---
 
-## Step 12. Alternating W/V_rest Phase Training [DONE]
+## Step 12. Two-Stage Training (Joint → V_rest Focus) [DONE]
 
 ### The problem
 
@@ -701,46 +710,43 @@ The flyvis GNN has two component groups that converge at different speeds:
 - **Fast components**: `lin_edge` (g_phi) and `W` — learn connectivity structure (conn_R²)
 - **Slow components**: `lin_phi` (f_theta) and embedding `a` — learn V_rest, tau dynamics
 
-Standard training causes conn_R² to peak early then decay, because continued full-LR optimization of all components creates interference between fast and slow learning.
+The original cyclic alternation approach (68 iterations) failed: V_rest R² ≈ 0 (worse than standard training's 0.19–0.73), conn_R² maxed at 0.88 (vs 0.944 gold standard). Root cause: alternation starts before connectivity is established, so V_rest gradients are meaningless in early training.
 
-### The solution: alternating phase training
+### The solution: two-stage training
 
-A new training function `data_train_flyvis_alternate()` (line 791 in `graph_trainer.py`) splits each epoch into alternating W-phase and V_rest-phase segments:
+A revised `data_train_flyvis_alternate()` in `graph_trainer.py` uses a two-stage approach with doubled training time (2 epochs):
 
-- **W-phase**: Full LR for `lin_edge` + `W`, reduced LR for `lin_phi` + `embedding`
-- **V_rest-phase**: Full LR for `lin_phi` + `embedding`, reduced LR for `lin_edge` + `W`
+1. **Joint phase** (first 40% of iterations): All components train at full learning rate. Establishes good connectivity structure first.
+2. **V_rest focus phase** (remaining 60%): `lin_phi` + `embedding` at full LR, `W` + `lin_edge` at reduced LR (`lr × alternate_lr_ratio`). Maintains connectivity while allowing V_rest/tau to converge.
 
-Six new config parameters in `TrainingConfig` (`config.py`):
+Three config parameters in `TrainingConfig` (`config.py`):
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `alternate_training` | `false` | Enable alternating training |
-| `n_alternations` | `4` | Number of W/V_rest cycles per epoch |
-| `alternate_vrest_ratio` | `0.5` | Fraction of each cycle for V_rest-phase |
-| `alternate_lr_W` | `6e-7` | W learning rate during V_rest-phase |
-| `alternate_lr_edge` | `1.2e-6` | lin_edge learning rate during V_rest-phase |
-| `alternate_lr_update` | `1.2e-6` | lin_phi learning rate during W-phase |
-| `alternate_lr_embedding` | `1.55e-6` | embedding learning rate during W-phase |
+| `alternate_training` | `false` | Enable two-stage training |
+| `alternate_joint_ratio` | `0.4` | Fraction of total iterations for joint phase |
+| `alternate_lr_ratio` | `0.1` | LR multiplier for W/lin_edge during V_rest focus phase |
 
-Dispatch in `data_train()` routes to the alternating trainer when `config.training.alternate_training` is true. Parameter groups in `set_trainable_parameters()` (`models/utils.py`) have `name` and `base_lr` fields so the phase-switching code can identify and scale learning rates.
+Dispatch in `data_train()` routes to the two-stage trainer when `config.training.alternate_training` is true. Parameter groups in `set_trainable_parameters()` (`models/utils.py`) have `name` and `base_lr` fields so the phase-switching code can identify and scale learning rates.
 
-The R² log includes a `phase` column for alternating training, enabling per-phase trajectory analysis.
+The `metrics.log` includes a `phase` column (`joint`/`V_rest`) for two-stage training, enabling per-phase trajectory analysis of all three R² metrics.
 
 ### Files modified
 
 | File | Changes |
 |------|---------|
-| `src/flyvis_gnn/config.py` | 6 new `TrainingConfig` fields |
-| `src/flyvis_gnn/models/graph_trainer.py` | `data_train_flyvis_alternate()` (new), dispatch in `data_train()` |
+| `src/flyvis_gnn/config.py` | 3 `TrainingConfig` fields (replaced 7 from cyclic approach) |
+| `src/flyvis_gnn/models/graph_trainer.py` | `data_train_flyvis_alternate()` rewritten for two-stage, dispatch in `data_train()` |
 | `src/flyvis_gnn/models/utils.py` | `name` and `base_lr` fields on param groups |
-| `config/fly/flyvis_62_1_gs_alternate.yaml` | New config with `alternate_training: true` |
-| `LLM/instruction_flyvis_62_1_gs_alternate.md` | Base instruction for alternating exploration |
+| `config/fly/flyvis_62_1_gs_alternate.yaml` | Gold standard params + two-stage config (2 epochs) |
+| `config/fly/flyvis_62_1_gs_alternate_Claude_00-03.yaml` | Parallel slot configs matching base |
+| `LLM/instruction_flyvis_62_1_gs_alternate.md` | Base instruction for two-stage exploration |
 | `LLM/instruction_flyvis_62_1_gs_alternate_parallel.md` | Parallel mode addendum |
 
 ### Validation
 
 ```bash
-python GNN_LLM_parallel_flyvis.py -o generate_train_test_plot_Claude_cluster flyvis_62_1_gs_alternate iterations=144 instruction=instruction_flyvis_62_1_gs_alternate
+python GNN_LLM_parallel_flyvis.py -o generate_train_test_plot_Claude_cluster flyvis_62_1_gs_alternate iterations=12 instruction=instruction_flyvis_62_1_gs_alternate
 ```
 
 ---

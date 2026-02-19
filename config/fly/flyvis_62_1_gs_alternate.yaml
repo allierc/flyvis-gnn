@@ -1,4 +1,4 @@
-description: "Alternating W/V_rest phase training for flyvis_62_1_gs"
+description: "Two-stage training (joint warmup + V_rest focus) for flyvis_62_1_gs"
 dataset: flyvis_62_1_gs
 simulation:
   connectivity_file: to be specified
@@ -42,7 +42,7 @@ plotting:
   - -100
   - 100
 training:
-  n_epochs: 1
+  n_epochs: 2
   n_runs: 1
   device: auto
   recurrent_training: false
@@ -51,7 +51,7 @@ training:
   small_init_batch_size: false
   sparsity: none
   data_augmentation_loop: 20
-  learning_rate_W_start: 0.0006
+  learning_rate_W_start: 0.0005
   learning_rate_start: 0.0012
   learning_rate_embedding_start: 0.00155
   coeff_edge_diff: 750
@@ -62,22 +62,18 @@ training:
   coeff_phi_weight_L1: 0.5
   coeff_phi_weight_L1_rate: 0.4
   coeff_edge_weight_L2: 0
-  coeff_phi_weight_L2: 0.001
+  coeff_phi_weight_L2: 0.0015
   coeff_W_L1: 3.3e-05
   coeff_W_L1_rate: 0.5
-  coeff_W_L2: 2.5e-06
-  w_init_mode: zeros
-  # Alternating training
+  coeff_W_L2: 3.5e-06
+  w_init_mode: "randn_scaled"
+  # Two-stage training
   alternate_training: true
-  n_alternations: 4
-  alternate_vrest_ratio: 0.5
-  alternate_lr_W: 6e-7
-  alternate_lr_edge: 1.2e-6
-  alternate_lr_update: 1.2e-6
-  alternate_lr_embedding: 1.55e-6
+  alternate_joint_ratio: 0.4
+  alternate_lr_ratio: 0.1
   seed: 42
 claude:
-  n_epochs: 1
+  n_epochs: 2
   data_augmentation_loop: 25
   n_iter_block: 12
   ucb_c: 1.414

@@ -1062,6 +1062,7 @@ def save_exploration_artifacts_flyvis(root_dir, exploration_dir, config, config_
     tree_save_dir = f"{exploration_dir}/exploration_tree"
     protocol_save_dir = f"{exploration_dir}/protocol"
     memory_save_dir = f"{exploration_dir}/memory"
+    r2_trajectory_dir = f"{exploration_dir}/r2_trajectory"
 
     # create directories at start of experiment (clear only on iteration 1)
     if iteration == 1:
@@ -1070,7 +1071,8 @@ def save_exploration_artifacts_flyvis(root_dir, exploration_dir, config, config_
     # always ensure directories exist (for resume support)
     for d in [config_save_dir, connectivity_scatter_dir, connectivity_matrix_dir,
               activity_dir, embedding_dir, tau_scatter_dir, v_rest_scatter_dir,
-              mlp0_dir, mlp1_dir, umap_dir, tree_save_dir, protocol_save_dir, memory_save_dir]:
+              mlp0_dir, mlp1_dir, umap_dir, tree_save_dir, protocol_save_dir,
+              memory_save_dir, r2_trajectory_dir]:
         os.makedirs(d, exist_ok=True)
 
     is_block_start = (iter_in_block == 1)
@@ -1140,6 +1142,12 @@ def save_exploration_artifacts_flyvis(root_dir, exploration_dir, config, config_
     if umap_files:
         latest = max(umap_files, key=os.path.getmtime)
         shutil.copy2(latest, f"{umap_dir}/iter_{iteration:03d}.png")
+
+    # r2_trajectory: metrics.log (training R2 trajectory per iteration)
+    training_dir = f"{root_dir}/log/{pre_folder}{config_file_}/tmp_training"
+    r2_log_src = f"{training_dir}/metrics.log"
+    if os.path.exists(r2_log_src):
+        shutil.copy2(r2_log_src, f"{r2_trajectory_dir}/iter_{iteration:03d}.log")
 
     # --- Per-block panels (block start only) ---
 

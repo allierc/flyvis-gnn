@@ -1,20 +1,20 @@
-# FlyVis GNN Training Exploration — flyvis_62_1_gs_alternate (alternating W/V_rest phases)
+# FlyVis GNN Training Exploration — flyvis_62_1_gs_alternate (two-stage: joint + V_rest focus)
 
 **Reference**: See `papers/cosyne2026.tex` for model and regularization context.
-**Prior exploration**: 144 iterations on `flyvis_62_1` (see `log/Claude_exploration/instruction_flyvis_62_1_parallel/`).
+**Prior exploration**: 68 iterations of cyclic alternation failed (V_rest_R2 ≈ 0, conn_R2 max 0.88).
 **Base config**: `instruction_flyvis_62_1_gs.md` — all established principles apply unless overridden here.
 
 ## Goal
 
-Find an **alternating training schedule** that prevents the conn_R2 overshoot-then-decay pattern observed in standard training.
+Improve **V_rest R²** via two-stage training while maintaining gold standard **conn_R² ≈ 0.94**.
 
-**Problem**: In standard training, conn_R2 peaks above 0.9 early but decays below 0.9 by end of training. The fast components (lin_edge, W) and slow components (lin_phi, embedding) interfere when trained simultaneously.
+**Problem**: Standard training achieves conn_R2=0.944 but V_rest_R2 is highly variable (0.19–0.73). The previous cyclic alternation approach (68 iterations) failed — V_rest R2 ≈ 0, conn_R2 maxed at 0.88.
 
-**Solution**: Alternate between two training phases within each epoch:
-- **W-phase**: Full LR for lin_edge + W, reduced LR for lin_phi + embedding
-- **V_rest-phase**: Full LR for lin_phi + embedding, reduced LR for lin_edge + W
+**Solution**: Two-stage training within each epoch:
+- **Joint phase** (first ~40% of iterations): all components at full LR — establish connectivity
+- **V_rest focus phase** (remaining ~60%): lin_phi + embedding at full LR, W + lin_edge at reduced LR (0.1x) — dedicated V_rest optimization while maintaining connectivity
 
-**Primary metric**: Final conn_R2 should be >= peak conn_R2 (no decay). Secondary: V_rest_R2 should improve with dedicated slow-component training.
+Double training time (2 epochs) vs gold standard baseline.
 
 **Data is RE-GENERATED each iteration** — see `instruction_flyvis_62_1_gs.md` for robustness principles.
 
@@ -29,77 +29,84 @@ Each config has two seed fields: `simulation.seed` (controls data generation) an
 
 Always set both seeds in the config YAML and log them. When reporting variance, note which seed mode was used.
 
-## Alternating Training Mechanism
+## Two-Stage Training Mechanism
 
-The epoch's Niter iterations are split into `n_alternations` cycles. Each cycle has a W-phase and a V_rest-phase. The `alternate_vrest_ratio` controls the fraction of each cycle devoted to V_rest-phase.
+Each epoch's Niter iterations are split into two phases:
+
+1. **Joint phase** (iterations 0 to `joint_iters`): All 4 parameter groups at full LR. Standard training — establishes connectivity (conn_R2 ≈ 0.85–0.90).
+2. **V_rest focus phase** (iterations `joint_iters` to `Niter`): lin_phi and embedding at full LR, W and lin_edge at `lr * alternate_lr_ratio`. Connectivity maintained via moderate LR, V_rest has dedicated optimization time.
+
+`joint_iters = int(Niter * alternate_joint_ratio)`
 
 ### Phase LR Structure
 
-Each of the 4 parameter groups has its own LR for each phase:
-
-| Parameter Group | W-phase LR | V_rest-phase LR |
-|----------------|------------|-----------------|
-| lin_edge (g_phi) | `learning_rate_start` (1.2E-3) | `alternate_lr_edge` (1.2E-6) |
-| W | `learning_rate_W_start` (6E-4) | `alternate_lr_W` (6E-7) |
-| lin_phi (f_theta) | `alternate_lr_update` (1.2E-6) | `learning_rate_start` (1.2E-3) |
-| embedding | `alternate_lr_embedding` (1.55E-6) | `learning_rate_embedding_start` (1.55E-3) |
-
-Default inactive LRs are 0.001x the active LR (nearly frozen, but not zero).
+| Parameter Group | Joint phase LR | V_rest focus phase LR |
+|----------------|---------------|----------------------|
+| lin_edge (g_phi) | `learning_rate_start` (1.2E-3) | `lr * alternate_lr_ratio` (1.2E-4) |
+| W | `learning_rate_W_start` (5E-4) | `lr_W * alternate_lr_ratio` (5E-5) |
+| lin_phi (f_theta) | `learning_rate_start` (1.2E-3) | `learning_rate_start` (1.2E-3) |
+| embedding | `learning_rate_embedding_start` (1.55E-3) | `learning_rate_embedding_start` (1.55E-3) |
 
 ### Config Parameters (explorable)
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `n_alternations` | 4 | Number of W/V_rest cycles per epoch |
-| `alternate_vrest_ratio` | 0.5 | Fraction of each cycle for V_rest-phase (0.5 = equal) |
-| `alternate_lr_W` | 6E-7 | W learning rate during V_rest-phase |
-| `alternate_lr_edge` | 1.2E-6 | lin_edge learning rate during V_rest-phase |
-| `alternate_lr_update` | 1.2E-6 | lin_phi learning rate during W-phase |
-| `alternate_lr_embedding` | 1.55E-6 | embedding learning rate during W-phase |
+| Parameter | Default | Explore Range | Description |
+|-----------|---------|---------------|-------------|
+| `alternate_joint_ratio` | 0.4 | 0.2, 0.3, 0.4, 0.5, 0.6 | Fraction of total iterations for joint phase |
+| `alternate_lr_ratio` | 0.1 | 0.01, 0.05, 0.1, 0.2, 0.3 | LR multiplier for W/lin_edge during V_rest focus |
+| `n_epochs` | 2 | 2, 3 | Number of epochs (doubled vs standard) |
+| `data_augmentation_loop` | 20 | 20, 25, 30 | Data augmentation multiplier |
 
-**DO NOT change** `alternate_training: true` — this selects the alternate trainer.
+**DO NOT change** `alternate_training: true` — this selects the two-stage trainer.
 
-### R2 Trajectory Monitoring
+### Metrics Log Monitoring
 
-The file `tmp_training/connectivity_r2.log` now includes a `phase` column:
+The file `tmp_training/metrics.log` tracks all R² metrics during training:
 ```
-epoch,iteration,connectivity_r2,phase
-0,640,0.45,W
-0,1280,0.72,W
-0,1920,0.71,V_rest
-0,2560,0.85,W
+epoch,iteration,connectivity_r2,vrest_r2,tau_r2,phase
+0,2560,0.45,0.02,0.10,joint
+0,5120,0.72,0.05,0.35,joint
+0,12800,0.88,0.08,0.60,joint
+0,51200,0.85,0.15,0.65,V_rest
+0,64000,0.87,0.25,0.70,V_rest
 ...
 ```
 
-**Key pattern to look for**: Does R2 hold steady or increase during V_rest-phase? Does it jump during W-phase? A healthy alternating training should show:
-- R2 increases during W-phases (fast component learning)
-- R2 holds stable or slightly increases during V_rest-phases (slow component catches up without W drift)
-- Final R2 >= peak R2 (no decay)
+**Key patterns to look for**:
+- conn_R2 should rise during joint phase to ≈ 0.85–0.90
+- conn_R2 should hold steady or slightly decline during V_rest focus (0.1x LR maintains it)
+- vrest_R2 and tau_R2 should increase during V_rest focus phase
+- If conn_R2 drops significantly during V_rest focus → alternate_lr_ratio too low
+- If vrest_R2 doesn't improve during V_rest focus → alternate_lr_ratio too high (fast components dominate gradients)
 
-**Unhealthy pattern**: R2 drops during V_rest-phase → the inactive LR for W/lin_edge may be too high (model drifts), or the V_rest-phase is too long.
-
-## Established Principles (from flyvis_62_1, 144 iterations)
+## Established Principles (from flyvis_62_1, gold standard)
 
 All strict optima from `instruction_flyvis_62_1_gs.md` apply:
-1. **lr_W=6E-4**, **lr=1.2E-3**, **lr_emb=1.55E-3** — strictly optimal for active-phase LRs
-2. **coeff_edge_diff=750**, **coeff_phi_weight_L1=0.5**, **coeff_edge_weight_L1=0.28-0.3**
-3. **batch_size=2**, **hidden_dim=80**, **w_init_mode=zeros**
-4. **recurrent_training=False** (globally — but may be explored during V_rest-phase only in later blocks)
+1. **lr_W=5E-4**, **lr=1.2E-3**, **lr_emb=1.55E-3** — strictly optimal for active-phase LRs
+2. **coeff_phi_weight_L2=0.0015**, **coeff_W_L2=3.5E-6** — gold standard regularization
+3. **coeff_edge_diff=750**, **coeff_phi_weight_L1=0.5**, **coeff_edge_weight_L1=0.28-0.3**
+4. **batch_size=2**, **hidden_dim=80**, **w_init_mode=randn_scaled**
+5. **recurrent_training=False**
 
 ## Block Partition (suggested)
 
 | Block | Focus | Strategy |
 |-------|-------|----------|
-| 1 | Baseline measurement | Run defaults (n_alt=4, ratio=0.5, default inactive LRs) 8-12 times to measure variance and establish whether alternating helps vs standard training |
-| 2 | n_alternations | Test 2, 4, 6, 8 cycles per epoch — more cycles = more fine-grained alternation |
-| 3 | Inactive LRs | Test alternate_lr_W and alternate_lr_edge at 0, 1E-7, 1E-6, 1E-5 — how frozen should the fast component be during V_rest-phase? |
-| 4 | V_rest ratio | Test alternate_vrest_ratio at 0.3, 0.5, 0.7 — does more V_rest-phase time improve V_rest_R2? |
-| 5 | Slow-phase LRs | Test alternate_lr_update and alternate_lr_embedding at different values during W-phase |
-| 6 | Best config replication | Replicate best config 4+ times for robustness |
+| 1 | Baseline measurement | Run defaults (joint_ratio=0.4, lr_ratio=0.1, 2 epochs) 12 times for variance |
+| 2 | Joint ratio | Vary alternate_joint_ratio (0.2, 0.3, 0.4, 0.5) — how much warmup before V_rest focus? |
+| 3 | LR ratio | Vary alternate_lr_ratio (0.01, 0.05, 0.1, 0.2) — how frozen should fast components be? |
+| 4 | Training budget | Vary n_epochs (2, 3) and data_augmentation_loop (20, 25, 30) |
+| 5 | Best config replication | Replicate best config 4+ times for robustness |
+
+## Previous Results (cyclic alternation — FAILED)
+
+68 iterations of cyclic W/V_rest alternation showed:
+- conn_R2: max 0.88 (vs 0.944 gold standard) — significantly worse
+- V_rest_R2: ≈ 0 across all configs — complete failure
+- Root cause: alternation from iteration 0 before connectivity established; 0.001x LR too aggressive
 
 ## FlyVis Model
 
-Same as `instruction_flyvis_62_1_gs.md` — see that file for model equations, architecture, regularization parameters, and training time constraints.
+Same as `instruction_flyvis_62_1_gs.md`.
 
 ## Iteration Loop Structure
 
@@ -117,38 +124,39 @@ Same as `instruction_flyvis_62_1_gs.md`, with these additions:
 
 ### Step 2: Analyze Current Results
 
-In addition to standard metrics, always check `connectivity_r2.log` for the R2 trajectory:
-- Report **peak R2**, **final R2**, and **trend** (rising/stable/decaying)
-- Note which phase (W or V_rest) the R2 measurements fall in
-- Compare final R2 to standard training baseline
+In addition to standard metrics, always check `metrics.log` for the R² trajectory:
+- Report **peak conn_R2**, **final conn_R2**, and **trend** (rising/stable/decaying)
+- Report **vrest_R2** and **tau_R2** trajectory
+- Note which phase (joint or V_rest) the R2 measurements fall in
+- Compare against gold standard baseline
 
 ### Step 3: Write Outputs
 
-Log format includes R2 trajectory and alternation config:
+Log format includes R2 trajectory and two-stage config:
 
 ```
 ## Iter N: [converged/partial/failed]
 Node: id=N, parent=P
 Mode/Strategy: [strategy]
 Seeds: sim_seed=X, train_seed=Y, rationale=[same-data-robustness / different-data-generalization / suggested-default]
-Config: lr_W=X, lr=Y, lr_emb=Z, n_alt=A, vrest_ratio=B, alt_lr_W=C, alt_lr_edge=D, alt_lr_update=E, alt_lr_emb=F
+Config: lr_W=X, lr=Y, lr_emb=Z, joint_ratio=A, lr_ratio=B, n_epochs=C, aug_loop=D
 Metrics: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, test_pearson=F, training_time_min=G
-R2 trajectory: peak=X at iter Y, final=Z, trend=[rising/stable/decaying]
+R2 trajectory: conn peak=X final=Y trend=[...], vrest peak=X final=Y trend=[...], tau peak=X final=Y trend=[...]
 Embedding: [visual observation]
 Mutation: [param]: [old] -> [new]
 Parent rule: [one line]
-Observation: [one line — compare to standard training R2 decay pattern]
+Observation: [one line]
 Variance update: [config_id] now has N runs, CV(conn_R2)=X%, CV(V_rest_R2)=Y%
 Next: parent=P
 ```
 
 ## Known Results (baseline comparison)
 
-### Standard training (flyvis_62_1_gs, no alternation):
-- conn_R2: typically 0.95-0.98 peak, may decay to 0.88-0.93 by end
+### Standard training (flyvis_62_1_gs, gold standard):
+- conn_R2: 0.944 mean (12 runs, CV=3.8%)
 - V_rest_R2: 0.19-0.73 range (highly variable)
 - tau_R2: ~0.97 (stable)
 - cluster_accuracy: ~0.88
 
 ### Key question
-Does alternating training prevent the conn_R2 peak-then-decay pattern while maintaining or improving V_rest_R2?
+Does two-stage training improve V_rest R² while maintaining conn_R² ≈ 0.94?

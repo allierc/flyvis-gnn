@@ -205,17 +205,30 @@ Read `{config}_memory.md` to recall established principles, variance estimates, 
 - `test_pearson`: Pearson correlation of one-step prediction
 - `training_time_min`: Training duration in minutes
 
-**R2 evolution from `connectivity_r2.log`:**
+**R2 Trajectory Monitoring from `metrics.log`:**
 
-The file `tmp_training/connectivity_r2.log` (in the run's log directory) records `epoch,iteration,connectivity_r2` every time R2 is computed during training. **Always check this file** to assess the R2 trajectory:
+The file `tmp_training/metrics.log` (in the run's log directory) records all three R2 metrics every time they are computed during training. Format:
 
-- **Healthy training**: R2 should increase monotonically or plateau. Typical pattern: fast rise to ~0.9 in the first third, then gradual climb to 0.95+.
-- **Overshoot-then-decay**: R2 peaks above 0.9 early but then **decreases** below 0.9 by end of training. This indicates the model is over-fitting to the prediction loss at the expense of the connectivity structure. Flag this in the observation.
+```
+epoch,iteration,connectivity_r2,vrest_r2,tau_r2
+```
+
+(No phase column for standard training.) **Always check this file** to assess the full R2 trajectory — do not rely on final values alone.
+
+**The conn_R2 decay problem (PRIMARY ISSUE TO SOLVE):**
+
+The main failure mode is: conn_R2 peaks early (~0.95-0.98) then **decays below 0.9** by the end of training. This is the single most important problem to diagnose and fix. The goal is **monotonically increasing conn_R2** reaching **>0.95 at the end of training** — not just at the peak.
+
+- **Healthy training**: conn_R2 should increase monotonically or plateau. Typical pattern: fast rise to ~0.9 in the first third, then gradual climb to 0.95+. The final value should be close to the peak.
+- **Overshoot-then-decay** (the conn_R2 decay problem): conn_R2 peaks above 0.9 early but then **decreases** below 0.9 by end of training. This indicates the model is over-fitting to the prediction loss at the expense of the connectivity structure. **Flag this prominently in the observation.**
 - **When overshoot-then-decay is observed**:
   - Stronger regularization may help (higher `coeff_edge_diff`, `coeff_W_L1`, `coeff_edge_weight_L1`)
   - Lower learning rates (especially `lr_W`) slow the drift away from good connectivity
-  - Note the **peak R2** and the **final R2** in the log entry
-  - A config where R2 monotonically reaches 0.93 is more reliable than one that peaks at 0.97 but ends at 0.88
+  - Note the **peak conn_R2**, the **iteration of the peak**, and the **final conn_R2** in the log entry
+  - A config where conn_R2 monotonically reaches 0.93 is more reliable than one that peaks at 0.97 but ends at 0.88
+  - Look at the full trajectory shape, not just the endpoints
+
+**V_rest R2 and tau R2** are also logged in `metrics.log` for visibility. Monitor their trajectories as well — V_rest R2 is often the most variable metric and may show different trajectory patterns than conn_R2.
 
 **Classification:**
 

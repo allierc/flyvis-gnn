@@ -159,6 +159,8 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
             "augment": False,
             "unittest": False,
             "skip_short_videos": sim.skip_short_videos,
+            "shuffle_sequences": True,
+            "shuffle_seed": sim.seed,
         }
 
         # create dataset(s)
@@ -351,6 +353,31 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     else:
         target_frames = n_frames
         num_passes_needed = (target_frames // total_frames_per_pass) + 1
+
+    # Plot first frame of first N sequences to verify shuffle diversity
+    if visualize and hasattr(stimulus_dataset, '__getitem__'):
+        n_preview = min(16, len(stimulus_dataset))
+        fig_preview, axes_preview = plt.subplots(2, min(8, n_preview), figsize=(min(8, n_preview) * 2, 4))
+        if n_preview <= 8:
+            axes_preview = axes_preview.reshape(2, -1) if axes_preview.ndim == 2 else np.array([[axes_preview[0]], [axes_preview[1]]])
+        for i in range(n_preview):
+            row = i // 8
+            col = i % 8
+            lum = stimulus_dataset[i]["lum"]
+            ax = axes_preview[row, col] if n_preview > 8 else axes_preview[0, i]
+            ax.plot(lum[0].squeeze().cpu().numpy() if isinstance(lum, torch.Tensor) else lum[0].squeeze(), linewidth=0.5)
+            ax.set_title(f"seq {i}", fontsize=7)
+            ax.set_xticks([])
+            ax.set_yticks([])
+        # hide unused axes
+        for ax in axes_preview.flat:
+            if not ax.has_data():
+                ax.set_visible(False)
+        fig_preview.suptitle(f"First frame of first {n_preview} sequences (shuffle_seed={sim.seed})", fontsize=9)
+        fig_preview.tight_layout()
+        fig_preview.savefig(f"./graphs_data/{config.dataset}/Fig/shuffle_first_frames.png", dpi=150)
+        plt.close(fig_preview)
+        print(f"saved shuffle verification figure: graphs_data/{config.dataset}/Fig/shuffle_first_frames.png")
 
     # use zarr writers for incremental saving (memory efficient)
     # V3 format: each NeuronState field gets its own zarr array

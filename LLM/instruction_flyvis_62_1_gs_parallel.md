@@ -10,6 +10,24 @@ Unlike `flyvis_62_1`, each slot **regenerates data** before training. The simula
 - When 2+ slots have the same config, compute mean/std/CV immediately from the batch
 - 4 identical slots in one batch = 4 data points for the variance estimate
 
+## R2 Trajectory Monitoring (metrics.log)
+
+Each slot produces a `tmp_training/metrics.log` file with format:
+
+```
+epoch,iteration,connectivity_r2,vrest_r2,tau_r2
+```
+
+(No phase column for standard training.) **Always check this file for every slot** to assess the full R2 trajectory — do not rely on final values from `analysis.log` alone.
+
+**The conn_R2 decay problem (PRIMARY ISSUE TO SOLVE):**
+
+The main failure mode is: conn_R2 peaks early (~0.95-0.98) then **decays below 0.9** by the end of training. The goal is **monotonically increasing conn_R2** reaching **>0.95 at the end of training** — not just at the peak. Look at the full trajectory shape across all 4 slots to determine whether a config produces healthy or decaying conn_R2 curves.
+
+V_rest R2 and tau R2 are also logged for visibility. Monitor their trajectories as well — V_rest R2 is often the most variable metric.
+
+See the base instruction file (`instruction_flyvis_62_1_gs.md`) for the full description of healthy vs overshoot-then-decay patterns.
+
 ## Batch Processing
 
 - You receive **4 results per batch** and must propose **4 mutations**
