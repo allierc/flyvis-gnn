@@ -17,7 +17,7 @@ simulation:
   baseline_value: 0
   visual_input_type: DAVIS
   noise_model_level: 0.05
-  seed: 69
+  seed: 97
 graph_model:
   signal_model_name: flyvis_A
   prediction: first_derivative
@@ -42,7 +42,7 @@ plotting:
   - -100
   - 100
 training:
-  n_epochs: 2
+  n_epochs: 1
   n_runs: 1
   device: auto
   recurrent_training: false
@@ -69,11 +69,11 @@ training:
   w_init_mode: randn_scaled
   alternate_training: true
   alternate_joint_ratio: 0.4
-  alternate_lr_ratio: 0.1
-  seed: 281
+  alternate_lr_ratio: 0.06
+  seed: 388
 claude:
-  n_epochs: 2
-  data_augmentation_loop: 25
+  n_epochs: 1
+  data_augmentation_loop: 20
   n_iter_block: 12
   ucb_c: 1.414
   node_name: h100

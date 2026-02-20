@@ -1,4 +1,4 @@
-description: designed by Claude (parallel flyvis)
+description: "Block 9 batch 27 — explore edge_norm=1.03+W_L2=1.5E-6 1st run (iter 108)"
 dataset: flyvis_62_1_gs_03
 simulation:
   connectivity_file: to be specified
@@ -17,7 +17,7 @@ simulation:
   baseline_value: 0
   visual_input_type: DAVIS
   noise_model_level: 0.05
-  seed: 88
+  seed: 108
 graph_model:
   signal_model_name: flyvis_A
   prediction: first_derivative
@@ -51,23 +51,23 @@ training:
   small_init_batch_size: false
   sparsity: none
   data_augmentation_loop: 20
-  learning_rate_W_start: 0.0005
+  learning_rate_W_start: 0.0006
   learning_rate_start: 0.0012
   learning_rate_embedding_start: 0.00155
   coeff_edge_diff: 750
   coeff_update_u_diff: 0
   coeff_update_msg_diff: 0
-  coeff_edge_norm: 0.9
-  coeff_edge_weight_L1: 0.29
+  coeff_edge_norm: 1.03
+  coeff_edge_weight_L1: 0.28
   coeff_phi_weight_L1: 0.5
-  coeff_phi_weight_L1_rate: 0.4
+  coeff_phi_weight_L1_rate: 0.5
   coeff_edge_weight_L2: 0
-  coeff_phi_weight_L2: 0.0015
-  coeff_W_L1: 3.3e-05
+  coeff_phi_weight_L2: 0.001
+  coeff_W_L1: 7.5e-05
   coeff_W_L1_rate: 0.5
-  coeff_W_L2: 3.5e-06
-  w_init_mode: randn_scaled
-  seed: 355
+  coeff_W_L2: 1.5e-06
+  w_init_mode: zeros
+  seed: 435
 claude:
   n_epochs: 1
   data_augmentation_loop: 25

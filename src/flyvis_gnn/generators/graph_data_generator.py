@@ -354,30 +354,50 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
         target_frames = n_frames
         num_passes_needed = (target_frames // total_frames_per_pass) + 1
 
-    # Plot first frame of first N sequences to verify shuffle diversity
-    if visualize and hasattr(stimulus_dataset, '__getitem__'):
-        n_preview = min(16, len(stimulus_dataset))
-        fig_preview, axes_preview = plt.subplots(2, min(8, n_preview), figsize=(min(8, n_preview) * 2, 4))
-        if n_preview <= 8:
-            axes_preview = axes_preview.reshape(2, -1) if axes_preview.ndim == 2 else np.array([[axes_preview[0]], [axes_preview[1]]])
-        for i in range(n_preview):
-            row = i // 8
-            col = i % 8
-            lum = stimulus_dataset[i]["lum"]
-            ax = axes_preview[row, col] if n_preview > 8 else axes_preview[0, i]
-            ax.plot(lum[0].squeeze().cpu().numpy() if isinstance(lum, torch.Tensor) else lum[0].squeeze(), linewidth=0.5)
-            ax.set_title(f"seq {i}", fontsize=7)
-            ax.set_xticks([])
-            ax.set_yticks([])
-        # hide unused axes
-        for ax in axes_preview.flat:
-            if not ax.has_data():
-                ax.set_visible(False)
-        fig_preview.suptitle(f"First frame of first {n_preview} sequences (shuffle_seed={sim.seed})", fontsize=9)
-        fig_preview.tight_layout()
-        fig_preview.savefig(f"./graphs_data/{config.dataset}/Fig/shuffle_first_frames.png", dpi=150)
-        plt.close(fig_preview)
-        print(f"saved shuffle verification figure: graphs_data/{config.dataset}/Fig/shuffle_first_frames.png")
+    # Plot first frame of first N sequences as hex maps to verify shuffle diversity
+    if stimulus_dataset is not None:
+        try:
+            # Get unique hex column positions (217 columns from 1736 photoreceptors)
+            n_hexals = stimulus_dataset[0]["lum"].shape[-1]
+            hex_x = x_coords[:n_hexals]
+            hex_y = y_coords[:n_hexals]
+
+            n_cols = 8
+            n_preview = min(n_cols * 4, len(stimulus_dataset))
+            n_rows = (n_preview + n_cols - 1) // n_cols
+            fig_preview, axes_preview = plt.subplots(n_rows, n_cols, figsize=(n_cols * 1.8, n_rows * 1.8))
+            axes_preview = np.atleast_2d(axes_preview)
+            for i in range(n_preview):
+                row, col = divmod(i, n_cols)
+                lum = stimulus_dataset[i]["lum"]
+                vals = lum[0].squeeze().cpu().numpy() if isinstance(lum, torch.Tensor) else lum[0].squeeze()
+                ax = axes_preview[row, col]
+                ax.scatter(hex_x, hex_y, c=vals,
+                           s=fig_style.hex_stimulus_marker_size,
+                           marker=fig_style.hex_marker,
+                           cmap=fig_style.cmap,
+                           vmin=fig_style.hex_stimulus_range[0],
+                           vmax=fig_style.hex_stimulus_range[1],
+                           alpha=1.0, linewidths=0)
+                ax.set_facecolor(fig_style.background)
+                ax.set_title(f"seq {i}", fontsize=6)
+                ax.set_xticks([])
+                ax.set_yticks([])
+                ax.set_aspect('equal')
+                for spine in ax.spines.values():
+                    spine.set_visible(False)
+            for ax in axes_preview.flat:
+                if not ax.has_data():
+                    ax.set_visible(False)
+            fig_preview.suptitle(f"First frame of {n_preview} sequences (shuffle_seed={sim.seed})", fontsize=9)
+            fig_preview.tight_layout()
+            save_path = os.path.join(folder, "shuffle_first_frames.png")
+            fig_preview.savefig(save_path, dpi=200)
+            plt.close(fig_preview)
+            print(f"saved shuffle verification figure: {save_path}")
+        except Exception as e:
+            print(f"warning: could not save shuffle figure: {e}")
+            plt.close("all")
 
     # use zarr writers for incremental saving (memory efficient)
     # V3 format: each NeuronState field gets its own zarr array

@@ -64,7 +64,7 @@ if __name__ == "__main__":
                 best_model = None
     else:
         best_model = ''
-        task = task = 'train'
+        task = task = 'generate'
         config_list = ['flyvis_62_1_gs']
 
     for config_file_ in config_list:

@@ -356,15 +356,17 @@ def compute_dynamics_r2(model, x_ts, config, device, n_neurons):
     """Compute V_rest R² and tau R² during training (lightweight, no plots).
 
     Extracts learned V_rest and tau from lin_phi slopes/offsets and compares
-    against ground truth V_i_rest.pt and tau_i.pt.
+    against ground truth V_i_rest.pt and taus.pt.
 
     Returns:
         (vrest_r2, tau_r2): tuple of float R² values.
     """
     gt_V_rest_tensor = torch.load(f'./graphs_data/{config.dataset}/V_i_rest.pt',
                                   map_location=device, weights_only=True)
-    gt_tau_tensor = torch.load(f'./graphs_data/{config.dataset}/tau_i.pt',
-                               map_location=device, weights_only=True)
+    tau_path = f'./graphs_data/{config.dataset}/taus.pt'
+    if not os.path.exists(tau_path):
+        tau_path = f'./graphs_data/{config.dataset}/tau_i.pt'
+    gt_tau_tensor = torch.load(tau_path, map_location=device, weights_only=True)
     gt_V_rest = to_numpy(gt_V_rest_tensor[:n_neurons])
     gt_tau = to_numpy(gt_tau_tensor[:n_neurons])
 
