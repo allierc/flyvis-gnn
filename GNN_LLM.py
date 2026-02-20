@@ -370,7 +370,7 @@ if __name__ == "__main__":
                         style="color",
                         alpha=1,
                         erase=erase,
-                        bSave=True,
+                        save=True,
                         step=2,
                         log_file=log_file
                     )

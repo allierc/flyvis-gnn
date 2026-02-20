@@ -49,7 +49,7 @@ def data_generate(
     scenario="none",
     best_model=None,
     device=None,
-    bSave=True,
+    save=True,
     log_file=None,
 ):
 
@@ -72,7 +72,7 @@ def data_generate(
             erase=erase,
             step=step,
             device=device,
-            bSave=bSave,
+            save=save,
         )
 
     default_style.apply_globally()
@@ -92,7 +92,7 @@ def generate_from_data(config, device, visualize=True, step=None, cmap=None, sty
         raise ValueError(f"Unknown data folder name {data_folder_name}")
 
 def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="color", erase=False, step=5, device=None,
-                              bSave=True):
+                              save=True):
 
     fig_style = dark_style if "black" in style else default_style
     fig_style.apply_globally()
@@ -273,7 +273,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     pde = FlyVisODE(p=p, f=torch.nn.functional.relu, params=sim.params,
                     model_type=model_config.signal_model_name, n_neuron_types=sim.n_neuron_types, device=device)
 
-    if bSave:
+    if save:
         torch.save(p["w"], f"./graphs_data/{config.dataset}/weights.pt")
         torch.save(edge_index, f"graphs_data/{config.dataset}/edge_index.pt")
         torch.save(p["tau_i"], f"./graphs_data/{config.dataset}/taus.pt")

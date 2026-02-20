@@ -89,7 +89,7 @@ if __name__ == "__main__":
                 style="color",
                 alpha=1,
                 erase=True,
-                bSave=True,
+                save=True,
                 step=100,
             )
 

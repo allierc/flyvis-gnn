@@ -1,6 +1,144 @@
-from typing import Optional, Literal, Annotated
+from enum import Enum
+from typing import Optional, Annotated
+
+# Python 3.10 compatibility (StrEnum added in 3.11)
+class StrEnum(str, Enum):
+    pass
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
+
+
+# StrEnum types for config fields
+
+class Boundary(StrEnum):
+    PERIODIC = "periodic"
+    NO = "no"
+    PERIODIC_SPECIAL = "periodic_special"
+    WALL = "wall"
+
+class ExternalInputType(StrEnum):
+    NONE = "none"
+    SIGNAL = "signal"
+    VISUAL = "visual"
+    MODULATION = "modulation"
+
+class ExternalInputMode(StrEnum):
+    ADDITIVE = "additive"
+    MULTIPLICATIVE = "multiplicative"
+    NONE = "none"
+
+class SignalInputType(StrEnum):
+    OSCILLATORY = "oscillatory"
+    TRIGGERED = "triggered"
+
+class CalciumType(StrEnum):
+    NONE = "none"
+    LEAKY = "leaky"
+    MULTI_COMPARTMENT = "multi-compartment"
+    SATURATION = "saturation"
+
+class CalciumActivation(StrEnum):
+    SOFTPLUS = "softplus"
+    RELU = "relu"
+    IDENTITY = "identity"
+    TANH = "tanh"
+
+class Prediction(StrEnum):
+    FIRST_DERIVATIVE = "first_derivative"
+    SECOND_DERIVATIVE = "2nd_derivative"
+    NEXT_ACTIVITY = "next_activity"
+
+class Integration(StrEnum):
+    EULER = "Euler"
+    RUNGE_KUTTA = "Runge-Kutta"
+
+class UpdateType(StrEnum):
+    LINEAR = "linear"
+    MLP = "mlp"
+    PRE_MLP = "pre_mlp"
+    TWO_STEPS = "2steps"
+    NONE = "none"
+    NO_POS = "no_pos"
+    GENERIC = "generic"
+    EXCITATION = "excitation"
+    GENERIC_EXCITATION = "generic_excitation"
+    EMBEDDING_MLP = "embedding_MLP"
+    TEST_FIELD = "test_field"
+
+class MLPActivation(StrEnum):
+    RELU = "relu"
+    TANH = "tanh"
+    SIGMOID = "sigmoid"
+    LEAKY_RELU = "leaky_relu"
+    SOFT_RELU = "soft_relu"
+    NONE = "none"
+
+class INRType(StrEnum):
+    SIREN_T = "siren_t"
+    SIREN_ID = "siren_id"
+    SIREN_X = "siren_x"
+    NGP = "ngp"
+    LOWRANK = "lowrank"
+
+class DenoiserType(StrEnum):
+    NONE = "none"
+    WINDOW = "window"
+    LSTM = "LSTM"
+    GAUSSIAN_FILTER = "Gaussian_filter"
+    WAVELET = "wavelet"
+
+class GhostMethod(StrEnum):
+    NONE = "none"
+    TENSOR = "tensor"
+    MLP = "MLP"
+
+class Sparsity(StrEnum):
+    NONE = "none"
+    REPLACE_EMBEDDING = "replace_embedding"
+    REPLACE_EMBEDDING_FUNCTION = "replace_embedding_function"
+    REPLACE_STATE = "replace_state"
+    REPLACE_TRACK = "replace_track"
+
+class ClusterMethod(StrEnum):
+    KMEANS = "kmeans"
+    KMEANS_AUTO_PLOT = "kmeans_auto_plot"
+    KMEANS_AUTO_EMBEDDING = "kmeans_auto_embedding"
+    DISTANCE_PLOT = "distance_plot"
+    DISTANCE_EMBEDDING = "distance_embedding"
+    DISTANCE_BOTH = "distance_both"
+    INCONSISTENT_PLOT = "inconsistent_plot"
+    INCONSISTENT_EMBEDDING = "inconsistent_embedding"
+    NONE = "none"
+
+class ClusterConnectivity(StrEnum):
+    SINGLE = "single"
+    AVERAGE = "average"
+
+class OdeMethod(StrEnum):
+    DOPRI5 = "dopri5"
+    RK4 = "rk4"
+    EULER = "euler"
+    MIDPOINT = "midpoint"
+    HEUN3 = "heun3"
+
+class WInitMode(StrEnum):
+    RANDN = "randn"
+    RANDN_SCALED = "randn_scaled"
+    ZEROS = "zeros"
+
+class LinEdgeMode(StrEnum):
+    MLP = "mlp"
+    TANH = "tanh"
+    IDENTITY = "identity"
+
+class WOptimizerType(StrEnum):
+    ADAM = "adam"
+    SGD = "sgd"
+
+class LabelStyle(StrEnum):
+    MLP = "MLP"
+    GREEK = "greek"
+
 
 # Sub-config schemas for NeuralGraph
 
@@ -19,7 +157,7 @@ class SimulationConfig(BaseModel):
     sub_sampling: int = 1
     delta_t: float = 1
 
-    boundary: Literal["periodic", "no", "periodic_special", "wall"] = "periodic"
+    boundary: Boundary = Boundary.PERIODIC
     min_radius: float = 0.0
     max_radius: float = 0.1
 
@@ -43,12 +181,12 @@ class SimulationConfig(BaseModel):
 
 
     # external input configuration
-    external_input_type: Literal["none", "signal", "visual", "modulation"] = "none"
-    external_input_mode: Literal["additive", "multiplicative", "none"] = "none"
+    external_input_type: ExternalInputType = ExternalInputType.NONE
+    external_input_mode: ExternalInputMode = ExternalInputMode.NONE
     permutation: bool = False  # whether to apply random permutation to external input
 
     # signal input parameters (external_input_type == "signal")
-    signal_input_type: Literal["oscillatory", "triggered"] = "oscillatory"
+    signal_input_type: SignalInputType = SignalInputType.OSCILLATORY
     oscillation_max_amplitude: float = 1.0
     oscillation_frequency: float = 5.0
 
@@ -93,8 +231,8 @@ class SimulationConfig(BaseModel):
     tau: float = 1.0
     sigma: float = 0.005
 
-    calcium_type: Literal["none", "leaky", "multi-compartment", "saturation"] = "none"
-    calcium_activation: Literal["softplus", "relu", "identity", "tanh"] = "softplus"
+    calcium_type: CalciumType = CalciumType.NONE
+    calcium_activation: CalciumActivation = CalciumActivation.SOFTPLUS
     calcium_tau: float = 0.5  # decay time constant (same units as delta_t)
     calcium_alpha: float = 1.0  # scale factor to convert [Ca] to fluorescence
     calcium_beta: float = 0.0  # baseline offset for fluorescence
@@ -128,8 +266,8 @@ class GraphModelConfig(BaseModel):
     cell_model_name: str = ""
     mesh_model_name: str = ""
     signal_model_name: str = ""
-    prediction: Literal["first_derivative", "2nd_derivative","next_activity"] = "2nd_derivative"
-    integration: Literal["Euler", "Runge-Kutta"] = "Euler"
+    prediction: Prediction = Prediction.SECOND_DERIVATIVE
+    integration: Integration = Integration.EULER
 
     aggr_type: str
     embedding_dim: int = 2
@@ -160,28 +298,9 @@ class GraphModelConfig(BaseModel):
 
     lin_edge_positive: bool = False
 
-    update_type: Literal[
-        "linear",
-        "mlp",
-        "pre_mlp",
-        "2steps",
-        "none",
-        "no_pos",
-        "generic",
-        "excitation",
-        "generic_excitation",
-        "embedding_MLP",
-        "test_field",
-    ] = "none"
+    update_type: UpdateType = UpdateType.NONE
 
-    MLP_activation: Literal[
-        "relu", 
-        "tanh", 
-        "sigmoid", 
-        "leaky_relu", 
-        "soft_relu", 
-        "none"
-    ] = "relu"
+    MLP_activation: MLPActivation = MLPActivation.RELU
 
 
     input_size_update: int = 3
@@ -215,7 +334,7 @@ class GraphModelConfig(BaseModel):
     # siren_x: input=(t, x, y), output=1 (uses neuron positions)
     # ngp: instantNGP hash encoding
     # lowrank: low-rank matrix factorization U @ V (not a neural network)
-    inr_type: Literal["siren_t", "siren_id", "siren_x", "ngp", "lowrank"] = "siren_t"
+    inr_type: INRType = INRType.SIREN_T
 
     # LowRank factorization parameters
     lowrank_rank: int = 64  # rank of the factorization (params = rank * (n_frames + n_neurons))
@@ -289,7 +408,7 @@ class PlottingConfig(BaseModel):
     pic_size: list[int] = [1000, 1100]
     data_embedding: int = 1
     plot_batch_size: int = 1000
-    label_style: str = "MLP"  # "MLP" for MLP_0, MLP_1 labels; "greek" for phi, f labels
+    label_style: LabelStyle = LabelStyle.MLP  # MLP for MLP_0/MLP_1 labels; greek for phi/f labels
 
     # MLP plot axis limits
     mlp0_xlim: list[float] = [-5, 5]
@@ -331,7 +450,7 @@ class TrainingConfig(BaseModel):
     sequence_length: int = 32
 
     denoiser: bool = False
-    denoiser_type: Literal["none", "window", "LSTM", "Gaussian_filter", "wavelet"] = ("none")
+    denoiser_type: DenoiserType = DenoiserType.NONE
     denoiser_param: float = 1.0
 
     training_selected_neurons: bool = False
@@ -346,31 +465,15 @@ class TrainingConfig(BaseModel):
 
     particle_dropout: float = 0
     n_ghosts: int = 0
-    ghost_method: Literal["none", "tensor", "MLP"] = "none"
+    ghost_method: GhostMethod = GhostMethod.NONE
     ghost_logvar: float = -12
 
     sparsity_freq: int = 5
-    sparsity: Literal[
-        "none",
-        "replace_embedding",
-        "replace_embedding_function",
-        "replace_state",
-        "replace_track",
-    ] = "none"
+    sparsity: Sparsity = Sparsity.NONE
     fix_cluster_embedding: bool = False
-    cluster_method: Literal[
-        "kmeans",
-        "kmeans_auto_plot",
-        "kmeans_auto_embedding",
-        "distance_plot",
-        "distance_embedding",
-        "distance_both",
-        "inconsistent_plot",
-        "inconsistent_embedding",
-        "none",
-    ] = "distance_plot"
+    cluster_method: ClusterMethod = ClusterMethod.DISTANCE_PLOT
     cluster_distance_threshold: float = 0.1
-    cluster_connectivity: Literal["single", "average"] = "single"
+    cluster_connectivity: ClusterConnectivity = ClusterConnectivity.SINGLE
 
     Ising_filter: str = "none"
 
@@ -413,8 +516,8 @@ class TrainingConfig(BaseModel):
     coeff_lin_phi_zero: float = 0
     coeff_entropy_loss: float = 0
     coeff_edge_diff: float = 0
-    lin_edge_mode: str = 'mlp'  # 'mlp' (default learned MLP), 'tanh' (fixed tanh(u_j)), 'identity' (fixed u_j)
-    w_optimizer_type: str = 'adam'  # 'adam' (default) or 'sgd' (SGD with momentum for sharper L1-induced zeros)
+    lin_edge_mode: LinEdgeMode = LinEdgeMode.MLP  # mlp=learned MLP, tanh=fixed tanh(u_j), identity=fixed u_j
+    w_optimizer_type: WOptimizerType = WOptimizerType.ADAM  # adam (default) or sgd (SGD with momentum)
 
     # Simple training parameters (matching ParticleGraph conceptually)
     first_coeff_L1: float = 0.0  # Phase 1 weak L1 regularization
@@ -462,14 +565,14 @@ class TrainingConfig(BaseModel):
     noise_recurrent_level: float = 0.0
 
     neural_ODE_training: bool = False
-    ode_method: Literal["dopri5", "rk4", "euler", "midpoint", "heun3"] = "dopri5"
+    ode_method: OdeMethod = OdeMethod.DOPRI5
     ode_rtol: float = 1e-4
     ode_atol: float = 1e-5
     ode_adjoint: bool = True
     ode_state_clamp: float = 10.0
     ode_stab_lambda: float = 0.0
     grad_clip_W: float = 0.0
-    w_init_mode: str = 'randn'  # W init mode: 'randn' (std=1), 'randn_scaled' (std=scale/sqrt(N)), 'zeros'
+    w_init_mode: WInitMode = WInitMode.RANDN  # randn=std=1, randn_scaled=std=scale/sqrt(N), zeros
     w_init_scale: float = 1.0  # scaling factor for 'randn_scaled' mode
     coeff_W_L1_proximal: float = 0.0  # proximal L1 soft-thresholding on W after optimizer step, 0 = disabled
 

@@ -554,7 +554,7 @@ Write the planned mutations to the working memory file."""
                     style="color",
                     alpha=1,
                     erase=True,
-                    bSave=True,
+                    save=True,
                     step=2,
                     log_file=log_file
                 )

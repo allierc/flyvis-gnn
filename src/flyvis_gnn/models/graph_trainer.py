@@ -85,6 +85,18 @@ from prettytable import PrettyTable
 import imageio
 
 
+ANSI_RESET = '\033[0m'
+ANSI_GREEN = '\033[92m'
+ANSI_YELLOW = '\033[93m'
+ANSI_ORANGE = '\033[38;5;208m'
+ANSI_RED = '\033[91m'
+
+def r2_color(val, thresholds=(0.9, 0.7, 0.3)):
+    """ANSI color for an R² value: green > t0, yellow > t1, orange > t2, red otherwise."""
+    t0, t1, t2 = thresholds
+    return ANSI_GREEN if val > t0 else ANSI_YELLOW if val > t1 else ANSI_ORANGE if val > t2 else ANSI_RED
+
+
 def data_train(config=None, erase=False, best_model=None, style=None, device=None, log_file=None):
     # plt.rcParams['text.usetex'] = False  # LaTeX disabled - use mathtext instead
     # rc('font', **{'family': 'serif', 'serif': ['Times New Roman', 'Liberation Serif', 'DejaVu Serif', 'serif']})
@@ -293,7 +305,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         plot_frequency = int(Niter // 20)
         connectivity_plot_frequency = int(Niter // 10)
         # Early-phase R2: 4 extra checkpoints in [1, connectivity_plot_frequency)
-        early_r2_frequency = max(1, connectivity_plot_frequency // 5)
+        early_r2_frequency = connectivity_plot_frequency // 5
         n_plots_per_epoch = 4
         plot_iterations = set(int(x) for x in np.linspace(Niter // n_plots_per_epoch, Niter - 1, n_plots_per_epoch))
         print(f'{Niter} iterations per epoch, plot every {connectivity_plot_frequency} iterations '
@@ -543,9 +555,8 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                         f.write(f'{epoch},{N},{last_connectivity_r2:.6f},{last_vrest_r2:.6f},{last_tau_r2:.6f}\n')
 
                 if last_connectivity_r2 is not None:
-                    r2 = last_connectivity_r2
-                    color = '\033[92m' if r2 > 0.9 else '\033[93m' if r2 > 0.7 else '\033[38;5;208m' if r2 > 0.3 else '\033[91m'
-                    pbar.set_postfix_str(f'{color}conn={r2:.3f} Vr={last_vrest_r2:.3f} τ={last_tau_r2:.3f}\033[0m')
+                    c_conn, c_vr, c_tau = r2_color(last_connectivity_r2), r2_color(last_vrest_r2, (0.5, 0.2, 0.05)), r2_color(last_tau_r2)
+                    pbar.set_postfix_str(f'{c_conn}conn={last_connectivity_r2:.3f}{ANSI_RESET} {c_vr}Vr={last_vrest_r2:.3f}{ANSI_RESET} {c_tau}τ={last_tau_r2:.3f}{ANSI_RESET}')
 
 
                 if (has_visual_field) & (N in plot_iterations):
@@ -676,16 +687,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
 
                     if last_connectivity_r2 is not None:
-                        # color code: green (>0.9), yellow (0.7-0.9), orange (0.3-0.7), red (<0.3)
-                        if last_connectivity_r2 > 0.9:
-                            r2_color = '\033[92m'  # green
-                        elif last_connectivity_r2 > 0.7:
-                            r2_color = '\033[93m'  # yellow
-                        elif last_connectivity_r2 > 0.3:
-                            r2_color = '\033[38;5;208m'  # orange
-                        else:
-                            r2_color = '\033[91m'  # red
-                        pbar.set_postfix_str(f'{r2_color}R²={last_connectivity_r2:.3f}\033[0m')
+                        pbar.set_postfix_str(f'{r2_color(last_connectivity_r2)}R²={last_connectivity_r2:.3f}{ANSI_RESET}')
                     torch.save(
                         {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
                         os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs - 1}_graphs_{epoch}_{N}.pt'))
@@ -1270,9 +1272,8 @@ def data_train_flyvis_alternate(config, erase, best_model, device, log_file=None
                         f.write(f'{epoch},{N},{last_connectivity_r2:.6f},{last_vrest_r2:.6f},{last_tau_r2:.6f},{current_phase}\n')
 
                 if last_connectivity_r2 is not None:
-                    r2 = last_connectivity_r2
-                    color = '\033[92m' if r2 > 0.9 else '\033[93m' if r2 > 0.7 else '\033[38;5;208m' if r2 > 0.3 else '\033[91m'
-                    pbar.set_postfix_str(f'{color}conn={r2:.3f} Vr={last_vrest_r2:.3f} τ={last_tau_r2:.3f} [{current_phase}]\033[0m')
+                    c_conn, c_vr, c_tau = r2_color(last_connectivity_r2), r2_color(last_vrest_r2, (0.5, 0.2, 0.05)), r2_color(last_tau_r2)
+                    pbar.set_postfix_str(f'{c_conn}conn={last_connectivity_r2:.3f}{ANSI_RESET} {c_vr}Vr={last_vrest_r2:.3f}{ANSI_RESET} {c_tau}τ={last_tau_r2:.3f}{ANSI_RESET} [{current_phase}]')
 
 
                 if (has_visual_field) & (N in plot_iterations):
@@ -1403,16 +1404,7 @@ def data_train_flyvis_alternate(config, erase, best_model, device, log_file=None
 
 
                     if last_connectivity_r2 is not None:
-                        # color code: green (>0.9), yellow (0.7-0.9), orange (0.3-0.7), red (<0.3)
-                        if last_connectivity_r2 > 0.9:
-                            r2_color = '\033[92m'  # green
-                        elif last_connectivity_r2 > 0.7:
-                            r2_color = '\033[93m'  # yellow
-                        elif last_connectivity_r2 > 0.3:
-                            r2_color = '\033[38;5;208m'  # orange
-                        else:
-                            r2_color = '\033[91m'  # red
-                        pbar.set_postfix_str(f'{r2_color}R²={last_connectivity_r2:.3f}\033[0m')
+                        pbar.set_postfix_str(f'{r2_color(last_connectivity_r2)}R²={last_connectivity_r2:.3f}{ANSI_RESET}')
                     torch.save(
                         {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
                         os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs - 1}_graphs_{epoch}_{N}.pt'))

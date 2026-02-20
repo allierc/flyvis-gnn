@@ -703,7 +703,7 @@ Fix the bug. Do NOT make other changes."""
                                 style="color",
                                 alpha=1,
                                 erase=True,
-                                bSave=True,
+                                save=True,
                                 step=100,
                             )
 

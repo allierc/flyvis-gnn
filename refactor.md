@@ -19,6 +19,7 @@ Each step must be validated by running `python GNN_Test.py --config flyvis_62_1_
 | 11 | Training Loop Refinements | DONE |
 | 12 | Two-Stage Training (Joint → V_rest Focus) | DONE |
 | 13 | Migrate All Plot Functions to FigureStyle | PENDING |
+| 14 | StrEnum Config Types + snake_case Naming | DONE |
 
 ---
 
@@ -852,6 +853,66 @@ Replace the local `TITLE_SIZE`, `LABEL_SIZE`, `TICK_SIZE`, `LEGEND_SIZE` with `s
 #### 13d. Eliminate `mc` variable — use `style.foreground`
 
 Remove every `mc = 'k'` / `mc = 'w'` / `mc = 'black'` / `mc = 'white'` assignment. Remove `mc` from all function signatures. Replace all `color=mc`, `c=mc` with `color=style.foreground`, `c=style.foreground`. No hardcoded `'black'` or `'white'` color strings should remain in any plot/scatter/text call — always use `style.foreground` or `style.background`.
+
+### Validation
+
+```bash
+python GNN_Test.py --config flyvis_62_1_gs --cluster
+```
+
+---
+
+## Step 14. StrEnum Config Types + snake_case Naming [DONE]
+
+### The problem
+
+Config fields used `Literal["value1", "value2"]` or plain `str` types with documented values in comments. This scattered valid values across the codebase with no IDE navigation, autocomplete, or centralized definitions. Additionally, `bSave` was the sole camelCase violation.
+
+### The solution
+
+Replaced 21 `Literal[...]` and plain `str` fields in `config.py` with `StrEnum` classes. A local `class StrEnum(str, Enum): pass` is defined for Python 3.10 compatibility (`enum.StrEnum` was added in 3.11). Since `StrEnum` inherits from `str`, all existing dispatch sites (equality checks, substring `in` matching, match/case) work without changes — `Boundary.PERIODIC == "periodic"` is `True`, and `"replace" in Sparsity.REPLACE_EMBEDDING` is `True`.
+
+Renamed `bSave` → `save` in `graph_data_generator.py` and all 5 callers.
+
+### Files modified
+
+- `src/flyvis_gnn/config.py` — 21 StrEnum classes added, Literal/str fields replaced
+- `src/flyvis_gnn/generators/graph_data_generator.py` — `bSave` → `save`
+- `GNN_Main.py`, `GNN_LLM.py`, `GNN_LLM_parallel.py`, `GNN_LLM_parallel_flyvis.py`, `train_flyvis_subprocess.py` — `bSave=True` → `save=True`
+
+### StrEnum classes created
+
+| Class | Field | Config class |
+|-------|-------|-------------|
+| `Boundary` | `boundary` | SimulationConfig |
+| `ExternalInputType` | `external_input_type` | SimulationConfig |
+| `ExternalInputMode` | `external_input_mode` | SimulationConfig |
+| `SignalInputType` | `signal_input_type` | SimulationConfig |
+| `CalciumType` | `calcium_type` | SimulationConfig |
+| `CalciumActivation` | `calcium_activation` | SimulationConfig |
+| `Prediction` | `prediction` | GraphModelConfig |
+| `Integration` | `integration` | GraphModelConfig |
+| `UpdateType` | `update_type` | GraphModelConfig |
+| `MLPActivation` | `MLP_activation` | GraphModelConfig |
+| `INRType` | `inr_type` | GraphModelConfig |
+| `DenoiserType` | `denoiser_type` | TrainingConfig |
+| `GhostMethod` | `ghost_method` | TrainingConfig |
+| `Sparsity` | `sparsity` | TrainingConfig |
+| `ClusterMethod` | `cluster_method` | TrainingConfig |
+| `ClusterConnectivity` | `cluster_connectivity` | TrainingConfig |
+| `OdeMethod` | `ode_method` | TrainingConfig |
+| `WInitMode` | `w_init_mode` | TrainingConfig |
+| `LinEdgeMode` | `lin_edge_mode` | TrainingConfig |
+| `WOptimizerType` | `w_optimizer_type` | TrainingConfig |
+| `LabelStyle` | `label_style` | PlottingConfig |
+
+### Fields intentionally kept as `str`
+
+These use open-ended/composite values with substring matching and cannot be enumerated:
+- `visual_input_type` — composites like "DAVIS_flash", "DAVIS_mixed_50/50_blank"
+- `connectivity_type` — parameterized like "Lorentz_structured_X_Y"
+- `field_type` — composites like "visual_instantNGP"
+- `signal_model_name`, `particle_model_name`, `cell_model_name`, `mesh_model_name` — model identifiers
 
 ### Validation
 
