@@ -1521,9 +1521,11 @@ def plot_signal_loss(loss_dict, log_dir, epoch=None, Niter=None, debug=False,
             print("\n⚠️  WARNING: Negative prediction loss! regul > total loss")
         print("="*60)
 
-    fig_loss, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(30, 10))
+    style = default_style
+    lw = style.line_width
+    fig_loss, (ax1, ax2, ax3) = style.figure(ncols=3, width=3 * style.figure_height * style.default_aspect)
 
-    # Add epoch and iteration info as text annotation
+    # epoch / iteration annotation
     info_text = ""
     if epoch is not None:
         info_text += f"epoch: {epoch}"
@@ -1532,42 +1534,39 @@ def plot_signal_loss(loss_dict, log_dir, epoch=None, Niter=None, debug=False,
             info_text += " | "
         info_text += f"iterations/epoch: {Niter}"
     if info_text:
-        fig_loss.suptitle(info_text, fontsize=20, y=0.995)
+        style.annotate(ax1, info_text, (0.02, 0.98), verticalalignment='top')
 
     # Linear scale
-    ax1.plot(loss_dict['loss'], color='b', linewidth=4, label='loss (no regul)', alpha=0.8)
-    ax1.plot(loss_dict['regul_total'], color='b', linewidth=2, label='total regularization', alpha=0.8)
-    ax1.plot(loss_dict['W_L1'], color='r', linewidth=1.5, label='W L1 sparsity', alpha=0.7)
-    ax1.plot(loss_dict['W_L2'], color='darkred', linewidth=1.5, label='W L2 regul', alpha=0.7)
-    ax1.plot(loss_dict['W_sign'], color='navy', linewidth=1.5, label='W sign (Dale)', alpha=0.7)
-    ax1.plot(loss_dict['phi_weight'], color='lime', linewidth=1.5, label='MLP0 Weight Regul', alpha=0.7)
-    ax1.plot(loss_dict['edge_diff'], color='orange', linewidth=1.5, label='MLP1 monotonicity', alpha=0.7)
-    ax1.plot(loss_dict['edge_norm'], color='brown', linewidth=1.5, label='MLP1 norm', alpha=0.7)
-    ax1.plot(loss_dict['edge_weight'], color='pink', linewidth=1.5, label='MLP1 weight regul', alpha=0.7)
-    ax1.set_xlabel('iteration', fontsize=16)
-    ax1.set_ylabel('loss', fontsize=16)
-    ax1.set_title('loss vs iteration', fontsize=18)
-    ax1.legend(fontsize=10, loc='best', ncol=2)
-    ax1.grid(True, alpha=0.3)
-    ax1.tick_params(labelsize=14)
+    legend_fs = 7
+    ax1.plot(loss_dict['loss'], color='b', linewidth=lw * 2, label='loss (no regul)', alpha=0.8)
+    ax1.plot(loss_dict['regul_total'], color='b', linewidth=lw, label='total regularization', alpha=0.8)
+    ax1.plot(loss_dict['W_L1'], color='r', linewidth=lw, label='w l1 sparsity', alpha=0.7)
+    ax1.plot(loss_dict['W_L2'], color='darkred', linewidth=lw, label='w l2 regul', alpha=0.7)
+    ax1.plot(loss_dict['W_sign'], color='navy', linewidth=lw, label='w sign (dale)', alpha=0.7)
+    ax1.plot(loss_dict['phi_weight'], color='lime', linewidth=lw, label=r'$\phi$ weight regul', alpha=0.7)
+    ax1.plot(loss_dict['edge_diff'], color='orange', linewidth=lw, label='edge monotonicity', alpha=0.7)
+    ax1.plot(loss_dict['edge_norm'], color='brown', linewidth=lw, label='edge norm', alpha=0.7)
+    ax1.plot(loss_dict['edge_weight'], color='pink', linewidth=lw, label='edge weight regul', alpha=0.7)
+    ax1.set_xlabel('iteration', fontsize=style.label_font_size - 2)
+    ax1.set_ylabel('loss', fontsize=style.label_font_size - 2)
+    ax1.tick_params(labelsize=style.tick_font_size - 2)
+    ax1.legend(fontsize=legend_fs, loc='best', ncol=2)
 
     # Log scale
-    ax2.plot(loss_dict['loss'], color='b', linewidth=4, label='loss (no regul)', alpha=0.8)
-    ax2.plot(loss_dict['regul_total'], color='b', linewidth=2, label='total regularization', alpha=0.8)
-    ax2.plot(loss_dict['W_L1'], color='r', linewidth=1.5, label='W L1 sparsity', alpha=0.7)
-    ax2.plot(loss_dict['W_L2'], color='darkred', linewidth=1.5, label='W L2 regul', alpha=0.7)
-    ax2.plot(loss_dict['W_sign'], color='navy', linewidth=1.5, label='W sign (Dale)', alpha=0.7)
-    ax2.plot(loss_dict['phi_weight'], color='lime', linewidth=1.5, label='MLP0 Weight Regul', alpha=0.7)
-    ax2.plot(loss_dict['edge_diff'], color='orange', linewidth=1.5, label='MLP1 monotonicity', alpha=0.7)
-    ax2.plot(loss_dict['edge_norm'], color='brown', linewidth=1.5, label='MLP1 norm', alpha=0.7)
-    ax2.plot(loss_dict['edge_weight'], color='pink', linewidth=1.5, label='MLP1 weight regul', alpha=0.7)
-    ax2.set_xlabel('iteration', fontsize=16)
-    ax2.set_ylabel('loss', fontsize=16)
+    ax2.plot(loss_dict['loss'], color='b', linewidth=lw * 2, label='loss (no regul)', alpha=0.8)
+    ax2.plot(loss_dict['regul_total'], color='b', linewidth=lw, label='total regularization', alpha=0.8)
+    ax2.plot(loss_dict['W_L1'], color='r', linewidth=lw, label='w l1 sparsity', alpha=0.7)
+    ax2.plot(loss_dict['W_L2'], color='darkred', linewidth=lw, label='w l2 regul', alpha=0.7)
+    ax2.plot(loss_dict['W_sign'], color='navy', linewidth=lw, label='w sign (dale)', alpha=0.7)
+    ax2.plot(loss_dict['phi_weight'], color='lime', linewidth=lw, label=r'$\phi$ weight regul', alpha=0.7)
+    ax2.plot(loss_dict['edge_diff'], color='orange', linewidth=lw, label='edge monotonicity', alpha=0.7)
+    ax2.plot(loss_dict['edge_norm'], color='brown', linewidth=lw, label='edge norm', alpha=0.7)
+    ax2.plot(loss_dict['edge_weight'], color='pink', linewidth=lw, label='edge weight regul', alpha=0.7)
+    ax2.set_xlabel('iteration', fontsize=style.label_font_size - 2)
+    ax2.set_ylabel('loss', fontsize=style.label_font_size - 2)
+    ax2.tick_params(labelsize=style.tick_font_size - 2)
     ax2.set_yscale('log')
-    ax2.set_title('loss vs iteration (Log)', fontsize=18)
-    ax2.legend(fontsize=10, loc='best', ncol=2)
-    ax2.grid(True, alpha=0.3, which='both')
-    ax2.tick_params(labelsize=14)
+    ax2.legend(fontsize=legend_fs, loc='best', ncol=2)
 
     # R2 metrics panel (conn, V_rest, tau)
     metrics_log_path = os.path.join(log_dir, 'tmp_training', 'metrics.log')
@@ -1590,31 +1589,31 @@ def plot_signal_loss(loss_dict, log_dir, epoch=None, Niter=None, debug=False,
         except Exception:
             pass
         if conn_vals:
-            ax3.plot(r2_iters, conn_vals, color='#d62728', linewidth=2.5, marker='o',
-                     markersize=4, label='Connectivity R²')
-            ax3.plot(r2_iters, vrest_vals, color='#1f77b4', linewidth=2.5, marker='s',
-                     markersize=4, label='V_rest R²')
-            ax3.plot(r2_iters, tau_vals, color='#2ca02c', linewidth=2.5, marker='^',
-                     markersize=4, label='Tau R²')
+            ax3.plot(r2_iters, conn_vals, color='#d62728', linewidth=1,
+                     label=r'connectivity $R^2$')
+            ax3.plot(r2_iters, vrest_vals, color='#1f77b4', linewidth=1,
+                     label=r'$V_{rest}$ $R^2$')
+            ax3.plot(r2_iters, tau_vals, color='#2ca02c', linewidth=1,
+                     label=r'$\tau$ $R^2$')
             ax3.axhline(y=0.9, color='green', linestyle='--', alpha=0.4, linewidth=1)
             ax3.set_ylim(-0.05, 1.05)
-            ax3.set_xlabel('iteration', fontsize=16)
-            ax3.set_ylabel('R²', fontsize=16)
-            ax3.set_title('R² Metrics vs iteration', fontsize=18)
-            ax3.legend(fontsize=12, loc='lower right')
-            ax3.grid(True, alpha=0.3)
-            ax3.tick_params(labelsize=14)
+            style.xlabel(ax3, 'iteration')
+            ax3.set_ylabel(r'$R^2$', fontsize=style.label_font_size)
+            ax3.legend(fontsize=legend_fs, loc='lower right')
+            # most recent R2 values
+            latest_text = (f"conn={conn_vals[-1]:.3f}\n"
+                           f"vrest={vrest_vals[-1]:.3f}\n"
+                           f"tau={tau_vals[-1]:.3f}")
+            ax3.text(0.02, 0.97, latest_text, transform=ax3.transAxes,
+                     fontsize=style.annotation_font_size, verticalalignment='top')
         else:
-            ax3.text(0.5, 0.5, 'No R² data yet', ha='center', va='center',
-                     transform=ax3.transAxes, fontsize=16, color='gray')
-            ax3.set_title('R² Metrics', fontsize=18)
+            ax3.text(0.5, 0.5, 'no r\u00b2 data yet', ha='center', va='center',
+                     transform=ax3.transAxes, fontsize=style.label_font_size, color='gray')
     else:
-        ax3.text(0.5, 0.5, 'No R² data yet', ha='center', va='center',
-                 transform=ax3.transAxes, fontsize=16, color='gray')
-        ax3.set_title('R² Metrics', fontsize=18)
+        ax3.text(0.5, 0.5, 'no r\u00b2 data yet', ha='center', va='center',
+                 transform=ax3.transAxes, fontsize=style.label_font_size, color='gray')
 
-    plt.tight_layout()
-    plt.savefig(f'{log_dir}/tmp_training/loss.tif', dpi=150)
+    style.savefig(fig_loss, f'{log_dir}/tmp_training/loss.tif')
     plt.close()
 
 

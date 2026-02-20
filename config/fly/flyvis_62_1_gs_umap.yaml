@@ -76,9 +76,10 @@ training:
   umap_cluster_freq: 1
   umap_cluster_n_neighbors: 50
   umap_cluster_min_dist: 0.1
-  umap_cluster_eps: 0.1
+  umap_cluster_eps: 0.4
   umap_cluster_fix_embedding_ratio: 0.5
-  umap_cluster_reinit_mlps: true
+  umap_cluster_reinit_mlps: false
+  umap_cluster_relearn_epochs: 100
 claude:
   n_epochs: 1
   data_augmentation_loop: 25

@@ -643,12 +643,14 @@ def reinit_mlp_weights(mlp):
             nn.init.zeros_(layer.bias)
 
 
-def umap_cluster_reassign(model, config, x_ts, edges, n_neurons, type_list, device, logger=None, reinit_mlps=False):
+def umap_cluster_reassign(model, config, x_ts, edges, n_neurons, type_list, device,
+                          logger=None, reinit_mlps=False, relearn_epochs=0):
     """UMAP-based clustering on augmented features (W, tau, embedding, Vrest).
 
     Builds augmented feature vector from model parameters, reduces with UMAP,
     clusters in UMAP space, reassigns embeddings to cluster medians, and
-    normalizes to [0, 1].
+    normalizes to [0, 1].  Optionally relearns lin_edge/lin_phi to match
+    cluster-median function shapes (like ParticleGraph replace_embedding_function).
 
     Returns dict with cluster info (n_clusters, accuracy, labels).
     """
@@ -698,8 +700,61 @@ def umap_cluster_reassign(model, config, x_ts, edges, n_neurons, type_list, devi
 
     n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
 
-    # 6. Reassign embeddings to cluster medians
+    # 5b. Evaluate lin_edge and lin_phi before reassigning embeddings (for relearning targets)
+    func_list_edge = None
+    func_list_phi = None
+    if relearn_epochs > 0 and n_clusters > 0:
+        n_pts = 1000
+        rr = torch.linspace(config.plotting.xlim[0], config.plotting.xlim[1], n_pts, device=device)
+        model_name = config.graph_model.signal_model_name
+        lin_edge_positive = config.graph_model.lin_edge_positive
+
+        with torch.no_grad():
+            # lin_edge: input = [v_j, a_j] for flyvis_A
+            func_list_edge = torch.zeros(n_neurons, n_pts, device=device)
+            func_list_phi = torch.zeros(n_neurons, n_pts, device=device)
+            batch_size = 500
+            for start in range(0, n_neurons, batch_size):
+                end = min(start + batch_size, n_neurons)
+                n_batch = end - start
+                rr_batch = rr.unsqueeze(0).expand(n_batch, -1)  # (B, n_pts)
+                rr_flat = rr_batch.reshape(-1, 1)  # (B*n_pts, 1)
+                emb = model.a[start:end]  # (B, emb_dim)
+                emb_flat = emb.unsqueeze(1).expand(-1, n_pts, -1).reshape(-1, emb.shape[1])
+
+                # lin_edge
+                if 'flyvis_B' in model_name:
+                    edge_in = torch.cat([rr_flat * 0, rr_flat, emb_flat, emb_flat], dim=1)
+                else:
+                    edge_in = torch.cat([rr_flat, emb_flat], dim=1)
+                edge_out = model.lin_edge(edge_in.float())
+                if lin_edge_positive:
+                    edge_out = edge_out ** 2
+                func_list_edge[start:end] = edge_out[:, 0].reshape(n_batch, n_pts)
+
+                # lin_phi: input = [v, a, msg=0, exc=0]
+                zeros_flat = torch.zeros_like(rr_flat)
+                phi_in = torch.cat([rr_flat, emb_flat, zeros_flat, zeros_flat], dim=1)
+                phi_out = model.lin_phi(phi_in.float())
+                func_list_phi[start:end] = phi_out[:, 0].reshape(n_batch, n_pts)
+
+        # Compute target functions: median per cluster
+        y_func_edge = func_list_edge.clone()
+        y_func_phi = func_list_phi.clone()
+        for label in np.unique(labels):
+            if label == -1:
+                continue
+            indices = np.where(labels == label)[0]
+            if len(indices) > 0:
+                target_edge = torch.median(func_list_edge[indices], dim=0).values
+                target_phi = torch.median(func_list_phi[indices], dim=0).values
+                y_func_edge[indices] = target_edge
+                y_func_phi[indices] = target_phi
+
+    # 6. Replace embeddings with UMAP projections, then take cluster medians
+    a_umap_tensor = torch.tensor(a_umap, dtype=model.a.dtype, device=model.a.device)
     with torch.no_grad():
+        model.a.data[:n_neurons] = a_umap_tensor
         for label in np.unique(labels):
             if label == -1:
                 continue
@@ -723,7 +778,60 @@ def umap_cluster_reassign(model, config, x_ts, edges, n_neurons, type_list, devi
         if logger:
             logger.info(msg)
 
-    # 9. Evaluate clustering quality against ground truth types
+    # 9. Relearn lin_edge and lin_phi to match cluster-median function shapes
+    if relearn_epochs > 0 and func_list_edge is not None:
+        from tqdm import trange
+        n_pts = 1000
+        rr = torch.linspace(config.plotting.xlim[0], config.plotting.xlim[1], n_pts, device=device)
+        model_name = config.graph_model.signal_model_name
+        lin_edge_positive = config.graph_model.lin_edge_positive
+
+        # Temporary optimizer: freeze embedding, train only lin_edge and lin_phi
+        relearn_params = list(model.lin_edge.parameters()) + list(model.lin_phi.parameters())
+        relearn_optimizer = torch.optim.Adam(relearn_params, lr=tc.learning_rate_start)
+
+        for sub_epoch in trange(relearn_epochs, ncols=100, desc='relearn MLP'):
+            relearn_optimizer.zero_grad()
+            loss_edge = torch.tensor(0.0, device=device)
+            loss_phi = torch.tensor(0.0, device=device)
+
+            batch_size = 500
+            for start in range(0, n_neurons, batch_size):
+                end = min(start + batch_size, n_neurons)
+                n_batch = end - start
+                rr_batch = rr.unsqueeze(0).expand(n_batch, -1)
+                rr_flat = rr_batch.reshape(-1, 1)
+                emb = model.a[start:end].detach()
+                emb_flat = emb.unsqueeze(1).expand(-1, n_pts, -1).reshape(-1, emb.shape[1])
+
+                # lin_edge forward
+                if 'flyvis_B' in model_name:
+                    edge_in = torch.cat([rr_flat * 0, rr_flat, emb_flat, emb_flat], dim=1)
+                else:
+                    edge_in = torch.cat([rr_flat, emb_flat], dim=1)
+                edge_out = model.lin_edge(edge_in.float())
+                if lin_edge_positive:
+                    edge_out = edge_out ** 2
+                pred_edge = edge_out[:, 0].reshape(n_batch, n_pts)
+                loss_edge = loss_edge + (pred_edge - y_func_edge[start:end].detach()).norm(2)
+
+                # lin_phi forward
+                zeros_flat = torch.zeros_like(rr_flat)
+                phi_in = torch.cat([rr_flat, emb_flat, zeros_flat, zeros_flat], dim=1)
+                phi_out = model.lin_phi(phi_in.float())
+                pred_phi = phi_out[:, 0].reshape(n_batch, n_pts)
+                loss_phi = loss_phi + (pred_phi - y_func_phi[start:end].detach()).norm(2)
+
+            total_loss = loss_edge + loss_phi
+            total_loss.backward()
+            relearn_optimizer.step()
+
+        msg = f"relearn MLP: {relearn_epochs} epochs, final loss edge={loss_edge.item()/n_neurons:.4f} phi={loss_phi.item()/n_neurons:.4f}"
+        print(msg)
+        if logger:
+            logger.info(msg)
+
+    # 10. Evaluate clustering quality against ground truth types
     true_labels = to_numpy(type_list).flatten()
     labels_clean = labels.copy()
     labels_clean[labels_clean == -1] = n_clusters

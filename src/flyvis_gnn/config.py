@@ -489,6 +489,7 @@ class TrainingConfig(BaseModel):
     umap_cluster_fix_embedding: bool = False
     umap_cluster_fix_embedding_ratio: float = 0.0
     umap_cluster_reinit_mlps: bool = False
+    umap_cluster_relearn_epochs: int = 0
 
     Ising_filter: str = "none"
 

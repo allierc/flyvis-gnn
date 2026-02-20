@@ -557,7 +557,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                     plot_dict = {**regularizer.get_history(), 'loss': loss_components['loss']}
 
                     # pass per-neuron normalized values to debug (to match dictionary values)
-                    plot_signal_loss(plot_dict, log_dir, epoch=epoch, Niter=N, debug=False,
+                    plot_signal_loss(plot_dict, log_dir, epoch=epoch, Niter=Niter, debug=False,
                                    current_loss=current_loss / n_neurons, current_regul=regul_total_this_iter / n_neurons,
                                    total_loss=total_loss, total_loss_regul=total_loss_regul)
 
@@ -575,7 +575,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                         f.write(f'{epoch},{N},{last_connectivity_r2:.6f},{last_vrest_r2:.6f},{last_tau_r2:.6f}\n')
 
                 if last_connectivity_r2 is not None:
-                    c_conn, c_vr, c_tau = r2_color(last_connectivity_r2), r2_color(last_vrest_r2, (0.5, 0.2, 0.05)), r2_color(last_tau_r2)
+                    c_conn, c_vr, c_tau = r2_color(last_connectivity_r2), r2_color(last_vrest_r2), r2_color(last_tau_r2)
                     pbar.set_postfix_str(f'{c_conn}conn={last_connectivity_r2:.3f}{ANSI_RESET} {c_vr}Vr={last_vrest_r2:.3f}{ANSI_RESET} {c_tau}τ={last_tau_r2:.3f}{ANSI_RESET}')
 
 
@@ -795,7 +795,8 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                 print('UMAP cluster reassign ...')
                 umap_results = umap_cluster_reassign(
                     model, config, x_ts, edges, n_neurons, type_list, device, logger=logger,
-                    reinit_mlps=tc.umap_cluster_reinit_mlps)
+                    reinit_mlps=tc.umap_cluster_reinit_mlps,
+                    relearn_epochs=tc.umap_cluster_relearn_epochs)
 
                 if umap_results is not None:
                     fig.add_subplot(2, 3, 6)
@@ -1306,7 +1307,7 @@ def data_train_flyvis_alternate(config, erase, best_model, device, log_file=None
                     plot_dict = {**regularizer.get_history(), 'loss': loss_components['loss']}
 
                     # pass per-neuron normalized values to debug (to match dictionary values)
-                    plot_signal_loss(plot_dict, log_dir, epoch=epoch, Niter=N, debug=False,
+                    plot_signal_loss(plot_dict, log_dir, epoch=epoch, Niter=Niter, debug=False,
                                    current_loss=current_loss / n_neurons, current_regul=regul_total_this_iter / n_neurons,
                                    total_loss=total_loss, total_loss_regul=total_loss_regul)
 
@@ -1324,7 +1325,7 @@ def data_train_flyvis_alternate(config, erase, best_model, device, log_file=None
                         f.write(f'{epoch},{N},{last_connectivity_r2:.6f},{last_vrest_r2:.6f},{last_tau_r2:.6f},{current_phase}\n')
 
                 if last_connectivity_r2 is not None:
-                    c_conn, c_vr, c_tau = r2_color(last_connectivity_r2), r2_color(last_vrest_r2, (0.5, 0.2, 0.05)), r2_color(last_tau_r2)
+                    c_conn, c_vr, c_tau = r2_color(last_connectivity_r2), r2_color(last_vrest_r2), r2_color(last_tau_r2)
                     pbar.set_postfix_str(f'{c_conn}conn={last_connectivity_r2:.3f}{ANSI_RESET} {c_vr}Vr={last_vrest_r2:.3f}{ANSI_RESET} {c_tau}τ={last_tau_r2:.3f}{ANSI_RESET} [{current_phase}]')
 
 
