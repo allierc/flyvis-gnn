@@ -135,6 +135,11 @@ class WOptimizerType(StrEnum):
     ADAM = "adam"
     SGD = "sgd"
 
+class UmapClusterMethod(StrEnum):
+    NONE = "none"
+    DBSCAN = "dbscan"
+    GMM = "gmm"
+
 class LabelStyle(StrEnum):
     MLP = "MLP"
     GREEK = "greek"
@@ -474,6 +479,16 @@ class TrainingConfig(BaseModel):
     cluster_method: ClusterMethod = ClusterMethod.DISTANCE_PLOT
     cluster_distance_threshold: float = 0.1
     cluster_connectivity: ClusterConnectivity = ClusterConnectivity.SINGLE
+
+    umap_cluster_method: UmapClusterMethod = UmapClusterMethod.NONE
+    umap_cluster_freq: int = 1
+    umap_cluster_n_neighbors: int = 50
+    umap_cluster_min_dist: float = 0.1
+    umap_cluster_eps: float = 0.1
+    umap_cluster_gmm_n: int = 50
+    umap_cluster_fix_embedding: bool = False
+    umap_cluster_fix_embedding_ratio: float = 0.0
+    umap_cluster_reinit_mlps: bool = False
 
     Ising_filter: str = "none"
 

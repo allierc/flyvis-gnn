@@ -610,6 +610,153 @@ def clustering_gmm(data, type_list, n_components=None):
     return {'n_components': n_components, 'accuracy': accuracy, 'ari': ari, 'nmi': nmi, 'silhouette': sil}
 
 
+def connectivity_stats(w, src, dst, n):
+    """Per-neuron mean/std of in-weights and out-weights."""
+    in_count = np.bincount(dst, minlength=n).astype(np.float64)
+    out_count = np.bincount(src, minlength=n).astype(np.float64)
+    in_sum = np.bincount(dst, weights=w, minlength=n)
+    out_sum = np.bincount(src, weights=w, minlength=n)
+    in_sq = np.bincount(dst, weights=w ** 2, minlength=n)
+    out_sq = np.bincount(src, weights=w ** 2, minlength=n)
+    safe_in = np.where(in_count > 0, in_count, 1)
+    safe_out = np.where(out_count > 0, out_count, 1)
+    in_mean = in_sum / safe_in
+    out_mean = out_sum / safe_out
+    in_std = np.sqrt(np.maximum(in_sq / safe_in - in_mean ** 2, 0))
+    out_std = np.sqrt(np.maximum(out_sq / safe_out - out_mean ** 2, 0))
+    in_mean[in_count == 0] = 0
+    out_mean[out_count == 0] = 0
+    in_std[in_count == 0] = 0
+    out_std[out_count == 0] = 0
+    return in_mean, in_std, out_mean, out_std
+
+
+def reinit_mlp_weights(mlp):
+    """Reinitialize all Linear layers of an MLP to match MLP.__init__ scheme.
+
+    Hidden and output layers: normal_(std=0.1) for weights, zeros_ for biases.
+    """
+    import torch.nn as nn
+    for layer in mlp.layers:
+        if isinstance(layer, nn.Linear):
+            nn.init.normal_(layer.weight, std=0.1)
+            nn.init.zeros_(layer.bias)
+
+
+def umap_cluster_reassign(model, config, x_ts, edges, n_neurons, type_list, device, logger=None, reinit_mlps=False):
+    """UMAP-based clustering on augmented features (W, tau, embedding, Vrest).
+
+    Builds augmented feature vector from model parameters, reduces with UMAP,
+    clusters in UMAP space, reassigns embeddings to cluster medians, and
+    normalizes to [0, 1].
+
+    Returns dict with cluster info (n_clusters, accuracy, labels).
+    """
+    import umap
+    import warnings
+    from flyvis_gnn.plot import extract_lin_phi_slopes, compute_activity_stats
+
+    tc = config.training
+
+    # 1. Extract tau and V_rest from lin_phi slopes
+    mu, sigma = compute_activity_stats(x_ts, device)
+    slopes, offsets = extract_lin_phi_slopes(model, config, n_neurons, mu, sigma, device)
+    learned_V_rest = np.where(slopes != 0, -offsets / slopes, 1.0)[:n_neurons]
+    learned_tau = np.where(slopes != 0, 1.0 / -slopes, 1.0)[:n_neurons]
+    learned_tau = np.clip(learned_tau, 0, 1)
+
+    # 2. Compute per-neuron W statistics
+    learned_W = to_numpy(model.W.squeeze())
+    src = to_numpy(edges[0])
+    dst = to_numpy(edges[1])
+    w_in_mean, w_in_std, w_out_mean, w_out_std = connectivity_stats(
+        learned_W, src, dst, n_neurons)
+
+    # 3. Build augmented feature vector
+    embedding = to_numpy(model.a.squeeze())
+    a_aug = np.column_stack([embedding, learned_tau, learned_V_rest,
+                             w_in_mean, w_in_std, w_out_mean, w_out_std])
+
+    # 4. UMAP dimensionality reduction
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        reducer = umap.UMAP(n_components=2,
+                            n_neighbors=tc.umap_cluster_n_neighbors,
+                            min_dist=tc.umap_cluster_min_dist,
+                            random_state=tc.seed)
+        a_umap = reducer.fit_transform(a_aug)
+
+    # 5. Cluster in UMAP space
+    if tc.umap_cluster_method == 'dbscan':
+        labels = DBSCAN(eps=tc.umap_cluster_eps, min_samples=5).fit_predict(a_umap)
+    elif tc.umap_cluster_method == 'gmm':
+        from sklearn.mixture import GaussianMixture
+        labels = GaussianMixture(n_components=tc.umap_cluster_gmm_n,
+                                 random_state=tc.seed).fit_predict(a_umap)
+    else:
+        return None
+
+    n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+
+    # 6. Reassign embeddings to cluster medians
+    with torch.no_grad():
+        for label in np.unique(labels):
+            if label == -1:
+                continue
+            indices = np.where(labels == label)[0]
+            if len(indices) > 1:
+                cluster_median = torch.median(model.a[indices], dim=0).values
+                model.a[indices] = cluster_median
+
+    # 7. Normalize embeddings to [0, 1]
+    with torch.no_grad():
+        a_min = model.a.min(dim=0).values
+        a_max = model.a.max(dim=0).values
+        model.a.data = (model.a.data - a_min) / (a_max - a_min + 1e-10)
+
+    # 8. Optionally reinitialize lin_phi and lin_edge
+    if reinit_mlps:
+        reinit_mlp_weights(model.lin_phi)
+        reinit_mlp_weights(model.lin_edge)
+        msg = "Reinitialized lin_phi and lin_edge weights"
+        print(msg)
+        if logger:
+            logger.info(msg)
+
+    # 9. Evaluate clustering quality against ground truth types
+    true_labels = to_numpy(type_list).flatten()
+    labels_clean = labels.copy()
+    labels_clean[labels_clean == -1] = n_clusters
+    ari = adjusted_rand_score(true_labels, labels_clean)
+    accuracy = 0.0
+    if n_clusters > 0:
+        n_true = len(np.unique(true_labels))
+        n_found = len(np.unique(labels_clean))
+        conf_mat = np.zeros((n_true, n_found))
+        for i in range(len(true_labels)):
+            ti = int(true_labels[i])
+            ci = int(labels_clean[i])
+            if 0 <= ti < n_true and 0 <= ci < n_found:
+                conf_mat[ti, ci] += 1
+        row_ind, col_ind = linear_sum_assignment(-conf_mat)
+        mapping = {col_ind[j]: row_ind[j] for j in range(len(col_ind))}
+        mapped = np.array([mapping.get(l, -1) for l in labels_clean])
+        accuracy = accuracy_score(true_labels, mapped)
+
+    msg = (f"UMAP cluster: {n_clusters} clusters, accuracy={accuracy:.3f}, ARI={ari:.3f}")
+    print(msg)
+    if logger:
+        logger.info(msg)
+
+    return {
+        'n_clusters': n_clusters,
+        'accuracy': accuracy,
+        'ari': ari,
+        'labels': labels,
+        'a_umap': a_umap,
+    }
+
+
 # Usage example:
 # After running your phi function plotting code:
 # results = functional_clustering_evaluation(func_list, type_list, eps=0.2)

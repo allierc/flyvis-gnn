@@ -20,6 +20,7 @@ Each step must be validated by running `python GNN_Test.py --config flyvis_62_1_
 | 12 | Two-Stage Training (Joint → V_rest Focus) | DONE |
 | 13 | Migrate All Plot Functions to FigureStyle | PENDING |
 | 14 | StrEnum Config Types + snake_case Naming | DONE |
+| 15 | Inter-Epoch UMAP Clustering for Embedding Reassignment | DONE |
 
 ---
 
@@ -915,6 +916,57 @@ These use open-ended/composite values with substring matching and cannot be enum
 - `signal_model_name`, `particle_model_name`, `cell_model_name`, `mesh_model_name` — model identifiers
 
 ### Validation
+
+```bash
+python GNN_Test.py --config flyvis_62_1_gs --cluster
+```
+
+## Step 15. Inter-Epoch UMAP Clustering for Embedding Reassignment [DONE]
+
+### The problem
+
+The existing `replace_embedding` sparsity mode clusters neurons using DBSCAN on the raw embedding space only. This ignores learned dynamics (tau, V_rest) and connectivity (W), limiting the clustering's ability to group neurons by functional similarity. The goal is to improve GNN training by periodically reassigning embeddings to cluster-median values computed from an augmented feature space.
+
+### The solution
+
+Added UMAP-based clustering that runs between epochs in `data_train_flyvis`. The routine:
+
+1. **Builds augmented features** from model parameters: embedding (`model.a`), tau and V_rest (derived from `lin_phi` slopes/offsets), and per-neuron W statistics (in/out mean/std)
+2. **UMAP reduces** the augmented vector to 2D
+3. **Clusters** in UMAP space using DBSCAN or GMM (configurable)
+4. **Reassigns embeddings** to the median of each cluster (not mean)
+5. **Normalizes** embeddings to [0, 1]
+6. **Rebuilds the optimizer** to reset momentum, allowing `lin_phi` and `lin_edge` to adapt to the new embedding values
+
+### Config parameters added (`TrainingConfig`)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `umap_cluster_method` | `UmapClusterMethod` | `none` | Clustering method: `none`, `dbscan`, `gmm` |
+| `umap_cluster_freq` | `int` | `1` | Apply every N epochs |
+| `umap_cluster_n_neighbors` | `int` | `50` | UMAP n_neighbors |
+| `umap_cluster_min_dist` | `float` | `0.1` | UMAP min_dist |
+| `umap_cluster_eps` | `float` | `0.1` | DBSCAN eps threshold |
+| `umap_cluster_gmm_n` | `int` | `50` | GMM n_components |
+| `umap_cluster_fix_embedding` | `bool` | `False` | Freeze embedding LR for 1 epoch after clustering |
+
+### Files modified
+
+- `src/flyvis_gnn/config.py` — `UmapClusterMethod` StrEnum, 7 new config fields
+- `src/flyvis_gnn/sparsify.py` — `connectivity_stats()` and `umap_cluster_reassign()` functions
+- `src/flyvis_gnn/models/graph_trainer.py` — UMAP clustering block in `data_train_flyvis` epoch loop, import added
+
+### YAML usage
+
+```yaml
+training:
+  umap_cluster_method: gmm        # or dbscan
+  umap_cluster_freq: 1            # every epoch
+  umap_cluster_gmm_n: 50          # GMM components
+  umap_cluster_fix_embedding: true # freeze embedding after reassignment
+```
+
+### Step 15 validation
 
 ```bash
 python GNN_Test.py --config flyvis_62_1_gs --cluster

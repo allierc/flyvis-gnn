@@ -53,7 +53,7 @@ from flyvis_gnn.models.Neural_ode_wrapper_FlyVis import (
 from flyvis_gnn.zarr_io import load_simulation_data, load_raw_array
 from flyvis_gnn.neuron_state import NeuronState
 
-from flyvis_gnn.sparsify import EmbeddingCluster, sparsify_cluster, clustering_evaluation
+from flyvis_gnn.sparsify import EmbeddingCluster, sparsify_cluster, clustering_evaluation, umap_cluster_reassign
 from flyvis_gnn.fitting_models import linear_model
 
 from scipy.optimize import curve_fit
@@ -132,6 +132,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     model_config = config.graph_model
 
     replace_with_cluster = 'replace' in tc.sparsity
+    umap_cluster_active = tc.umap_cluster_method != 'none'
 
     if config.training.seed != 42:
         torch.random.fork_rng(devices=device)
@@ -299,6 +300,9 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     with open(metrics_log_path, 'w') as f:
         f.write('epoch,iteration,connectivity_r2,vrest_r2,tau_r2\n')
 
+    embedding_frozen = False
+    unfreeze_at_iteration = -1
+
     for epoch in range(start_epoch, tc.n_epochs):
 
         Niter = int(sim.n_frames * tc.data_augmentation_loop // tc.batch_size * 0.2)
@@ -310,6 +314,12 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         plot_iterations = set(int(x) for x in np.linspace(Niter // n_plots_per_epoch, Niter - 1, n_plots_per_epoch))
         print(f'{Niter} iterations per epoch, plot every {connectivity_plot_frequency} iterations '
               f'(early-phase every {early_r2_frequency} iterations)')
+
+        # Compute unfreeze point for this epoch if embedding was frozen by UMAP clustering
+        if embedding_frozen and tc.umap_cluster_fix_embedding_ratio > 0:
+            unfreeze_at_iteration = int(Niter * tc.umap_cluster_fix_embedding_ratio)
+        else:
+            unfreeze_at_iteration = -1
 
         total_loss = 0
         total_loss_regul = 0
@@ -329,6 +339,16 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         # data sampling strategy, LR scheduler steps, early stopping.
         # Do NOT change: function signature, model construction, data loading, return values.
         for N in pbar:
+
+            # Unfreeze embedding at the midpoint after UMAP clustering froze it
+            if embedding_frozen and N == unfreeze_at_iteration:
+                embedding_frozen = False
+                lr_embedding = tc.learning_rate_embedding_start
+                optimizer, n_total_params = set_trainable_parameters(
+                    model=model, lr_embedding=lr_embedding, lr=lr,
+                    lr_update=lr_update, lr_W=lr_W,
+                    learning_rate_NNR=learning_rate_NNR)
+                print(f'unfreezing embedding at iteration {N}/{Niter}')
 
             optimizer.zero_grad()
 
@@ -769,6 +789,38 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
             logger.info(f'learning rates: lr_W {lr_W}, lr {lr}, lr_update {lr_update}, lr_embedding {lr_embedding}, learning_rate_NNR {learning_rate_NNR}')
             optimizer, n_total_params = set_trainable_parameters(model=model, lr_embedding=lr_embedding, lr=lr, lr_update=lr_update, lr_W=lr_W,
                                                                  learning_rate_NNR=learning_rate_NNR)
+
+        if umap_cluster_active:
+            if (epoch % tc.umap_cluster_freq == tc.umap_cluster_freq - 1) & (epoch < tc.n_epochs - 1):
+                print('UMAP cluster reassign ...')
+                umap_results = umap_cluster_reassign(
+                    model, config, x_ts, edges, n_neurons, type_list, device, logger=logger,
+                    reinit_mlps=tc.umap_cluster_reinit_mlps)
+
+                if umap_results is not None:
+                    fig.add_subplot(2, 3, 6)
+                    type_cmap = CustomColorMap(config=config)
+                    a_umap = umap_results['a_umap']
+                    for n_type in range(sim.n_neuron_types):
+                        pos = torch.argwhere(type_list == n_type)
+                        pos_np = to_numpy(pos).flatten()
+                        plt.scatter(a_umap[pos_np, 0], a_umap[pos_np, 1], s=5,
+                                    color=type_cmap.color(n_type), alpha=0.7, edgecolors='none')
+                    plt.xlabel(r'UMAP$_1$', fontsize=12)
+                    plt.ylabel(r'UMAP$_2$', fontsize=12)
+                    plt.xticks([])
+                    plt.yticks([])
+                    plt.title(f"{umap_results['n_clusters']} cl, acc={umap_results['accuracy']:.3f}", fontsize=10)
+
+                if tc.umap_cluster_fix_embedding or tc.umap_cluster_fix_embedding_ratio > 0:
+                    lr_embedding = 1.0E-10
+                    embedding_frozen = True
+
+                # rebuild optimizer to reset momentum and relearn lin_phi/lin_edge
+                optimizer, n_total_params = set_trainable_parameters(
+                    model=model, lr_embedding=lr_embedding, lr=lr,
+                    lr_update=lr_update, lr_W=lr_W,
+                    learning_rate_NNR=learning_rate_NNR)
 
         plt.tight_layout()
         plt.savefig(f"./{log_dir}/tmp_training/epoch_{epoch}.png")
@@ -1515,7 +1567,6 @@ def data_train_flyvis_alternate(config, erase, best_model, device, log_file=None
         if field_R2 is not None:
             log_file.write(f"field_R2: {field_R2:.4f}\n")
             log_file.write(f"field_slope: {field_slope:.4f}\n")
-
 
 
 def data_train_flyvis_RNN(config, erase, best_model, device):
