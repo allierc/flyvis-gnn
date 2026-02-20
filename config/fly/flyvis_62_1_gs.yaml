@@ -1,5 +1,5 @@
-description: "Optimized config from 84-iteration Claude 62_1_gs exploration (12 runs,
-  conn_R2=0.944, CV=3.8%)"
+description: "Best robust config from 104-iteration gs exploration (4 runs, conn_R2=0.946,
+  CV=2.6%, min=0.916, 0% catastrophic)"
 dataset: flyvis_62_1_gs
 simulation:
   connectivity_file: to be specified
@@ -52,21 +52,21 @@ training:
   small_init_batch_size: false
   sparsity: none
   data_augmentation_loop: 20
-  learning_rate_W_start: 0.0005
+  learning_rate_W_start: 0.0006
   learning_rate_start: 0.0012
   learning_rate_embedding_start: 0.00155
   coeff_edge_diff: 750
   coeff_update_u_diff: 0
   coeff_update_msg_diff: 0
   coeff_edge_norm: 0.9
-  coeff_edge_weight_L1: 0.29
+  coeff_edge_weight_L1: 0.28
   coeff_phi_weight_L1: 0.5
-  coeff_phi_weight_L1_rate: 0.4
+  coeff_phi_weight_L1_rate: 0.5
   coeff_edge_weight_L2: 0
-  coeff_phi_weight_L2: 0.0015
-  coeff_W_L1: 3.3e-05
+  coeff_phi_weight_L2: 0.001
+  coeff_W_L1: 7.5e-05
   coeff_W_L1_rate: 0.5
-  coeff_W_L2: 3.5e-06
+  coeff_W_L2: 1.5e-06
   w_init_mode: "randn_scaled"
   seed: 42
 claude:
