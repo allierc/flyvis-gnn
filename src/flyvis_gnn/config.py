@@ -575,6 +575,8 @@ class TrainingConfig(BaseModel):
 
     save_all_checkpoints: bool = False  # True = save iteration-level checkpoints too
 
+    test_dataset: str = ""  # dataset for testing; empty = same as training dataset
+
     data_augmentation_loop: int = 40
 
     recurrent_training: bool = False

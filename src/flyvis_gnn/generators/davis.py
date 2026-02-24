@@ -189,23 +189,53 @@ def temporal_split_cached_samples(cached_sequences: List[Dict], n_frames: int, s
     return split_sequences, np.array(original_repeats)
 
 
-def original_train_and_validation_indices(dataset) -> Tuple[List[int], List[int]]:
-    """Get train/validation split for DAVIS dataset.
+def original_train_and_validation_indices(dataset, seed: int = 42) -> Tuple[List[int], List[int]]:
+    """Get train/validation split at the base-video level.
+
+    All augmented versions (flips, rotations, temporal/vertical splits) of the
+    same base DAVIS video go into the same split to prevent data leakage.
+
+    IMPORTANT: The dataset must be created with ``shuffle_sequences=False``
+    so that ``arg_df`` row *i* corresponds to ``cached_sequences[i]``.
 
     Args:
-        dataset: MultiTaskDavis dataset object
+        dataset: AugmentedVideoDataset (must not be shuffled).
+        seed: RNG seed for shuffling within each split.
 
     Returns:
-        Tuple of (train_indices, validation_indices)
+        Tuple of (train_indices, validation_indices) — indices into the
+        *unshuffled* dataset, each list shuffled independently.
     """
-    total_sequences = len(dataset)
-    train_ratio = 0.8
+    import random
 
-    # Simple split - first 80% for training, rest for validation
-    split_point = int(total_sequences * train_ratio)
+    if hasattr(dataset, 'arg_df') and dataset.arg_df is not None:
+        original_indices = dataset.arg_df['original_index'].values
+        unique_videos = sorted(set(original_indices))
 
-    train_indices = list(range(split_point))
-    val_indices = list(range(split_point, total_sequences))
+        train_ratio = 0.8
+        split_point = int(len(unique_videos) * train_ratio)
+
+        train_videos = set(unique_videos[:split_point])
+
+        train_indices = [i for i, oi in enumerate(original_indices) if oi in train_videos]
+        val_indices = [i for i, oi in enumerate(original_indices) if oi not in train_videos]
+
+        n_train_vids = len(train_videos)
+        n_test_vids = len(unique_videos) - n_train_vids
+        print(f"base-video split: {n_train_vids} train / {n_test_vids} test videos "
+              f"→ {len(train_indices)} train / {len(val_indices)} test augmented sequences")
+    else:
+        # Fallback for datasets without arg_df
+        total_sequences = len(dataset)
+        train_ratio = 0.8
+        split_point = int(total_sequences * train_ratio)
+        train_indices = list(range(split_point))
+        val_indices = list(range(split_point, total_sequences))
+
+    # Shuffle within each split for variety during ODE generation
+    rng = random.Random(seed)
+    rng.shuffle(train_indices)
+    rng.shuffle(val_indices)
 
     return train_indices, val_indices
 
@@ -927,23 +957,55 @@ class AugmentedVideoDataset(MultiTaskDavis):
         )
 
         # apply deterministic geometric augmentation
+        # NOTE: call .transform() directly, NOT __call__(), because __call__
+        # checks self.augment which is False (we pass augment=False to avoid
+        # random augmentation at __getitem__ time).  .transform() applies the
+        # flip/rotation unconditionally.
         cached_sequences = {}
         for i, (_, _, _, sample, _, flip_ax, n_rot) in enumerate(self.params):
-            self.flip.axis = flip_ax
-            self.rotate.n_rot = n_rot
             cached_sequences[i] = {
-                key: self.rotate(self.flip(value))
+                key: self.rotate.transform(self.flip.transform(value.clone(), axis=flip_ax), n_rot=n_rot)
                 for key, value in self.cached_sequences[sample].items()
             }
+
+        # Verify augmentations produce distinct sequences
+        from collections import defaultdict
+        _groups = defaultdict(list)  # sample_idx -> list of (i, flip_ax, n_rot)
+        for i, (_, _, _, sample, _, flip_ax, n_rot) in enumerate(self.params):
+            _groups[sample].append((i, flip_ax, n_rot))
+        n_dups = 0
+        for sample, entries in _groups.items():
+            for a in range(len(entries)):
+                for b in range(a + 1, len(entries)):
+                    ia, fa, ra = entries[a]
+                    ib, fb, rb = entries[b]
+                    lum_a = cached_sequences[ia]["lum"]
+                    lum_b = cached_sequences[ib]["lum"]
+                    if torch.equal(lum_a, lum_b):
+                        n_dups += 1
+                        if n_dups <= 5:
+                            logger.warning(
+                                f"duplicate augmentation: idx {ia} (f{fa} r{ra}) == "
+                                f"idx {ib} (f{fb} r{rb}) for sample {sample}"
+                            )
+        if n_dups:
+            print(f"WARNING: {n_dups} duplicate augmented pairs detected")
+        else:
+            print(f"OK: all {len(cached_sequences)} augmented sequences are unique")
 
         # Convert to list for easier shuffling
         self.cached_sequences = [cached_sequences[i] for i in sorted(cached_sequences.keys())]
 
         # SHUFFLE the sequences to mix different rotations/flips of different base sequences
+        # Use a permutation so arg_df and params stay aligned with cached_sequences
         if self.shuffle_sequences:
             import random
+            perm = list(range(len(self.cached_sequences)))
             random.seed(self.shuffle_seed)
-            random.shuffle(self.cached_sequences)
+            random.shuffle(perm)
+            self.cached_sequences = [self.cached_sequences[i] for i in perm]
+            self.arg_df = self.arg_df.iloc[perm].reset_index(drop=True)
+            self.params = [self.params[i] for i in perm]
             logger.info(f"Shuffled {len(self.cached_sequences)} augmented sequences (seed={self.shuffle_seed})")
 
         if self.indices is not None:

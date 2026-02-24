@@ -589,4 +589,5 @@ def main():
 if __name__ == '__main__':
     main()
 
-# python GNN_Test.py --config flyvis_62_1_gs --cluster
+# python GNN_Test.py --config flyvis_noise_005
+# bsub -n 8 -gpu "num=1" -q gpu_a100 -W 6000 -Is "python GNN_Test.py --config flyvis_noise_005 --cluster"
