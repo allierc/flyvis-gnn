@@ -33,7 +33,7 @@ def plot_training_summary_panels(fig, log_dir):
     import os
     import imageio
 
-    embedding_files = glob.glob(f"./{log_dir}/tmp_training/embedding/*.png")
+    embedding_files = glob.glob(f"{log_dir}/tmp_training/embedding/*.png")
     if not embedding_files:
         return
 
@@ -42,10 +42,10 @@ def plot_training_summary_panels(fig, log_dir):
     last_epoch, last_N = filename.replace('.png', '').split('_')
 
     panels = [
-        (2, f"./{log_dir}/tmp_training/embedding/{last_epoch}_{last_N}.png", 'Embedding'),
-        (3, f"./{log_dir}/tmp_training/matrix/comparison_{last_epoch}_{last_N}.png", 'Weight Comparison'),
-        (4, f"./{log_dir}/tmp_training/function/MLP1/func_{last_epoch}_{last_N}.png", 'Edge Function'),
-        (5, f"./{log_dir}/tmp_training/function/MLP0/func_{last_epoch}_{last_N}.png", 'Phi Function'),
+        (2, f"{log_dir}/tmp_training/embedding/{last_epoch}_{last_N}.png", 'Embedding'),
+        (3, f"{log_dir}/tmp_training/matrix/comparison_{last_epoch}_{last_N}.png", 'Weight Comparison'),
+        (4, f"{log_dir}/tmp_training/function/MLP1/func_{last_epoch}_{last_N}.png", 'Edge Function'),
+        (5, f"{log_dir}/tmp_training/function/MLP0/func_{last_epoch}_{last_N}.png", 'Phi Function'),
     ]
     for pos, path, title in panels:
         fig.add_subplot(2, 3, pos)
@@ -1639,7 +1639,7 @@ def plot_training_flyvis(x_ts, model, config, epoch, N, log_dir, device, type_li
     fig, ax = plt.subplots(figsize=(8, 8))
     plot_embedding(ax, model, type_list, n_neuron_types, cmap)
     plt.tight_layout()
-    plt.savefig(f"./{log_dir}/tmp_training/embedding/{epoch}_{N}.png", dpi=87)
+    plt.savefig(f"{log_dir}/tmp_training/embedding/{epoch}_{N}.png", dpi=87)
     plt.close()
 
     # Plot 2: Raw W scatter (no correction)
@@ -1653,7 +1653,7 @@ def plot_training_flyvis(x_ts, model, config, epoch, N, log_dir, device, type_li
         outlier_threshold=5,
     )
     plt.tight_layout()
-    plt.savefig(f"./{log_dir}/tmp_training/matrix/raw_{epoch}_{N}.png",
+    plt.savefig(f"{log_dir}/tmp_training/matrix/raw_{epoch}_{N}.png",
                 dpi=87, bbox_inches='tight', pad_inches=0)
     plt.close()
 
@@ -1673,7 +1673,7 @@ def plot_training_flyvis(x_ts, model, config, epoch, N, log_dir, device, type_li
         outlier_threshold=5,
     )
     plt.tight_layout()
-    plt.savefig(f"./{log_dir}/tmp_training/matrix/comparison_{epoch}_{N}.png",
+    plt.savefig(f"{log_dir}/tmp_training/matrix/comparison_{epoch}_{N}.png",
                 dpi=87, bbox_inches='tight', pad_inches=0)
     plt.close()
 
@@ -1681,14 +1681,14 @@ def plot_training_flyvis(x_ts, model, config, epoch, N, log_dir, device, type_li
     fig, ax = plt.subplots(figsize=(8, 8))
     plot_lin_edge(ax, model, config, n_neurons, type_list, cmap, device)
     plt.tight_layout()
-    plt.savefig(f"./{log_dir}/tmp_training/function/MLP1/func_{epoch}_{N}.png", dpi=87)
+    plt.savefig(f"{log_dir}/tmp_training/function/MLP1/func_{epoch}_{N}.png", dpi=87)
     plt.close()
 
     # Plot 5: Phi function visualization (lin_phi / MLP0)
     fig, ax = plt.subplots(figsize=(8, 8))
     plot_lin_phi(ax, model, config, n_neurons, type_list, cmap, device)
     plt.tight_layout()
-    plt.savefig(f"./{log_dir}/tmp_training/function/MLP0/func_{epoch}_{N}.png", dpi=87)
+    plt.savefig(f"{log_dir}/tmp_training/function/MLP0/func_{epoch}_{N}.png", dpi=87)
     plt.close()
 
     return r_squared

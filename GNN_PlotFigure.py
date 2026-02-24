@@ -1174,7 +1174,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                 plt.xlim([-0.1, 1.1])
                 plt.ylim([-0.1, 1.1])
                 plt.tight_layout()
-                plt.savefig(f"./{log_dir}/results/all/embedding_{num}.png", dpi=80)
+                plt.savefig(f"{log_dir}/results/all/embedding_{num}.png", dpi=80)
                 plt.close()
 
                 # Load correction factors if apply_weight_correction is enabled
@@ -1209,7 +1209,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                 plt.xticks([])
                 plt.yticks([])
                 plt.tight_layout()
-                plt.savefig(f"./{log_dir}/results/all/W_{num}.png", dpi=80)
+                plt.savefig(f"{log_dir}/results/all/W_{num}.png", dpi=80)
                 plt.close()
 
 
@@ -1226,7 +1226,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                 plt.xlabel(r'$v_i$', fontsize=68)
                 plt.ylabel(r'learned $\mathrm{MLP_0}(\mathbf{a}_i, v_i)$', fontsize=68)
                 plt.tight_layout()
-                plt.savefig(f"./{log_dir}/results/all/MLP0_{num}.png", dpi=80)
+                plt.savefig(f"{log_dir}/results/all/MLP0_{num}.png", dpi=80)
                 plt.close()
 
                 A = get_model_W(model).clone().detach()
@@ -1280,7 +1280,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                     plt.text(-0.13, 0.11, f'slope: {np.round(lin_fit[0], 2)}', fontsize=34)
 
                 plt.tight_layout()
-                plt.savefig(f"./{log_dir}/results/all/comparison_{num}.png", dpi=80)
+                plt.savefig(f"{log_dir}/results/all/comparison_{num}.png", dpi=80)
                 plt.close()
 
                 if has_external_input:
@@ -1297,7 +1297,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                         plt.xticks([10000,100000], [10000, 100000], fontsize=48)
                         plt.yticks([0, 512, 1024], [0, 512, 1024], fontsize=48)
                         plt.tight_layout()
-                        plt.savefig(f"./{log_dir}/results/all/yi_{num}.png", dpi=80)
+                        plt.savefig(f"{log_dir}/results/all/yi_{num}.png", dpi=80)
                         plt.close()
 
                         prediction = prediction * torch.tensor(second_correction,device=device) / 10
@@ -1319,7 +1319,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                         plt.xlabel(r'true $y_i(t)$', fontsize=68)
                         plt.ylabel(r'learned $y_i(t)$', fontsize=68)
                         plt.tight_layout()
-                        plt.savefig(f"./{log_dir}/results/all/comparison_yi_{num}.png", dpi=80)
+                        plt.savefig(f"{log_dir}/results/all/comparison_yi_{num}.png", dpi=80)
                         plt.close()
 
                     else:
@@ -1337,7 +1337,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                         plt.xticks([])
                         plt.yticks([])
                         plt.tight_layout()
-                        plt.savefig(f"./{log_dir}/results/all/field_{num}.png", dpi=80)
+                        plt.savefig(f"{log_dir}/results/all/field_{num}.png", dpi=80)
                         plt.close()
 
                 if 'derivative' in sim.external_input_type:
@@ -1360,7 +1360,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                     plt.xlabel(r'$v_i$', fontsize=68)
                     plt.ylabel(r'$y_i$', fontsize=68)
                     plt.tight_layout
-                    plt.savefig(f"./{log_dir}/results/all/derivative_yi_{num}.png", dpi=80)
+                    plt.savefig(f"{log_dir}/results/all/derivative_yi_{num}.png", dpi=80)
                     plt.close()
 
                     fig, ax = fig_style.figure()
@@ -1381,13 +1381,13 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
 
 
                     plt.tight_layout()
-                    plt.savefig(f"./{log_dir}/results/all/comparison_derivative_yi_{num}.png", dpi=80)
+                    plt.savefig(f"{log_dir}/results/all/comparison_derivative_yi_{num}.png", dpi=80)
                     plt.close()
 
-                im0 = imageio.imread(f"./{log_dir}/results/all/comparison_{num}.png")
-                im1 = imageio.imread(f"./{log_dir}/results/all/embedding_{num}.png")
-                im2 = imageio.imread(f"./{log_dir}/results/all/MLP0_{num}.png")
-                im3 = imageio.imread(f"./{log_dir}/results/all/MLP1_{num}.png")
+                im0 = imageio.imread(f"{log_dir}/results/all/comparison_{num}.png")
+                im1 = imageio.imread(f"{log_dir}/results/all/embedding_{num}.png")
+                im2 = imageio.imread(f"{log_dir}/results/all/MLP0_{num}.png")
+                im3 = imageio.imread(f"{log_dir}/results/all/MLP1_{num}.png")
 
                 fig = plt.figure(figsize=(16, 16))
                 plt.axis('off')
@@ -1414,7 +1414,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                 plt.yticks([])
                 plt.tight_layout()
 
-                plt.savefig(f"./{log_dir}/results/training/fig_{num}.png", dpi=80)
+                plt.savefig(f"{log_dir}/results/training/fig_{num}.png", dpi=80)
                 plt.close()
 
     else:
@@ -1564,7 +1564,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                     # plt.xticks([10000, 100000], [10000, 100000], fontsize=48)
                     # plt.yticks([0, 512, 1024], [0, 512, 1024], fontsize=48)
                     plt.tight_layout()
-                    plt.savefig(f"./{log_dir}/results/learned_plasticity.png", dpi=80)
+                    plt.savefig(f"{log_dir}/results/learned_plasticity.png", dpi=80)
                     plt.close()
 
                     modulation_short = modulation[:, np.linspace(0, 100000, 1000).astype(int)] # noqa F821
@@ -1573,7 +1573,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                     fig, ax = fig_style.figure()
                     plt.scatter(to_numpy(modulation_short), to_numpy(prediction), s=1, color=mc, alpha=0.1)
                     plt.tight_layout()
-                    plt.savefig(f"./{log_dir}/results/short_comparison.png", dpi=80)
+                    plt.savefig(f"{log_dir}/results/short_comparison.png", dpi=80)
                     plt.close()
 
                     time_step = 32
@@ -1589,7 +1589,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                                 alpha=0.1, vmin=-100,vmax=100, cmap='viridis')
                     plt.colorbar()
                     plt.tight_layout()
-                    plt.savefig(f"./{log_dir}/results/plasticity_map.png", dpi=80)
+                    plt.savefig(f"{log_dir}/results/plasticity_map.png", dpi=80)
                     plt.close()
 
                     model_pysrr = PySRRegressor( #noqa: F821
@@ -1609,7 +1609,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                                 alpha=1, cmap='viridis')
                     plt.colorbar()
                     plt.tight_layout()
-                    plt.savefig(f"./{log_dir}/results/true_plasticity_map.png", dpi=80)
+                    plt.savefig(f"{log_dir}/results/true_plasticity_map.png", dpi=80)
                     plt.close()
 
             fig = plt.figure(figsize=(10, 10))
@@ -1626,7 +1626,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
             plt.xticks(fontsize=16)
             plt.yticks(fontsize=16)
             plt.tight_layout()
-            plt.savefig(f"./{log_dir}/results/embedding.pdf", dpi=170)
+            plt.savefig(f"{log_dir}/results/embedding.pdf", dpi=170)
             plt.close()
 
 
@@ -1691,7 +1691,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
             ax.tick_params(axis='y', labelsize=16)
             ax.tick_params(axis='x', labelsize=16)
             plt.tight_layout()
-            plt.savefig(f"./{log_dir}/results/MLP1_raw.png", dpi=170.7)
+            plt.savefig(f"{log_dir}/results/MLP1_raw.png", dpi=170.7)
             plt.close()
 
             fig = plt.figure(figsize=(10, 10))
@@ -1749,7 +1749,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
             plt.xticks(fontsize=16)
             plt.yticks(fontsize=16)
             plt.tight_layout()
-            plt.savefig(f"./{log_dir}/results/MLP1_corrected.png", dpi=170.7)
+            plt.savefig(f"{log_dir}/results/MLP1_corrected.png", dpi=170.7)
             plt.close()
 
 
@@ -1829,7 +1829,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
             plt.xlim([-0.2, 1.2])
             plt.ylim([-0.2, 1.2])
             plt.tight_layout()
-            plt.savefig(f"./{log_dir}/results/UMAP.pdf", dpi=170)
+            plt.savefig(f"{log_dir}/results/UMAP.pdf", dpi=170)
             plt.close()
 
             config.training.cluster_distance_threshold = 0.1
@@ -1868,7 +1868,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
             # Add accuracy and cluster info as suptitle
             fig.suptitle(f'accuracy: {accuracy:.3f}   n_clusters: {n_clusters}', fontsize=20, color=mc)
             plt.tight_layout()
-            plt.savefig(f"./{log_dir}/results/types_comparison.pdf", dpi=170)
+            plt.savefig(f"{log_dir}/results/types_comparison.pdf", dpi=170)
             plt.close()
 
 
@@ -1908,7 +1908,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
             plt.yticks(fontsize=16)
             plt.xlim(weight_lim)
             plt.tight_layout()
-            plt.savefig(f"./{log_dir}/results/weights_comparison_raw.png", dpi=170)
+            plt.savefig(f"{log_dir}/results/weights_comparison_raw.png", dpi=170)
             plt.close()
             print(f'R² (raw): {r_squared_raw:.3f}  slope: {np.round(lin_fit_raw[0], 4)}')
             logger.info(f'R² (raw): {np.round(r_squared_raw, 4)}  slope: {np.round(lin_fit_raw[0], 4)}')
@@ -1940,7 +1940,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
             plt.yticks(fontsize=16)
             plt.xlim(weight_lim)
             plt.tight_layout()
-            plt.savefig(f"./{log_dir}/results/weights_comparison_corrected.png", dpi=170)
+            plt.savefig(f"{log_dir}/results/weights_comparison_corrected.png", dpi=170)
             plt.close()
             if r_squared > 0.9:
                 r2_color = '\033[92m'  # green
@@ -2065,7 +2065,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
             axes[1, 2].tick_params(labelsize=12)
 
             plt.tight_layout()
-            plt.savefig(f"./{log_dir}/results/eigen_comparison.png", dpi=170)
+            plt.savefig(f"{log_dir}/results/eigen_comparison.png", dpi=170)
             plt.close()
 
             # spectral radius comparison
@@ -2178,7 +2178,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                     axes[1, 2].set_aspect('equal')
 
                     plt.tight_layout()
-                    plt.savefig(f"./{log_dir}/results/low_rank_UV_comparison.pdf", dpi=170)
+                    plt.savefig(f"{log_dir}/results/low_rank_UV_comparison.pdf", dpi=170)
                     plt.close()
 
                     # 3-panel scatter plot: W, U, V (true vs learned)
@@ -2223,7 +2223,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                     axes_sc[2].set_aspect('equal')
 
                     plt.tight_layout()
-                    plt.savefig(f"./{log_dir}/results/low_rank_WUV_scatter.png", dpi=300)
+                    plt.savefig(f"{log_dir}/results/low_rank_WUV_scatter.png", dpi=300)
                     plt.close()
 
                     # 3-panel heatmap: learned W, U, V (like data_generator plot)
@@ -2265,7 +2265,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                     plt.colorbar(im_v, ax=axes_h[2], fraction=0.046)
 
                     plt.tight_layout()
-                    plt.savefig(f"./{log_dir}/results/low_rank_WUV_learned.png", dpi=300)
+                    plt.savefig(f"{log_dir}/results/low_rank_WUV_learned.png", dpi=300)
                     plt.close()
 
                 else:
@@ -2304,7 +2304,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                     plt.xlabel(r'$v_i$', fontsize=68)
                     plt.ylabel(r'$y_i$', fontsize=68)
                     plt.tight_layout()
-                    plt.savefig(f"./{log_dir}/results/true_field_derivative.png", dpi=80)
+                    plt.savefig(f"{log_dir}/results/true_field_derivative.png", dpi=80)
                     plt.close()
 
                     fig, ax = fig_style.figure()
@@ -2315,7 +2315,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                     plt.xlabel(r'$v_i$', fontsize=68)
                     plt.ylabel(r'$y_i$', fontsize=68)
                     plt.tight_layout
-                    plt.savefig(f"./{log_dir}/results/field_derivative.png", dpi=80)
+                    plt.savefig(f"{log_dir}/results/field_derivative.png", dpi=80)
                     plt.close()
 
 
@@ -2349,7 +2349,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                         plt.imshow(im_, cmap='gray')
                         # plt.title(r'neuromodulation $b_i$', fontsize=48)
                         plt.tight_layout()
-                        plt.savefig(f"./{log_dir}/results/field/xi_{frame}.png", dpi=80)
+                        plt.savefig(f"{log_dir}/results/field/xi_{frame}.png", dpi=80)
                         plt.close()
 
                     fig, ax = fig_style.figure()
@@ -2364,7 +2364,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                     plt.xticks([10000, 100000], [10000, 100000], fontsize=48)
                     plt.yticks([0, 512, 1024], [0, 512, 1024], fontsize=48)
                     plt.tight_layout()
-                    plt.savefig(f"./{log_dir}/results/learned_plasticity.png", dpi=80)
+                    plt.savefig(f"{log_dir}/results/learned_plasticity.png", dpi=80)
                     plt.close()
 
                     fig, ax = fig_style.figure()
@@ -2375,7 +2375,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                     plt.xticks([10000, 100000], [10000, 100000], fontsize=48)
                     plt.yticks([0, 512, 1024], [0, 512, 1024], fontsize=48)
                     plt.tight_layout()
-                    plt.savefig(f"./{log_dir}/results/true_plasticity.png", dpi=80)
+                    plt.savefig(f"{log_dir}/results/true_plasticity.png", dpi=80)
                     plt.close()
 
                     prediction = prediction * torch.tensor(second_correction, device=device) / 10
@@ -2397,7 +2397,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                     plt.xlabel(r'true $y_i(t)$', fontsize=68)
                     plt.ylabel(r'learned $y_i(t)$', fontsize=68)
                     plt.tight_layout()
-                    plt.savefig(f"./{log_dir}/results/comparison_yi.png", dpi=80)
+                    plt.savefig(f"{log_dir}/results/comparison_yi.png", dpi=80)
                     plt.close()
 
                 else:
@@ -2413,7 +2413,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                     pred_list = list([])
 
                     # Ensure field directory exists
-                    os.makedirs(f"./{log_dir}/results/field", exist_ok=True)
+                    os.makedirs(f"{log_dir}/results/field", exist_ok=True)
 
                     # Compute scale factor from first frame
                     im_first = im[0].squeeze()
@@ -2437,7 +2437,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                         plt.xticks([])
                         plt.yticks([])
                         plt.tight_layout()
-                        plt.savefig(f"./{log_dir}/results/field/true_field{epoch}_{frame}.png", dpi=80)
+                        plt.savefig(f"{log_dir}/results/field/true_field{epoch}_{frame}.png", dpi=80)
                         plt.close()
 
                         # reconstructed LR - match training: model_f**2, then sqrt, then rot90, then scale
@@ -2452,7 +2452,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                         plt.xticks([])
                         plt.yticks([])
                         plt.tight_layout()
-                        plt.savefig(f"./{log_dir}/results/field/reconstructed_field_LR {epoch}_{frame}.png", dpi=80)
+                        plt.savefig(f"{log_dir}/results/field/reconstructed_field_LR {epoch}_{frame}.png", dpi=80)
                         plt.close()
 
                         x_data = np.reshape(im_, (n_input_neurons_per_axis * n_input_neurons_per_axis))
@@ -2477,7 +2477,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                         ax.text(0.05, 0.95, f'$R^2$: {r_squared:0.2f}  slope: {np.round(lin_fit[0], 2)}',
                                 transform=ax.transAxes, fontsize=42, verticalalignment='top')
                         plt.tight_layout()
-                        plt.savefig(f"./{log_dir}/results/field/comparison {epoch}_{frame}.png", dpi=80)
+                        plt.savefig(f"{log_dir}/results/field/comparison {epoch}_{frame}.png", dpi=80)
                         plt.close()
                         im_list.append(im_)
                         pred_list.append(pred)
@@ -2494,7 +2494,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                         plt.xticks([])
                         plt.yticks([])
                         plt.tight_layout()
-                        plt.savefig(f"./{log_dir}/results/field/reconstructed_field_HR {epoch}_{frame}.png", dpi=80)
+                        plt.savefig(f"{log_dir}/results/field/reconstructed_field_HR {epoch}_{frame}.png", dpi=80)
                         plt.close()
 
                     im_list = np.array(np.array(im_list))
@@ -2520,7 +2520,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                     plt.yticks([])
                     plt.tight_layout()
                     plt.tight_layout()
-                    plt.savefig(f"./{log_dir}/results/pic_comparison {epoch}.png", dpi=80)
+                    plt.savefig(f"{log_dir}/results/pic_comparison {epoch}.png", dpi=80)
                     plt.close()
 
                     fig, ax = fig_style.figure()
@@ -2530,7 +2530,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                     plt.xlabel(r'true $\Omega_i$', fontsize=68)
                     plt.ylabel(r'learned $\Omega_i$', fontsize=68)
                     plt.tight_layout()
-                    plt.savefig(f"./{log_dir}/results/all_comparison {epoch}.png", dpi=80)
+                    plt.savefig(f"{log_dir}/results/all_comparison {epoch}.png", dpi=80)
                     plt.close()
 
                     x_data = np.reshape(im_list, (100 * n_input_neurons_per_axis * n_input_neurons_per_axis))
@@ -2798,7 +2798,7 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
             plt.xlim([-1,2.5])
             plt.ylim([-config.plotting.xlim[1]/10, 2.5])
             plt.tight_layout()
-            plt.savefig(f"./{log_dir}/results/MLP1_{config_indices}.png", dpi=300)
+            plt.savefig(f"{log_dir}/results/MLP1_{config_indices}.png", dpi=300)
             plt.close()
 
 
@@ -2843,7 +2843,7 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
             plt.xlim([-1,5])
             plt.ylim([-config.plotting.xlim[1]/10, config.plotting.xlim[1]*2])
             plt.tight_layout()
-            plt.savefig(f"./{log_dir}/results/MLP1_{config_indices}_domain.png", dpi=300)
+            plt.savefig(f"{log_dir}/results/MLP1_{config_indices}_domain.png", dpi=300)
             plt.close()
 
 
@@ -2861,7 +2861,7 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
             plt.xticks(fontsize=24)
             plt.yticks(fontsize=24)
             plt.tight_layout()
-            plt.savefig(f"./{log_dir}/results/MLP1_slope_{config_indices}.png", dpi=300)
+            plt.savefig(f"{log_dir}/results/MLP1_slope_{config_indices}.png", dpi=300)
             plt.close()
 
             # Plot 5: Phi function visualization (vectorized)
@@ -2879,7 +2879,7 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
             plt.xticks(fontsize=24)
             plt.yticks(fontsize=24)
             plt.tight_layout()
-            plt.savefig(f"./{log_dir}/results/MLP0_{config_indices}.png", dpi=300)
+            plt.savefig(f"{log_dir}/results/MLP0_{config_indices}.png", dpi=300)
             plt.close()
 
             # lin_phi domain range: evaluate + slope extraction (vectorized)
@@ -2903,7 +2903,7 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
             plt.xticks(fontsize=24)
             plt.yticks(fontsize=24)
             plt.tight_layout()
-            plt.savefig(f"./{log_dir}/results/MLP0_{config_indices}_domain.png", dpi=300)
+            plt.savefig(f"{log_dir}/results/MLP0_{config_indices}_domain.png", dpi=300)
             plt.close()
 
             slopes_lin_phi_array = np.array(slopes_lin_phi_list)
@@ -2973,7 +2973,7 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
             plt.yticks(fontsize=24)
             plt.ylim([0, 1])
             plt.tight_layout()
-            plt.savefig(f"./{log_dir}/results/MLP0_{config_indices}_params.png", dpi=300)
+            plt.savefig(f"{log_dir}/results/MLP0_{config_indices}_params.png", dpi=300)
             plt.close()
 
 
@@ -4686,7 +4686,7 @@ def data_plot(config, config_file, epoch_list, style, extended, device, apply_we
         plt.ylabel('loss', fontsize=68)
         plt.xlabel('epochs', fontsize=68)
         plt.tight_layout()
-        plt.savefig(f"./{log_dir}/results/loss.png", dpi=170.7)
+        plt.savefig(f"{log_dir}/results/loss.png", dpi=170.7)
         plt.close()
         # Log final loss to analysis.log
         if log_file and len(loss) > 0:
@@ -4840,11 +4840,11 @@ def get_figures(index):
                 ax = axes[idx]
 
                 if idx==1:
-                    true = np.load(f"./{log_dir}/results/activity_modified.npy")
-                    pred = np.load(f"./{log_dir}/results/activity_modified_pred.npy")
+                    true = np.load(f"{log_dir}/results/activity_modified.npy")
+                    pred = np.load(f"{log_dir}/results/activity_modified_pred.npy")
                 else:
-                    true = np.load(f"./{log_dir}/results/activity_true.npy")
-                    pred = np.load(f"./{log_dir}/results/activity_pred.npy")
+                    true = np.load(f"{log_dir}/results/activity_true.npy")
+                    pred = np.load(f"{log_dir}/results/activity_pred.npy")
 
                 true_slice = true[neuron_indices, start_frame:end_frame].copy()
                 pred_slice = pred[neuron_indices, start_frame:end_frame].copy()
@@ -5363,21 +5363,21 @@ def get_figures(index):
             fig = plt.figure(figsize=(12, 10))
 
             ax1 = fig.add_subplot(3, 3, 1)
-            panel_pic_path =f"./{log_dir}/results/MLP1_{config_indices}.png"
+            panel_pic_path =f"{log_dir}/results/MLP1_{config_indices}.png"
             img = imageio.imread(panel_pic_path)
             plt.imshow(img)
             plt.axis('off')
             ax1.text(0.1, 1.01, 'a)', transform=ax1.transAxes, fontsize=18, va='bottom', ha='right')
 
             ax2 = fig.add_subplot(3, 3, 2)
-            panel_pic_path =f"./{log_dir}/results/MLP1_{config_indices}_domain.png"
+            panel_pic_path =f"{log_dir}/results/MLP1_{config_indices}_domain.png"
             img = imageio.imread(panel_pic_path)
             plt.imshow(img)
             plt.axis('off')
             ax2.text(0.1, 1.01, 'b)', transform=ax2.transAxes, fontsize=18, va='bottom', ha='right')
 
             ax3 = fig.add_subplot(3, 3, 3)
-            panel_pic_path = f"./{log_dir}/results/MLP1_slope_{config_indices}.png"
+            panel_pic_path = f"{log_dir}/results/MLP1_slope_{config_indices}.png"
             img = imageio.imread(panel_pic_path)
             plt.imshow(img)
             plt.axis('off')
@@ -5385,7 +5385,7 @@ def get_figures(index):
 
             # Second row
             ax4 = fig.add_subplot(3, 3, 4)
-            panel_pic_path = f"./{log_dir}/results/MLP0_{config_indices}.png"
+            panel_pic_path = f"{log_dir}/results/MLP0_{config_indices}.png"
 
             img = imageio.imread(panel_pic_path)
             plt.imshow(img)
@@ -5393,14 +5393,14 @@ def get_figures(index):
             ax4.text(0.1, 1.01, 'd)', transform=ax4.transAxes, fontsize=18, va='bottom', ha='right')
 
             ax5 = fig.add_subplot(3, 3, 5)
-            panel_pic_path = f"./{log_dir}/results/MLP0_{config_indices}_domain.png"
+            panel_pic_path = f"{log_dir}/results/MLP0_{config_indices}_domain.png"
             img = imageio.imread(panel_pic_path)
             plt.imshow(img)
             plt.axis('off')
             ax5.text(0.1, 1.01, 'e)', transform=ax5.transAxes, fontsize=18, va='bottom', ha='right')
 
             ax6 = fig.add_subplot(3, 3, 6)
-            panel_pic_path = f"./{log_dir}/results/MLP0_{config_indices}_params.png"
+            panel_pic_path = f"{log_dir}/results/MLP0_{config_indices}_params.png"
             img = imageio.imread(panel_pic_path)
             plt.imshow(img)
             plt.axis('off')
@@ -5408,7 +5408,7 @@ def get_figures(index):
 
             # Third row
             ax7 = fig.add_subplot(3, 3, 7)
-            panel_pic_path = f"./{log_dir}/results/weights_comparison_raw.png"
+            panel_pic_path = f"{log_dir}/results/weights_comparison_raw.png"
             if os.path.exists(panel_pic_path):
                 img = imageio.imread(panel_pic_path)
                 plt.imshow(img)
@@ -5418,7 +5418,7 @@ def get_figures(index):
             ax7.text(0.1, 1.01, 'g)', transform=ax7.transAxes, fontsize=18, va='bottom', ha='right')
 
             ax8 = fig.add_subplot(3, 3, 8)
-            panel_pic_path = f"./{log_dir}/results/weights_comparison_rj.png"
+            panel_pic_path = f"{log_dir}/results/weights_comparison_rj.png"
             if os.path.exists(panel_pic_path):
                 img = imageio.imread(panel_pic_path)
                 plt.imshow(img)
@@ -5428,7 +5428,7 @@ def get_figures(index):
             ax8.text(0.1, 1.01, 'h)', transform=ax8.transAxes, fontsize=18, va='bottom', ha='right')
 
             ax9 = fig.add_subplot(3, 3, 9)
-            panel_pic_path = f"./{log_dir}/results/weights_comparison_corrected.png"
+            panel_pic_path = f"{log_dir}/results/weights_comparison_corrected.png"
             if os.path.exists(panel_pic_path):
                 img = imageio.imread(panel_pic_path)
                 plt.imshow(img)
@@ -5458,21 +5458,21 @@ def get_figures(index):
             fig = plt.figure(figsize=(10, 9))
 
             ax1 = fig.add_subplot(3, 3, 1)
-            panel_pic_path =f"./{log_dir}/results/MLP1_{config_indices}.png"
+            panel_pic_path =f"{log_dir}/results/MLP1_{config_indices}.png"
             img = imageio.imread(panel_pic_path)
             plt.imshow(img)
             plt.axis('off')
             ax1.text(0.1, 1.01, 'a)', transform=ax1.transAxes, fontsize=18, va='bottom', ha='right')
 
             ax2 = fig.add_subplot(3, 3, 2)
-            panel_pic_path =f"./{log_dir}/results/MLP1_{config_indices}_domain.png"
+            panel_pic_path =f"{log_dir}/results/MLP1_{config_indices}_domain.png"
             img = imageio.imread(panel_pic_path)
             plt.imshow(img)
             plt.axis('off')
             ax2.text(0.1, 1.01, 'b)', transform=ax2.transAxes, fontsize=18, va='bottom', ha='right')
 
             ax3 = fig.add_subplot(3, 3, 3)
-            panel_pic_path = f"./{log_dir}/results/MLP1_slope_{config_indices}.png"
+            panel_pic_path = f"{log_dir}/results/MLP1_slope_{config_indices}.png"
             img = imageio.imread(panel_pic_path)
             plt.imshow(img)
             plt.axis('off')
@@ -5480,7 +5480,7 @@ def get_figures(index):
 
             # Second row
             ax4 = fig.add_subplot(3, 3, 4)
-            panel_pic_path = f"./{log_dir}/results/MLP0_{config_indices}.png"
+            panel_pic_path = f"{log_dir}/results/MLP0_{config_indices}.png"
 
             img = imageio.imread(panel_pic_path)
             plt.imshow(img)
@@ -5488,14 +5488,14 @@ def get_figures(index):
             ax4.text(0.1, 1.01, 'd)', transform=ax4.transAxes, fontsize=18, va='bottom', ha='right')
 
             ax5 = fig.add_subplot(3, 3, 5)
-            panel_pic_path = f"./{log_dir}/results/MLP0_{config_indices}_domain.png"
+            panel_pic_path = f"{log_dir}/results/MLP0_{config_indices}_domain.png"
             img = imageio.imread(panel_pic_path)
             plt.imshow(img)
             plt.axis('off')
             ax5.text(0.1, 1.01, 'e)', transform=ax5.transAxes, fontsize=18, va='bottom', ha='right')
 
             ax6 = fig.add_subplot(3, 3, 6)
-            panel_pic_path = f"./{log_dir}/results/MLP0_{config_indices}_params.png"
+            panel_pic_path = f"{log_dir}/results/MLP0_{config_indices}_params.png"
             img = imageio.imread(panel_pic_path)
             plt.imshow(img)
             plt.axis('off')
@@ -5503,7 +5503,7 @@ def get_figures(index):
 
             # Third row
             ax7 = fig.add_subplot(3, 3, 7)
-            panel_pic_path = f"./{log_dir}/results/weights_comparison_raw.png"
+            panel_pic_path = f"{log_dir}/results/weights_comparison_raw.png"
             if os.path.exists(panel_pic_path):
                 img = imageio.imread(panel_pic_path)
                 plt.imshow(img)
@@ -5513,7 +5513,7 @@ def get_figures(index):
             ax7.text(0.1, 1.01, 'g)', transform=ax7.transAxes, fontsize=18, va='bottom', ha='right')
 
             ax8 = fig.add_subplot(3, 3, 8)
-            panel_pic_path = f"./{log_dir}/results/weights_comparison_rj.png"
+            panel_pic_path = f"{log_dir}/results/weights_comparison_rj.png"
             if os.path.exists(panel_pic_path):
                 img = imageio.imread(panel_pic_path)
                 plt.imshow(img)
@@ -5523,7 +5523,7 @@ def get_figures(index):
             ax8.text(0.1, 1.01, 'h)', transform=ax8.transAxes, fontsize=18, va='bottom', ha='right')
 
             ax9 = fig.add_subplot(3, 3, 9)
-            panel_pic_path = f"./{log_dir}/results/weights_comparison_corrected.png"
+            panel_pic_path = f"{log_dir}/results/weights_comparison_corrected.png"
             if os.path.exists(panel_pic_path):
                 img = imageio.imread(panel_pic_path)
                 plt.imshow(img)

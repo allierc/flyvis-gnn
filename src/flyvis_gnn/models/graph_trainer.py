@@ -602,7 +602,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                         writer = FFMpegWriter(fps=fps, metadata=metadata)
                         fig = plt.figure(figsize=(12, 4))
 
-                        out_dir = f"./{log_dir}/tmp_training/external_input"
+                        out_dir = f"{log_dir}/tmp_training/external_input"
                         os.makedirs(out_dir, exist_ok=True)
                         out_path = f"{out_dir}/field_movie_{epoch}_{N}.mp4"
                         if os.path.exists(out_path):
@@ -828,7 +828,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                     learning_rate_NNR=learning_rate_NNR)
 
         plt.tight_layout()
-        plt.savefig(f"./{log_dir}/tmp_training/epoch_{epoch}.png")
+        plt.savefig(f"{log_dir}/tmp_training/epoch_{epoch}.png")
         plt.close()
 
     # Calculate and log training time
@@ -1355,7 +1355,7 @@ def data_train_flyvis_alternate(config, erase, best_model, device, log_file=None
                         writer = FFMpegWriter(fps=fps, metadata=metadata)
                         fig = plt.figure(figsize=(12, 4))
 
-                        out_dir = f"./{log_dir}/tmp_training/external_input"
+                        out_dir = f"{log_dir}/tmp_training/external_input"
                         os.makedirs(out_dir, exist_ok=True)
                         out_path = f"{out_dir}/field_movie_{epoch}_{N}.mp4"
                         if os.path.exists(out_path):
@@ -1548,7 +1548,7 @@ def data_train_flyvis_alternate(config, erase, best_model, device, log_file=None
                                                                  learning_rate_NNR=learning_rate_NNR)
 
         plt.tight_layout()
-        plt.savefig(f"./{log_dir}/tmp_training/epoch_{epoch}.png")
+        plt.savefig(f"{log_dir}/tmp_training/epoch_{epoch}.png")
         plt.close()
 
     # Calculate and log training time
@@ -2514,7 +2514,7 @@ def data_test_flyvis(
             noise_p_W = torch.randn_like(pde.p['w']) * noise_W # + torch.ones_like(pde.p['w'])
             pde_modified.p['w'] = pde.p['w'].clone() + noise_p_W
 
-        plot_weight_comparison(pde.p['w'], pde_modified.p['w'], f"./{log_dir}/results/weight_comparison_{noise_W}.png")
+        plot_weight_comparison(pde.p['w'], pde_modified.p['w'], f"{log_dir}/results/weight_comparison_{noise_W}.png")
 
 
     fig_style = dark_style
@@ -2830,7 +2830,7 @@ def data_test_flyvis(
                             voltages=to_numpy(x.voltage),
                             stimulus=to_numpy(x.stimulus[:sim.n_input_neurons]),
                             neuron_types=to_numpy(x.neuron_type).astype(int),
-                            output_path=f"./{log_dir}/tmp_recons/Fig_{run}_{num}.png",
+                            output_path=f"{log_dir}/tmp_recons/Fig_{run}_{num}.png",
                             calcium=to_numpy(x.calcium) if sim.calcium_type != "none" else None,
                             n_input_neurons=sim.n_input_neurons,
                             style=fig_style,
@@ -2851,12 +2851,12 @@ def data_test_flyvis(
         print('generating lossless video ...')
 
         output_name = config.dataset.split('flyvis_')[1] if 'flyvis_' in config.dataset else 'no_id'
-        src = f"./{log_dir}/tmp_recons/Fig_0_000000.png"
-        dst = f"./{log_dir}/results/input_{output_name}.png"
+        src = f"{log_dir}/tmp_recons/Fig_0_000000.png"
+        dst = f"{log_dir}/results/input_{output_name}.png"
         with open(src, "rb") as fsrc, open(dst, "wb") as fdst:
             fdst.write(fsrc.read())
 
-        generate_compressed_video_mp4(output_dir=f"./{log_dir}/results", run=run,
+        generate_compressed_video_mp4(output_dir=f"{log_dir}/results", run=run,
                                         output_name=output_name,framerate=20)
 
         # files = glob.glob(f'./{log_dir}/tmp_recons/*')
@@ -2901,7 +2901,7 @@ def data_test_flyvis(
         rmse_all, pearson_all, feve_all, r2_all = compute_trace_metrics(true_slice, pred_slice, "selected neurons")
 
         # Log rollout metrics to file
-        rollout_log_path = f"./{log_dir}/results_rollout.log"
+        rollout_log_path = f"{log_dir}/results_rollout.log"
         with open(rollout_log_path, 'w') as f:
             f.write("Rollout Metrics for Selected Neurons\n")
             f.write("="*60 + "\n")
@@ -2976,7 +2976,7 @@ def data_test_flyvis(
 
             plt.tight_layout()
             save_suffix = f"_{fig_suffix}" if fig_suffix else ""
-            plt.savefig(f"./{log_dir}/results/rollout_{filename_}_{sim.visual_input_type}{save_suffix}.png", dpi=300, bbox_inches='tight')
+            plt.savefig(f"{log_dir}/results/rollout_{filename_}_{sim.visual_input_type}{save_suffix}.png", dpi=300, bbox_inches='tight')
             plt.close()
 
     else:
@@ -2984,7 +2984,7 @@ def data_test_flyvis(
         rmse_all, pearson_all, feve_all, r2_all = compute_trace_metrics(activity_true, activity_pred, "all neurons")
 
         # Log rollout metrics to file
-        rollout_log_path = f"./{log_dir}/results_rollout.log"
+        rollout_log_path = f"{log_dir}/results_rollout.log"
         with open(rollout_log_path, 'w') as f:
             f.write("Rollout Metrics for All Neurons\n")
             f.write("="*60 + "\n")
@@ -3060,14 +3060,14 @@ def data_test_flyvis(
             ax.legend(loc='upper right', fontsize=14, frameon=False)
 
             plt.tight_layout()
-            plt.savefig(f"./{log_dir}/results/rollout_{filename_}_{sim.visual_input_type}_{fig_name}.png", dpi=300, bbox_inches='tight')
+            plt.savefig(f"{log_dir}/results/rollout_{filename_}_{sim.visual_input_type}_{fig_name}.png", dpi=300, bbox_inches='tight')
             plt.close()
 
         if ('test_ablation' in test_mode) or ('test_inactivity' in test_mode):
-            np.save(f"./{log_dir}/results/activity_modified.npy", activity_true_modified)
-            np.save(f"./{log_dir}/results/activity_modified_pred.npy", activity_pred)
+            np.save(f"{log_dir}/results/activity_modified.npy", activity_true_modified)
+            np.save(f"{log_dir}/results/activity_modified_pred.npy", activity_pred)
         else:
-            np.save(f"./{log_dir}/results/activity_true.npy", activity_true)
-            np.save(f"./{log_dir}/results/activity_pred.npy", activity_pred)
+            np.save(f"{log_dir}/results/activity_true.npy", activity_true)
+            np.save(f"{log_dir}/results/activity_pred.npy", activity_pred)
 
 
