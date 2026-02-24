@@ -1032,87 +1032,58 @@ def data_train_flyvis_RNN(config, erase, best_model, device):
             logger.info(f"Learning rate decreased to {param_group['lr']}")
 
 
-def _generate_inr_video(gt_np, pred_np, pos_np, field_name, output_folder,
-                        step_video=10, fps=30):
-    """Generate GT vs Pred MP4 video for INR training results.
-
-    Two-panel hex scatter (GT | Pred) for every step_video-th frame,
-    stitched into MP4 via ffmpeg.
+def _generate_inr_video(gt_np, predict_frame_fn, pos_np, field_name,
+                        output_folder, n_frames, step_video=10, fps=30):
+    """Generate GT vs Pred MP4 video using FFMpegWriter (streaming).
 
     Args:
-        gt_np: (T, N) ground truth
-        pred_np: (T, N) predictions
-        pos_np: (N, 2) static neuron positions (or None to skip)
+        gt_np: (T, N) ground truth numpy array
+        predict_frame_fn: callable(frame_idx) -> (N,) numpy array
+        pos_np: (N, 2) neuron positions (or None to skip)
         field_name: label for the video
         output_folder: where to write output
+        n_frames: total number of frames
         step_video: sample every N-th frame
         fps: output video framerate
     """
-    import subprocess
-
     if pos_np is None:
         print('  no neuron positions — skipping video')
         return
-    if shutil.which('ffmpeg') is None:
-        print('  ffmpeg not found — skipping video')
-        return
-
-    n_frames = gt_np.shape[0]
-    video_frames_dir = os.path.join(output_folder, 'video_frames')
-    os.makedirs(video_frames_dir, exist_ok=True)
-    for f in glob.glob(f'{video_frames_dir}/*.png'):
-        os.remove(f)
 
     x, y = pos_np[:, 0], pos_np[:, 1]
-    clim = (np.percentile(gt_np, 2), np.percentile(gt_np, 98))
+    # color limits from a sample of GT frames
+    sample_idx = np.linspace(0, n_frames - 1, min(200, n_frames), dtype=int)
+    sample_vals = gt_np[sample_idx].ravel()
+    clim = (np.percentile(sample_vals, 2), np.percentile(sample_vals, 98))
 
     frame_indices = list(range(0, n_frames, step_video))
     print(f'  generating video: {len(frame_indices)} frames ...')
 
-    for frame_count, k in enumerate(frame_indices):
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4.5))
-        ax1.scatter(x, y, c=gt_np[k], cmap='coolwarm', s=3, alpha=1.0,
-                    vmin=clim[0], vmax=clim[1], linewidths=0)
-        ax2.scatter(x, y, c=pred_np[k], cmap='coolwarm', s=3, alpha=1.0,
-                    vmin=clim[0], vmax=clim[1], linewidths=0)
-        for ax in (ax1, ax2):
-            ax.set_aspect('equal')
-            ax.set_xticks([]); ax.set_yticks([])
-        ax1.set_title(f'GT  frame {k}', fontsize=10)
-        ax2.set_title(f'Pred  frame {k}', fontsize=10)
-        fig.suptitle(f'{field_name}  ({frame_count + 1}/{len(frame_indices)})', fontsize=11)
-        plt.tight_layout()
-        plt.savefig(f'{video_frames_dir}/frame_{frame_count:06d}.png', dpi=100)
-        plt.close()
-
+    fig = plt.figure(figsize=(10, 4.5))
     video_path = os.path.join(output_folder, f'{field_name}_gt_vs_pred.mp4')
-    ffmpeg_cmd = [
-        'ffmpeg', '-y', '-loglevel', 'error',
-        '-framerate', str(fps),
-        '-i', f'{video_frames_dir}/frame_%06d.png',
-        '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
-        '-c:v', 'libx264', '-crf', '23', '-pix_fmt', 'yuv420p',
-        video_path,
-    ]
-    try:
-        result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=300)
-        if result.returncode == 0:
-            size_mb = os.path.getsize(video_path) / 1e6
-            print(f'  video saved: {video_path} ({size_mb:.1f} MB)')
-        else:
-            print(f'  video generation failed: {result.stderr}')
-    except subprocess.TimeoutExpired:
-        print('  video generation timed out')
-    except Exception as e:
-        print(f'  video generation error: {e}')
+    metadata = dict(title=f'{field_name} GT vs Pred', artist='Matplotlib')
+    writer = FFMpegWriter(fps=fps, metadata=metadata)
 
-    # clean up frame PNGs
-    for f in glob.glob(f'{video_frames_dir}/*.png'):
-        os.remove(f)
-    try:
-        os.rmdir(video_frames_dir)
-    except OSError:
-        pass
+    with writer.saving(fig, video_path, dpi=100):
+        for k in trange(0, n_frames, step_video, ncols=100, desc='video'):
+            fig.clf()
+            ax1 = fig.add_subplot(1, 2, 1)
+            ax2 = fig.add_subplot(1, 2, 2)
+            pred_frame = predict_frame_fn(k)
+            ax1.scatter(x, y, s=256, c=gt_np[k], cmap='viridis',
+                        marker='h', vmin=clim[0], vmax=clim[1])
+            ax2.scatter(x, y, s=256, c=pred_frame, cmap='viridis',
+                        marker='h', vmin=clim[0], vmax=clim[1])
+            ax1.set_title('ground truth', fontsize=12)
+            ax2.set_title('prediction', fontsize=12)
+            ax1.set_axis_off(); ax2.set_axis_off()
+            fig.suptitle(f'{field_name}  frame {k}', fontsize=11)
+            plt.tight_layout()
+            writer.grab_frame()
+    plt.close(fig)
+
+    size_mb = os.path.getsize(video_path) / 1e6
+    print(f'  video saved: {video_path} ({size_mb:.1f} MB)')
 
 
 def data_train_INR(config=None, device=None, total_steps=50000, field_name='stimulus'):
@@ -1385,13 +1356,11 @@ def data_train_INR(config=None, device=None, total_steps=50000, field_name='stim
             plt.close(fig_cmp)
             print(f'  R²={last_r2:.4f}  saved {cmp_path}')
 
-    # --- final evaluation ---
+    # --- final evaluation (sampled) ---
     elapsed = time.time() - t_start
-    pred_all = _predict_all()
-    gt_np = ground_truth.cpu().numpy()
-    pred_np = pred_all.cpu().numpy()
-    final_mse = np.mean((gt_np - pred_np) ** 2)
-    _, _, r_value, _, _ = linregress(gt_np.reshape(-1), pred_np.reshape(-1))
+    gt_s, pred_s = _predict_sampled(n_sample=500)
+    final_mse = np.mean((gt_s - pred_s) ** 2)
+    _, _, r_value, _, _ = linregress(gt_s.reshape(-1), pred_s.reshape(-1))
     final_r2 = r_value ** 2
 
     print(f'  training complete: {elapsed / 60:.1f} min')
@@ -1421,8 +1390,17 @@ def data_train_INR(config=None, device=None, total_steps=50000, field_name='stim
     print(f'  results written to {results_path}')
 
     # --- generate GT vs Pred video ---
-    _generate_inr_video(gt_np, pred_np, neuron_pos_np, field_name,
-                        output_folder, step_video=10, fps=30)
+    def _predict_frame_np(frame_idx):
+        """Predict one frame and return numpy array."""
+        if inr_type == 'siren_txy':
+            return _predict_frame_txy(frame_idx).cpu().numpy()
+        elif inr_type in ('siren_t', 'ngp'):
+            with torch.no_grad():
+                t_val = torch.tensor([[frame_idx / t_period]], dtype=torch.float32, device=device)
+                return nnr_f(t_val).squeeze().cpu().numpy()
+
+    _generate_inr_video(field_np, _predict_frame_np, neuron_pos_np, field_name,
+                        output_folder, n_frames=n_frames, step_video=10, fps=30)
 
     return nnr_f, loss_list
 
