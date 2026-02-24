@@ -56,7 +56,8 @@ training:
   n_runs: 1
   device: auto
   recurrent_training: false
-  batch_size: 16
+  batch_size: 1
+  inr_batch_size: 16
   batch_ratio: 1
   sparsity: none
   data_augmentation_loop: 20

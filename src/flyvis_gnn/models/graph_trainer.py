@@ -1237,7 +1237,7 @@ def data_train_INR(config=None, device=None, total_steps=50000, field_name='stim
     omega_f_learning = getattr(model_config, 'omega_f_learning', False)
     t_period = getattr(model_config, 'nnr_f_T_period', n_frames)
     xy_period = getattr(model_config, 'nnr_f_xy_period', 1.0)
-    batch_size = getattr(tc, 'batch_size', 8)
+    batch_size = getattr(tc, 'inr_batch_size', 8)
     learning_rate = getattr(tc, 'learning_rate_NNR_f', 1e-6)
 
     # --- build model ---
