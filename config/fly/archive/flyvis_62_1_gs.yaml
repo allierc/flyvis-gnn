@@ -44,7 +44,7 @@ plotting:
     - -100
     - 100
 training:
-  n_epochs: 40
+  n_epochs: 1
   n_runs: 1
   device: auto
   recurrent_training: false
