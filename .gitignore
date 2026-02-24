@@ -1,3 +1,6 @@
+# Data root config (per-environment, not tracked)
+data_paths.json
+
 # Data files (large simulation data)
 *.npy
 *.npz

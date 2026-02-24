@@ -42,7 +42,7 @@ matplotlib.use('Agg')
 from flyvis_gnn.config import NeuralGraphConfig
 from flyvis_gnn.generators.graph_data_generator import data_generate
 from flyvis_gnn.models.graph_trainer import data_train, data_test
-from flyvis_gnn.utils import set_device, add_pre_folder, load_and_display
+from flyvis_gnn.utils import set_device, add_pre_folder, load_and_display, graphs_data_path, log_path
 from GNN_PlotFigure import data_plot
 
 warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API")
@@ -70,8 +70,8 @@ config.config_file = pre_folder + config_file_
 
 device = set_device(config.training.device)
 
-log_dir = f'./log/{pre_folder}{config_file_}'
-graphs_dir = f'./graphs_data/{pre_folder}{config_file_}'
+log_dir = log_path(pre_folder + config_file_)
+graphs_dir = graphs_data_path(pre_folder + config_file_)
 
 print(f"config: {config.config_file}")
 print(f"device: {device}")
@@ -167,7 +167,7 @@ print("-" * 80)
 print("STEP 3: GNN EVALUATION")
 print("-" * 80)
 
-folder_name = f'./log/{pre_folder}/tmp_results/'
+folder_name = log_path(pre_folder, 'tmp_results') + '/'
 os.makedirs(folder_name, exist_ok=True)
 data_plot(
     config=config,

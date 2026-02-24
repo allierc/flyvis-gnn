@@ -36,7 +36,7 @@ import time
 from datetime import datetime
 
 from flyvis_gnn.config import NeuralGraphConfig
-from flyvis_gnn.utils import set_device, add_pre_folder
+from flyvis_gnn.utils import set_device, add_pre_folder, log_path
 
 
 # ------------------------------------------------------------------ #
@@ -260,7 +260,7 @@ def run_test_plot(config, config_file, device):
     pre_folder = os.path.dirname(config.config_file)
     if pre_folder:
         pre_folder += '/'
-    folder_name = f'./log/{pre_folder}/tmp_results/'
+    folder_name = log_path(pre_folder, 'tmp_results') + '/'
     os.makedirs(folder_name, exist_ok=True)
     data_plot(
         config=config, config_file=config_file,

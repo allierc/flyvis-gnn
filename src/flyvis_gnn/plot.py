@@ -12,7 +12,7 @@ import torch
 from scipy.optimize import curve_fit
 
 from flyvis_gnn.fitting_models import linear_model
-from flyvis_gnn.utils import to_numpy
+from flyvis_gnn.utils import to_numpy, graphs_data_path
 
 
 # ------------------------------------------------------------------ #
@@ -361,11 +361,11 @@ def compute_dynamics_r2(model, x_ts, config, device, n_neurons):
     Returns:
         (vrest_r2, tau_r2): tuple of float R² values.
     """
-    gt_V_rest_tensor = torch.load(f'./graphs_data/{config.dataset}/V_i_rest.pt',
+    gt_V_rest_tensor = torch.load(graphs_data_path(config.dataset, 'V_i_rest.pt'),
                                   map_location=device, weights_only=True)
-    tau_path = f'./graphs_data/{config.dataset}/taus.pt'
+    tau_path = graphs_data_path(config.dataset, 'taus.pt')
     if not os.path.exists(tau_path):
-        tau_path = f'./graphs_data/{config.dataset}/tau_i.pt'
+        tau_path = graphs_data_path(config.dataset, 'tau_i.pt')
     gt_tau_tensor = torch.load(tau_path, map_location=device, weights_only=True)
     gt_V_rest = to_numpy(gt_V_rest_tensor[:n_neurons])
     gt_tau = to_numpy(gt_tau_tensor[:n_neurons])
@@ -1166,7 +1166,7 @@ def plot_synaptic_frame_visual(X1, A1, H1, dataset_name, run, num):
     plt.xticks([])
     plt.yticks([])
     plt.tight_layout()
-    plt.savefig(f"graphs_data/{dataset_name}/Fig/Fig_{run}_{num}.png", dpi=80)
+    plt.savefig(graphs_data_path(dataset_name, "Fig", f"Fig_{run}_{num}.png"), dpi=80)
     plt.close()
 
 
@@ -1196,7 +1196,7 @@ def plot_synaptic_frame_modulation(X1, A1, H1, dataset_name, run, num):
     plt.xticks([])
     plt.yticks([])
     plt.tight_layout()
-    plt.savefig(f"graphs_data/{dataset_name}/Fig/Fig_{run}_{num}.png", dpi=80)
+    plt.savefig(graphs_data_path(dataset_name, "Fig", f"Fig_{run}_{num}.png"), dpi=80)
     plt.close()
 
 
@@ -1239,7 +1239,7 @@ def plot_synaptic_frame_plasticity(X1, x, dataset_name, run, num):
     plt.xticks([])
     plt.yticks([])
     plt.tight_layout()
-    plt.savefig(f"graphs_data/{dataset_name}/Fig/Fig_{run}_{num}.tif", dpi=170)
+    plt.savefig(graphs_data_path(dataset_name, "Fig", f"Fig_{run}_{num}.tif"), dpi=170)
     plt.close()
 
 
@@ -1259,11 +1259,11 @@ def plot_synaptic_frame_default(X1, x, dataset_name, run, num):
     plt.xticks([])
     plt.yticks([])
     plt.tight_layout()
-    plt.savefig(f"graphs_data/{dataset_name}/Fig/Fig_{run}_{num}.tif", dpi=170)
+    plt.savefig(graphs_data_path(dataset_name, "Fig", f"Fig_{run}_{num}.tif"), dpi=170)
     plt.close()
 
     # Read back and create zoomed subplot
-    im_ = imread(f"graphs_data/{dataset_name}/Fig/Fig_{run}_{num}.tif")
+    im_ = imread(graphs_data_path(dataset_name, "Fig", f"Fig_{run}_{num}.tif"))
     plt.figure(figsize=(10, 10))
     plt.imshow(im_)
     plt.xticks([])
@@ -1273,7 +1273,7 @@ def plot_synaptic_frame_default(X1, x, dataset_name, run, num):
     plt.xticks([])
     plt.yticks([])
     plt.tight_layout()
-    plt.savefig(f"graphs_data/{dataset_name}/Fig/Fig_{run}_{num}.png", dpi=80)
+    plt.savefig(graphs_data_path(dataset_name, "Fig", f"Fig_{run}_{num}.png"), dpi=80)
     plt.close()
 
 
@@ -1316,7 +1316,7 @@ def plot_eigenvalue_spectrum(connectivity, dataset_name, mc='k', log_file=None):
     axes[2].set_title('eigenvalue spectrum (log scale)', fontsize=28)
 
     plt.tight_layout()
-    plt.savefig(f"./graphs_data/{dataset_name}/eigenvalues.png", dpi=150)
+    plt.savefig(graphs_data_path(dataset_name, "eigenvalues.png"), dpi=150)
     plt.close()
 
     msg = f'spectral radius: {spectral_radius:.3f}'

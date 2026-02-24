@@ -21,7 +21,7 @@ from flyvis_gnn.models.graph_trainer import data_train, data_test
 from flyvis_gnn.models.exploration_tree import compute_ucb_scores
 from flyvis_gnn.models.plot_exploration_tree import parse_ucb_scores, plot_ucb_tree
 from flyvis_gnn.models.utils import save_exploration_artifacts_flyvis
-from flyvis_gnn.utils import set_device, add_pre_folder
+from flyvis_gnn.utils import set_device, add_pre_folder, log_path
 from GNN_PlotFigure import data_plot
 
 import warnings
@@ -69,7 +69,7 @@ def detect_last_iteration(analysis_path, config_save_dir, n_parallel):
 # ---------------------------------------------------------------------------
 
 CLUSTER_HOME = "/groups/saalfeld/home/allierc"
-CLUSTER_ROOT_DIR = f"{CLUSTER_HOME}/Graph/flyvis-gnn"
+CLUSTER_ROOT_DIR = f"{CLUSTER_HOME}/GraphCluster/flyvis-gnn"
 
 
 def submit_cluster_job(slot, config_path, analysis_log_path, config_file_field,
@@ -295,7 +295,7 @@ if __name__ == "__main__":
     root_dir = os.path.dirname(os.path.abspath(__file__))
     config_root = root_dir + "/config"
     llm_dir = f"{root_dir}/LLM"
-    exploration_dir = f"{root_dir}/log/Claude_exploration/{exploration_name}"
+    exploration_dir = os.path.abspath(log_path('Claude_exploration', exploration_name))
 
     if args.resume:
         analysis_path_probe = f"{exploration_dir}/{llm_task_name}_analysis.md"
@@ -752,7 +752,7 @@ Fix the bug. Do NOT make other changes."""
 
                         # Plot
                         slot_config_file = pre_folder + slot_names[slot]
-                        folder_name = './log/' + pre_folder + '/tmp_results/'
+                        folder_name = log_path(pre_folder, 'tmp_results') + '/'
                         os.makedirs(folder_name, exist_ok=True)
                         data_plot(
                             config=config,

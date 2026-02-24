@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import os
 import torch
 
-from flyvis_gnn.utils import to_numpy
+from flyvis_gnn.utils import to_numpy, graphs_data_path, log_path
 from flyvis_gnn.neuron_state import NeuronState
 from flyvis_gnn.figure_style import default_style, dark_style
 import numpy as np
@@ -946,14 +946,14 @@ def save_exploration_artifacts(root_dir, exploration_dir, config, config_file_, 
             _copy(src_config, dst_config)
 
     # save connectivity scatterplot (most recent comparison_*.png from matrix folder)
-    matrix_dir = f"{root_dir}/log/{pre_folder}{config_file_}/tmp_training/matrix"
+    matrix_dir = log_path(f"{pre_folder}{config_file_}", 'tmp_training', 'matrix')
     scatter_files = glob.glob(f"{matrix_dir}/comparison_*.png")
     if scatter_files:
         latest_scatter = max(scatter_files, key=os.path.getmtime)
         _copy(latest_scatter, f"{scatter_save_dir}/iter_{iteration:03d}.png")
 
     # save connectivity matrix heatmap only at first iteration of each block
-    data_folder = f"{root_dir}/graphs_data/{config.dataset}"
+    data_folder = graphs_data_path(config.dataset)
     if is_block_start:
         src_matrix = f"{data_folder}/connectivity_matrix.png"
         if os.path.exists(src_matrix):
@@ -966,7 +966,7 @@ def save_exploration_artifacts(root_dir, exploration_dir, config, config_file_, 
             _copy(activity_path, f"{activity_save_dir}/block_{block_number:03d}.png")
 
     # save combined MLP plot (MLP0 + MLP1 side by side) using PNG files from results
-    results_dir = f"{root_dir}/log/{pre_folder}{config_file_}/results"
+    results_dir = log_path(f"{pre_folder}{config_file_}", 'results')
     src_mlp0 = f"{results_dir}/MLP0.png"
     src_mlp1 = f"{results_dir}/MLP1_corrected.png"
     if os.path.exists(src_mlp0) and os.path.exists(src_mlp1):
@@ -989,7 +989,7 @@ def save_exploration_artifacts(root_dir, exploration_dir, config, config_file_, 
         _copy(src_montage, f"{kinograph_save_dir}/iter_{iteration:03d}.png")
 
     # save embedding plot (latest from tmp_training/embedding/)
-    embedding_dir = f"{root_dir}/log/{pre_folder}{config_file_}/tmp_training/embedding"
+    embedding_dir = log_path(f"{pre_folder}{config_file_}", 'tmp_training', 'embedding')
     if os.path.isdir(embedding_dir):
         embed_files = glob.glob(f"{embedding_dir}/*.png")
         if embed_files:
@@ -1064,7 +1064,7 @@ def save_exploration_artifacts_flyvis(root_dir, exploration_dir, config, config_
     is_block_start = (iter_in_block == 1)
 
     # Results directory
-    results_dir = f"{root_dir}/log/{pre_folder}{config_file_}/results"
+    results_dir = log_path(f"{pre_folder}{config_file_}", 'results')
 
     # Extract config indices for filename matching
     dataset = config.dataset if hasattr(config, 'dataset') else config_file_
@@ -1126,14 +1126,14 @@ def save_exploration_artifacts_flyvis(root_dir, exploration_dir, config, config_
         _copy(latest, f"{umap_dir}/iter_{iteration:03d}.png")
 
     # r2_trajectory: metrics.log (training R2 trajectory per iteration)
-    training_dir = f"{root_dir}/log/{pre_folder}{config_file_}/tmp_training"
+    training_dir = log_path(f"{pre_folder}{config_file_}", 'tmp_training')
     r2_log_src = f"{training_dir}/metrics.log"
     if os.path.exists(r2_log_src):
         _copy(r2_log_src, f"{r2_trajectory_dir}/iter_{iteration:03d}.log")
 
     # --- Per-block panels (block start only) ---
 
-    data_folder = f"{root_dir}/graphs_data/{config.dataset}"
+    data_folder = graphs_data_path(config.dataset)
     activity_path = f"{data_folder}/activity.png"
 
     if is_block_start:

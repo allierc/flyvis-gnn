@@ -1,4 +1,5 @@
 import glob
+import json
 import logging
 import os
 import shutil
@@ -25,6 +26,37 @@ warnings.filterwarnings('ignore')
 
 
 import tensorstore as ts
+
+
+# ---------------------------------------------------------------------------
+# Configurable data root (graphs_data/ and log/ location)
+# ---------------------------------------------------------------------------
+
+_DATA_ROOT_CACHE = None
+
+
+def get_data_root():
+    """Return the data root directory from data_paths.json, or '.' if not found."""
+    global _DATA_ROOT_CACHE
+    if _DATA_ROOT_CACHE is not None:
+        return _DATA_ROOT_CACHE
+    json_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'data_paths.json')
+    if os.path.isfile(json_path):
+        with open(json_path) as f:
+            _DATA_ROOT_CACHE = json.load(f)['data_root']
+    else:
+        _DATA_ROOT_CACHE = '.'
+    return _DATA_ROOT_CACHE
+
+
+def graphs_data_path(*parts):
+    """Build path under graphs_data/: graphs_data_path('fly', 'x.npy') -> '{data_root}/graphs_data/fly/x.npy'"""
+    return os.path.join(get_data_root(), 'graphs_data', *parts)
+
+
+def log_path(*parts):
+    """Build path under log/: log_path('fly', 'models') -> '{data_root}/log/fly/models'"""
+    return os.path.join(get_data_root(), 'log', *parts)
 
 def open_gcs_zarr(url: str):
     # Strip accidental prefixes like:  'str = "gs://.../aligned"'
@@ -517,40 +549,40 @@ def add_pre_folder(config_file_):
 def get_log_dir(config=[]):
 
     if 'PDE_A' in config.graph_model.particle_model_name:
-        l_dir = os.path.join('./log/arbitrary/')
+        l_dir = log_path('arbitrary', '')
     elif 'PDE_B' in config.graph_model.particle_model_name:
-        l_dir = os.path.join('./log/boids/')
+        l_dir = log_path('boids', '')
     elif 'PDE_E' in config.graph_model.particle_model_name:
-        l_dir = os.path.join('./log/Coulomb/')
+        l_dir = log_path('Coulomb', '')
     elif 'PDE_F' in config.graph_model.particle_model_name:
-        l_dir = os.path.join('./log/fluids/')
+        l_dir = log_path('fluids', '')
     elif 'PDE_G' in config.graph_model.particle_model_name:
-        l_dir = os.path.join('./log/gravity/')
+        l_dir = log_path('gravity', '')
     elif 'PDE_K' in config.graph_model.particle_model_name:
-        l_dir = os.path.join('./log/springs/')
+        l_dir = log_path('springs', '')
     elif 'PDE_N' in config.graph_model.signal_model_name:
-        l_dir = os.path.join('./log/signal/')
+        l_dir = log_path('signal', '')
     elif 'PDE_MLPs' in config.graph_model.particle_model_name:
-        l_dir = os.path.join('./log/multimaterial/')
+        l_dir = log_path('multimaterial', '')
     elif 'RD_RPS' in config.graph_model.mesh_model_name:
-        l_dir = os.path.join('./log/reaction_diffusion/')
+        l_dir = log_path('reaction_diffusion', '')
     elif 'Wave' in config.graph_model.mesh_model_name:
-        l_dir = os.path.join('./log/wave/')
+        l_dir = log_path('wave', '')
     elif 'cell' in config.dataset:
-        l_dir = os.path.join('./log/cell/')
+        l_dir = log_path('cell', '')
     elif 'mouse' in config.dataset:
-        l_dir = os.path.join('./log/mouse/')
+        l_dir = log_path('mouse', '')
     elif 'rat' in config.dataset:
-        l_dir = os.path.join('./log/rat/')
+        l_dir = log_path('rat', '')
     elif 'celegans' in config.dataset:
-        l_dir = os.path.join('./log/celegans/')
+        l_dir = log_path('celegans', '')
 
     return l_dir
 
 
 def create_log_dir(config=[], erase=True):
 
-    log_dir = os.path.join('.', 'log', config.config_file)
+    log_dir = log_path(config.config_file)
     print('log_dir: {}'.format(log_dir))
 
     os.makedirs(log_dir, exist_ok=True)
@@ -902,7 +934,7 @@ def total_variation_norm(im):
 
 
 def check_file_exists(dataset_name):
-    file_path = f'graphs_data/graphs_{dataset_name}/connection_matrix_list.pt'
+    file_path = graphs_data_path(f'graphs_{dataset_name}', 'connection_matrix_list.pt')
     return os.path.isfile(file_path)
 
 
@@ -2126,11 +2158,11 @@ def plot_interesting_causality_pairs(significant_pairs, filtered_time_series, tr
             filtered_time_series=filtered_time_series,
             track_positions=track_positions,
             significant_pairs=significant_pairs,
-            save_path=f'graphs_data/{dataset_name}/causality_pair_{i + 1:02d}_{l}_{f}_{pair["category"]}.png'
+            save_path=graphs_data_path(dataset_name, f'causality_pair_{i + 1:02d}_{l}_{f}_{pair["category"]}.png')
         )
 
     # Create summary report
-    summary_filename = f'graphs_data/{dataset_name}/causality_pairs_summary.txt'
+    summary_filename = graphs_data_path(dataset_name, 'causality_pairs_summary.txt')
     with open(summary_filename, 'w') as f:
         f.write("INTERESTING CAUSALITY PAIRS ANALYSIS\n")
         f.write("=" * 50 + "\n\n")
@@ -2147,7 +2179,7 @@ def plot_interesting_causality_pairs(significant_pairs, filtered_time_series, tr
             f.write("\n")
 
     print(f"\nsummary saved to {summary_filename}")
-    print(f"all plots saved to graphs_data/{dataset_name}/causality_pair_*.png")
+    print(f"all plots saved to {graphs_data_path(dataset_name)}/causality_pair_*.png")
 
     return selected_pairs
 

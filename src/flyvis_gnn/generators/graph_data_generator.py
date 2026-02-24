@@ -32,7 +32,7 @@ from flyvis_gnn.generators.utils import (
     greedy_blue_mask,
     apply_pairwise_knobs_torch,
 )
-from flyvis_gnn.utils import to_numpy, get_datavis_root_dir
+from flyvis_gnn.utils import to_numpy, get_datavis_root_dir, graphs_data_path
 from tqdm import tqdm, trange
 import os
 
@@ -55,8 +55,8 @@ def data_generate(
 
     print(f"\033[94mdataset: {config.dataset}\033[0m")
 
-    if (os.path.isfile(f"./graphs_data/{config.dataset}/x_list_0.npy")) | (
-        os.path.isfile(f"./graphs_data/{config.dataset}/x_list_0.pt")
+    if (os.path.isfile(graphs_data_path(config.dataset, "x_list_0.npy"))) | (
+        os.path.isfile(graphs_data_path(config.dataset, "x_list_0.pt"))
     ):
         print("watch out: data already generated")
         # return
@@ -113,11 +113,11 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
 
     run = 0
 
-    os.makedirs("./graphs_data/fly", exist_ok=True)
-    folder = f"./graphs_data/{config.dataset}/"
+    os.makedirs(graphs_data_path("fly"), exist_ok=True)
+    folder = graphs_data_path(config.dataset) + "/"
     os.makedirs(folder, exist_ok=True)
-    os.makedirs(f"./graphs_data/{config.dataset}/Fig/", exist_ok=True)
-    files = glob.glob(f'./graphs_data/{config.dataset}/Fig/*')
+    os.makedirs(graphs_data_path(config.dataset, "Fig"), exist_ok=True)
+    files = glob.glob(graphs_data_path(config.dataset, "Fig", "*"))
     for f in files:
         os.remove(f)
 
@@ -274,10 +274,10 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                     model_type=model_config.signal_model_name, n_neuron_types=sim.n_neuron_types, device=device)
 
     if save:
-        torch.save(p["w"], f"./graphs_data/{config.dataset}/weights.pt")
-        torch.save(edge_index, f"graphs_data/{config.dataset}/edge_index.pt")
-        torch.save(p["tau_i"], f"./graphs_data/{config.dataset}/taus.pt")
-        torch.save(p["V_i_rest"], f"./graphs_data/{config.dataset}/V_i_rest.pt")
+        torch.save(p["w"], graphs_data_path(config.dataset, "weights.pt"))
+        torch.save(edge_index, graphs_data_path(config.dataset, "edge_index.pt"))
+        torch.save(p["tau_i"], graphs_data_path(config.dataset, "taus.pt"))
+        torch.save(p["V_i_rest"], graphs_data_path(config.dataset, "V_i_rest.pt"))
 
     x_coords, y_coords, u_coords, v_coords = get_photoreceptor_positions_from_net(net)
 
@@ -402,12 +402,12 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     # use zarr writers for incremental saving (memory efficient)
     # V3 format: each NeuronState field gets its own zarr array
     x_writer = ZarrSimulationWriterV3(
-        path=f"graphs_data/{config.dataset}/x_list_{run}",
+        path=graphs_data_path(config.dataset, f"x_list_{run}"),
         n_neurons=n_neurons,
         time_chunks=2000,
     )
     y_writer = ZarrArrayWriter(
-        path=f"graphs_data/{config.dataset}/y_list_{run}",
+        path=graphs_data_path(config.dataset, f"y_list_{run}"),
         n_neurons=n_neurons,
         n_features=1,
         time_chunks=2000,
@@ -648,7 +648,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                             voltages=to_numpy(x.voltage),
                             stimulus=to_numpy(x.stimulus[:sim.n_input_neurons]),
                             neuron_types=to_numpy(x.neuron_type).astype(int),
-                            output_path=f"graphs_data/{config.dataset}/Fig/Fig_{run}_{num}.png",
+                            output_path=graphs_data_path(config.dataset, "Fig", f"Fig_{run}_{num}.png"),
                             calcium=to_numpy(x.calcium) if sim.calcium_type != "none" else None,
                             n_input_neurons=sim.n_input_neurons,
                             style=fig_style,
@@ -673,8 +673,8 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
 
     # --- Always run diagnostics after data generation ---
     from flyvis_gnn.zarr_io import load_simulation_data, load_raw_array
-    x_ts = load_simulation_data(f"graphs_data/{config.dataset}/x_list_{run}")
-    y_list = load_raw_array(f"graphs_data/{config.dataset}/y_list_{run}")
+    x_ts = load_simulation_data(graphs_data_path(config.dataset, f"x_list_{run}"))
+    y_list = load_raw_array(graphs_data_path(config.dataset, f"y_list_{run}"))
 
     # Compute ranks (used in kinographs and traces)
     print('computing effective rank ...')
@@ -700,7 +700,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     plot_kinograph(
         activity=activity_full.T,
         stimulus=x_ts.stimulus[:, :sim.n_input_neurons].numpy().T,
-        output_path=f'./graphs_data/{config.dataset}/kinograph.png',
+        output_path=graphs_data_path(config.dataset, 'kinograph.png'),
         rank_90_act=rank_90_act,
         rank_99_act=rank_99_act,
         rank_90_inp=rank_90_inp,
@@ -712,7 +712,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     print('plot activity traces ...')
     plot_activity_traces(
         activity=activity_full.T,
-        output_path=f'./graphs_data/{config.dataset}/activity_traces.png',
+        output_path=graphs_data_path(config.dataset, 'activity_traces.png'),
         n_traces=100,
         max_frames=10000,
         n_input_neurons=sim.n_input_neurons,
@@ -722,13 +722,13 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     # SVD analysis (4-panel plot)
     print('svd analysis ...')
     from flyvis_gnn.models.utils import analyze_data_svd
-    folder = f'./graphs_data/{config.dataset}'
+    folder = graphs_data_path(config.dataset)
     svd_results = analyze_data_svd(x_ts, folder, config=config, is_flyvis=True,
                                    save_in_subfolder=False)
 
     # Save ranks to log file
-    log_path = f'./graphs_data/{config.dataset}/generation_log.txt'
-    with open(log_path, 'w') as log_f:
+    gen_log_path = graphs_data_path(config.dataset, 'generation_log.txt')
+    with open(gen_log_path, 'w') as log_f:
         log_f.write(f'dataset: {config.dataset}\n')
         log_f.write(f'n_neurons: {n_neurons}\n')
         log_f.write(f'n_input_neurons: {sim.n_input_neurons}\n')
@@ -748,7 +748,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
         if svd_results.get('visual_stimuli'):
             log_f.write(f'svd_visual_rank_90: {svd_results["visual_stimuli"]["rank_90"]}\n')
             log_f.write(f'svd_visual_rank_99: {svd_results["visual_stimuli"]["rank_99"]}\n')
-    print(f'generation log saved to {log_path}')
+    print(f'generation log saved to {gen_log_path}')
 
     if not visualize:
         return
@@ -770,13 +770,13 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
 
     target_type_name_list = ['R1', 'R7', 'C2', 'Mi11', 'Tm1', 'Tm4', 'Tm30']
     from GNN_PlotFigure import plot_neuron_activity_analysis
-    plot_neuron_activity_analysis(activity, target_type_name_list, type_list, index_to_name, n_neurons, n_frames, sim.delta_t, f'graphs_data/{config.dataset}/')
+    plot_neuron_activity_analysis(activity, target_type_name_list, type_list, index_to_name, n_neurons, n_frames, sim.delta_t, graphs_data_path(config.dataset) + '/')
 
     print('plot figure activity ...')
     plot_selected_neuron_traces(
         activity=to_numpy(activity),
         type_list=to_numpy(type_list.squeeze()),
-        output_path=f'./graphs_data/{config.dataset}/activity.png',
+        output_path=graphs_data_path(config.dataset, 'activity.png'),
         style=fig_style,
     )
 
@@ -784,15 +784,15 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
         print('generating lossless video ...')
 
         output_name = config.dataset.split('flyvis_')[1] if 'flyvis_' in config.dataset else 'no_id'
-        src = f"./graphs_data/{config.dataset}/Fig/Fig_0_000000.png"
-        dst = f"./graphs_data/{config.dataset}/input_{output_name}.png"
+        src = graphs_data_path(config.dataset, "Fig", "Fig_0_000000.png")
+        dst = graphs_data_path(config.dataset, f"input_{output_name}.png")
         with open(src, "rb") as fsrc, open(dst, "wb") as fdst:
             fdst.write(fsrc.read())
 
-        generate_compressed_video_mp4(output_dir=f"./graphs_data/{config.dataset}", run=run,
+        generate_compressed_video_mp4(output_dir=graphs_data_path(config.dataset), run=run,
                                       output_name=output_name,framerate=20)
 
-        files = glob.glob(f'./graphs_data/{config.dataset}/Fig/*')
+        files = glob.glob(graphs_data_path(config.dataset, 'Fig', '*'))
         for f in files:
             os.remove(f)
 

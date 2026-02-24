@@ -6,7 +6,7 @@ import scipy
 import subprocess
 import torch
 import xarray as xr
-from flyvis_gnn.utils import choose_boundary_values, get_equidistant_points, to_numpy, large_tensor_nonzero
+from flyvis_gnn.utils import choose_boundary_values, get_equidistant_points, to_numpy, large_tensor_nonzero, graphs_data_path
 from flyvis_gnn.figure_style import default_style
 from scipy import stats
 from scipy.spatial import Delaunay
@@ -254,7 +254,7 @@ def init_mesh(config, device):
     pos_mesh[0:sim.n_input_neurons, 0:1] = x_mesh[0:sim.n_input_neurons]
     pos_mesh[0:sim.n_input_neurons, 1:2] = y_mesh[0:sim.n_input_neurons]
 
-    i0 = imread(f'graphs_data/{sim.node_value_map}')
+    i0 = imread(graphs_data_path(sim.node_value_map))
     if len(i0.shape) == 2:
         # i0 = i0[0,:, :]
         i0 = np.flipud(i0)
@@ -492,7 +492,7 @@ def init_connectivity(connectivity_file, connectivity_type, connectivity_filling
         ax.set_xticklabels([1, n_neurons])
         ax.set_yticks([0, n_neurons - 1])
         ax.set_yticklabels([1, n_neurons])
-        default_style.savefig(fig, f'graphs_data/{dataset_name}/adjacency_0.png')
+        default_style.savefig(fig, graphs_data_path(dataset_name, 'adjacency_0.png'))
 
         T1_ = to_numpy(T1.squeeze())
         xy_grid = np.stack(np.meshgrid(T1_, T1_), -1)
@@ -504,7 +504,7 @@ def init_connectivity(connectivity_file, connectivity_type, connectivity_filling
 
         fig_sign, ax_sign = default_style.figure(width=10, height=10)
         ax_sign.imshow(to_numpy(sign_matrix))
-        default_style.savefig(fig_sign, f"graphs_data/{dataset_name}/large_connectivity_sign.tif")
+        default_style.savefig(fig_sign, graphs_data_path(dataset_name, "large_connectivity_sign.tif"))
 
         fig, ax = default_style.figure(width=10, height=10)
         sns.heatmap(to_numpy(connectivity), center=0, square=True, cmap='bwr', cbar_kws={'fraction': 0.046},
@@ -515,7 +515,7 @@ def init_connectivity(connectivity_file, connectivity_type, connectivity_filling
         ax.set_xticklabels([1, n_neurons])
         ax.set_yticks([0, n_neurons - 1])
         ax.set_yticklabels([1, n_neurons])
-        default_style.savefig(fig, f'graphs_data/{dataset_name}/adjacency_1.png')
+        default_style.savefig(fig, graphs_data_path(dataset_name, 'adjacency_1.png'))
 
         flat_sign_matrix = sign_matrix.flatten()
         num_elements = len(flat_sign_matrix)
@@ -536,7 +536,7 @@ def init_connectivity(connectivity_file, connectivity_type, connectivity_filling
         ax.set_xticklabels([1, n_neurons])
         ax.set_yticks([0, n_neurons - 1])
         ax.set_yticklabels([1, n_neurons])
-        default_style.savefig(fig, f'graphs_data/{dataset_name}/adjacency_2.png')
+        default_style.savefig(fig, graphs_data_path(dataset_name, 'adjacency_2.png'))
 
         total_possible = connectivity.shape[0] * connectivity.shape[1]
         actual_connections = (connectivity != 0).sum().item()

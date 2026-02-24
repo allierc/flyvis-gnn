@@ -41,6 +41,8 @@ from flyvis_gnn.utils import (
     get_equidistant_points,
     compute_trace_metrics,
     get_datavis_root_dir,
+    graphs_data_path,
+    log_path,
 )
 from flyvis_gnn.figure_style import default_style, dark_style
 from flyvis_gnn.plot import plot_spatial_activity_grid, INDEX_TO_NAME
@@ -161,8 +163,8 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         load_fields.append('pos')
     if sim.calcium_type != 'none':
         load_fields.append('calcium')
-    x_ts = load_simulation_data(f'graphs_data/{config.dataset}/x_list_0', fields=load_fields).to(device)
-    y_ts = load_raw_array(f'graphs_data/{config.dataset}/y_list_0')
+    x_ts = load_simulation_data(graphs_data_path(config.dataset, 'x_list_0'), fields=load_fields).to(device)
+    y_ts = load_raw_array(graphs_data_path(config.dataset, 'y_list_0'))
 
     # extract type_list from loaded data, then construct index (not loaded from disk)
     type_list = x_ts.neuron_type.float().unsqueeze(-1)
@@ -253,8 +255,8 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     print(f'network: {net}')
     print(f'initial tc.batch_size: {tc.batch_size}')
 
-    gt_weights = torch.load(f'./graphs_data/{config.dataset}/weights.pt', map_location=device)
-    edges = torch.load(f'./graphs_data/{config.dataset}/edge_index.pt', map_location=device)
+    gt_weights = torch.load(graphs_data_path(config.dataset, 'weights.pt'), map_location=device)
+    edges = torch.load(graphs_data_path(config.dataset, 'edge_index.pt'), map_location=device)
     print(f'{edges.shape[1]} edges')
 
     ids = np.arange(n_neurons)
@@ -890,8 +892,8 @@ def data_train_flyvis_alternate(config, erase, best_model, device, log_file=None
         load_fields.append('pos')
     if sim.calcium_type != 'none':
         load_fields.append('calcium')
-    x_ts = load_simulation_data(f'graphs_data/{config.dataset}/x_list_0', fields=load_fields).to(device)
-    y_ts = load_raw_array(f'graphs_data/{config.dataset}/y_list_0')
+    x_ts = load_simulation_data(graphs_data_path(config.dataset, 'x_list_0'), fields=load_fields).to(device)
+    y_ts = load_raw_array(graphs_data_path(config.dataset, 'y_list_0'))
 
     # extract type_list from loaded data, then construct index (not loaded from disk)
     type_list = x_ts.neuron_type.float().unsqueeze(-1)
@@ -982,8 +984,8 @@ def data_train_flyvis_alternate(config, erase, best_model, device, log_file=None
     print(f'network: {net}')
     print(f'initial tc.batch_size: {tc.batch_size}')
 
-    gt_weights = torch.load(f'./graphs_data/{config.dataset}/weights.pt', map_location=device)
-    edges = torch.load(f'./graphs_data/{config.dataset}/edge_index.pt', map_location=device)
+    gt_weights = torch.load(graphs_data_path(config.dataset, 'weights.pt'), map_location=device)
+    edges = torch.load(graphs_data_path(config.dataset, 'edge_index.pt'), map_location=device)
     print(f'{edges.shape[1]} edges')
 
     ids = np.arange(n_neurons)
@@ -1598,8 +1600,8 @@ def data_train_flyvis_RNN(config, erase, best_model, device):
     x_list = []
     y_list = []
     for run in trange(0, tc.n_runs, ncols=50):
-        x = np.load(f'graphs_data/{config.dataset}/x_list_{run}.npy')
-        y = np.load(f'graphs_data/{config.dataset}/y_list_{run}.npy')
+        x = np.load(graphs_data_path(config.dataset, f'x_list_{run}.npy'))
+        y = np.load(graphs_data_path(config.dataset, f'y_list_{run}.npy'))
 
         if tc.training_selected_neurons:
             selected_neuron_ids = np.array(tc.selected_neuron_ids).astype(int)
@@ -1774,7 +1776,7 @@ def data_train_INR(config=None, device=None, total_steps=5000, erase=False):
     os.makedirs(output_folder, exist_ok=True)
 
     dataset_name = config.dataset
-    data_folder = f"graphs_data/{dataset_name}/"
+    data_folder = graphs_data_path(dataset_name) + "/"
     print(f"loading data from: {data_folder}")
 
     # load x_list data
@@ -2242,7 +2244,7 @@ def data_test_flyvis(
     tc = config.training
     model_config = config.graph_model
 
-    log_dir = 'log/' + config.config_file
+    log_dir = log_path(config.config_file)
 
     torch.random.fork_rng(devices=device)
     if sim.seed is not None:
@@ -2490,7 +2492,7 @@ def data_test_flyvis(
     n_columns = sim.n_input_neurons // 8
     tile_seed = sim.seed
 
-    edges = torch.load(f'./graphs_data/{config.dataset}/edge_index.pt', map_location=device)
+    edges = torch.load(graphs_data_path(config.dataset, 'edge_index.pt'), map_location=device)
 
     if ('test_ablation' in test_mode) & (not('MLP' in model_config.signal_model_name)) & (not('RNN' in model_config.signal_model_name)) & (not('LSTM' in model_config.signal_model_name)):
         #  test_mode="test_ablation_100"

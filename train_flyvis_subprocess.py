@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src
 
 from flyvis_gnn.config import NeuralGraphConfig
 from flyvis_gnn.models.graph_trainer import data_train, data_test
-from flyvis_gnn.utils import set_device
+from flyvis_gnn.utils import set_device, log_path
 from GNN_PlotFigure import data_plot
 
 
@@ -129,7 +129,7 @@ def main():
 
             # Phase 3: Plot
             config_file = args.config_file if args.config_file else config.dataset
-            folder_name = './log/' + os.path.dirname(config_file) + '/tmp_results/'
+            folder_name = log_path(os.path.dirname(config_file), 'tmp_results') + '/'
             os.makedirs(folder_name, exist_ok=True)
             data_plot(
                 config=config,
@@ -143,7 +143,7 @@ def main():
 
             # Phase 4: Copy models to exploration dir
             if args.exploration_dir is not None and args.iteration is not None and args.slot is not None:
-                log_dir = os.path.join('.', 'log', config.config_file)
+                log_dir = log_path(config.config_file)
                 src_models = glob.glob(os.path.join(log_dir, 'models', '*.pt'))
                 if src_models:
                     dst_dir = os.path.join(args.exploration_dir, 'models')

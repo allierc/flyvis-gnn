@@ -47,6 +47,8 @@ from flyvis_gnn.utils import (
     create_log_dir,
     add_pre_folder,
     choose_boundary_values,
+    graphs_data_path,
+    log_path,
 )
 from flyvis_gnn.models.Siren_Network import Siren, Siren_Network
 from flyvis_gnn.models.flyvis_gnn import FlyVisGNN
@@ -123,9 +125,9 @@ def _create_true_model(config, W, device):
     """Create a ground-truth ODE model (FlyVisODE) from saved parameters."""
     sim = config.simulation
 
-    w = torch.load(f'./graphs_data/{config.dataset}/weights.pt', map_location=device)
-    tau_i = torch.load(f'./graphs_data/{config.dataset}/taus.pt', map_location=device)
-    V_i_rest = torch.load(f'./graphs_data/{config.dataset}/V_i_rest.pt', map_location=device)
+    w = torch.load(graphs_data_path(config.dataset, 'weights.pt'), map_location=device)
+    tau_i = torch.load(graphs_data_path(config.dataset, 'taus.pt'), map_location=device)
+    V_i_rest = torch.load(graphs_data_path(config.dataset, 'V_i_rest.pt'), map_location=device)
     p = {"tau_i": tau_i, "V_i_rest": V_i_rest, "w": w}
 
     true_model = FlyVisODE(p=p, f=torch.nn.functional.relu, params=sim.params,
@@ -1037,11 +1039,11 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
     else:
         has_external_input = False
 
-    x_ts = load_simulation_data(f'graphs_data/{config.dataset}/x_list_0')
-    y_data = load_raw_array(f'graphs_data/{config.dataset}/y_list_0')
-    if os.path.exists(f'graphs_data/{config.dataset}/raw_x_list_0.npy'):
+    x_ts = load_simulation_data(graphs_data_path(config.dataset, 'x_list_0'))
+    y_data = load_raw_array(graphs_data_path(config.dataset, 'y_list_0'))
+    if os.path.exists(graphs_data_path(config.dataset, 'raw_x_list_0.npy')):
         from flyvis_gnn.neuron_state import NeuronTimeSeries
-        raw_x_ts = NeuronTimeSeries.from_numpy(np.load(f'graphs_data/{config.dataset}/raw_x_list_0.npy'))
+        raw_x_ts = NeuronTimeSeries.from_numpy(np.load(graphs_data_path(config.dataset, 'raw_x_list_0.npy')))
     vnorm = torch.load(os.path.join(log_dir, 'vnorm.pt'))
     ynorm = torch.load(os.path.join(log_dir, 'ynorm.pt'))
     if os.path.exists(os.path.join(log_dir, 'xnorm.pt')):
@@ -1071,19 +1073,19 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
 
     activity = x_ts.voltage.to(device).t()  # (N, T)
 
-    if os.path.exists(f'graphs_data/{config.dataset}/raw_x_list_0.npy'):
+    if os.path.exists(graphs_data_path(config.dataset, 'raw_x_list_0.npy')):
         raw_activity = raw_x_ts.voltage.to(device).t()  # (N, T)
 
     xc, yc = get_equidistant_points(n_points=n_neurons)
     X1_first = torch.tensor(np.stack((xc, yc), axis=1), dtype=torch.float32, device=device) / 2
     perm = torch.randperm(X1_first.size(0), device=device)
     X1_first = X1_first[perm]
-    torch.save(X1_first, f'./graphs_data/{config.dataset}/X1.pt')
+    torch.save(X1_first, graphs_data_path(config.dataset, 'X1.pt'))
     xc, yc = get_equidistant_points(n_points=n_neurons ** 2)
     X_msg = torch.tensor(np.stack((xc, yc), axis=1), dtype=torch.float32, device=device) / 2
     perm = torch.randperm(X_msg.size(0), device=device)
     X_msg = X_msg[perm]
-    torch.save(X_msg, f'./graphs_data/{config.dataset}/X_msg.pt')
+    torch.save(X_msg, graphs_data_path(config.dataset, 'X_msg.pt'))
 
     if 'black' in style:
         mc = 'w'
@@ -1115,7 +1117,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
         files, file_id_list = get_training_files(log_dir, tc.n_runs)
 
         # Load connectivity for movie generation and create true_model for plotting true curves
-        connectivity = torch.load(f'./graphs_data/{config.dataset}/connectivity.pt', map_location=device)
+        connectivity = torch.load(graphs_data_path(config.dataset, 'connectivity.pt'), map_location=device)
 
         true_model, _, _ = _create_true_model(config=config, W=connectivity, device=device)
 
@@ -1423,7 +1425,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
             if not any(p in f for p in _test_patterns):
                 os.remove(f)
 
-        connectivity = torch.load(f'./graphs_data/{config.dataset}/connectivity.pt', map_location=device)
+        connectivity = torch.load(graphs_data_path(config.dataset, 'connectivity.pt'), map_location=device)
 
         # Create true_model for computing plot limits with true MLP values
         true_model_for_limits, _, _ = _create_true_model(config=config, W=connectivity, device=device)
@@ -2082,8 +2084,8 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
             if 'low_rank' in sim.connectivity_type:
                 print('low-rank U/V recovery and comparison ...')
 
-                U_true_path = f'./graphs_data/{config.dataset}/connectivity_low_rank_U.pt'
-                V_true_path = f'./graphs_data/{config.dataset}/connectivity_low_rank_V.pt'
+                U_true_path = graphs_data_path(config.dataset, 'connectivity_low_rank_U.pt')
+                V_true_path = graphs_data_path(config.dataset, 'connectivity_low_rank_V.pt')
 
                 if os.path.exists(U_true_path) and os.path.exists(V_true_path):
                     U_true = to_numpy(torch.load(U_true_path, map_location=device))  # (N, rank)
@@ -2330,7 +2332,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                             m = model_f(t) ** 2
 
                         if 'permutation' in sim.external_input_type:
-                            inverse_permutation_indices = torch.load(f'./graphs_data/{config.dataset}/inverse_permutation_indices.pt', map_location=device)
+                            inverse_permutation_indices = torch.load(graphs_data_path(config.dataset, 'inverse_permutation_indices.pt'), map_location=device)
                             modulation_ = m[inverse_permutation_indices]
                         else:
                             modulation_ = m
@@ -2402,7 +2404,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                     net = f'{log_dir}/models/best_model_f_with_{tc.n_runs - 1}_graphs_{epoch}.pt'
                     state_dict = torch.load(net, map_location=device)
                     model_f.load_state_dict(state_dict['model_state_dict'])
-                    im = imread(f"graphs_data/{config.simulation.node_value_map}")
+                    im = imread(graphs_data_path(config.simulation.node_value_map))
 
                     x = x_ts.frame(0).to(device).to_packed()
 
@@ -2590,9 +2592,9 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
 
     time.sleep(0.5)
     print('load simulation data...')
-    x_ts = load_simulation_data(f'graphs_data/{config.dataset}/x_list_0',
+    x_ts = load_simulation_data(graphs_data_path(config.dataset, 'x_list_0'),
                                 fields=['index', 'voltage', 'stimulus', 'neuron_type', 'group_type'])
-    y_data = load_raw_array(f'graphs_data/{config.dataset}/y_list_0')
+    y_data = load_raw_array(graphs_data_path(config.dataset, 'y_list_0'))
 
     ynorm = torch.load(os.path.join(log_dir, 'ynorm.pt'), map_location=device)
     if os.path.exists(os.path.join(log_dir, 'xnorm.pt')):
@@ -2609,10 +2611,10 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
     n_region_types = len(torch.unique(region_list))
     n_neurons = x_ts.n_neurons
 
-    gt_weights = torch.load(f'./graphs_data/{config.dataset}/weights.pt', map_location=device)
-    gt_taus = torch.load(f'./graphs_data/{config.dataset}/taus.pt', map_location=device)
-    gt_V_Rest = torch.load(f'./graphs_data/{config.dataset}/V_i_rest.pt', map_location=device)
-    edges = torch.load(f'./graphs_data/{config.dataset}/edge_index.pt', map_location=device)
+    gt_weights = torch.load(graphs_data_path(config.dataset, 'weights.pt'), map_location=device)
+    gt_taus = torch.load(graphs_data_path(config.dataset, 'taus.pt'), map_location=device)
+    gt_V_Rest = torch.load(graphs_data_path(config.dataset, 'V_i_rest.pt'), map_location=device)
+    edges = torch.load(graphs_data_path(config.dataset, 'edge_index.pt'), map_location=device)
     true_weights = torch.zeros((n_neurons, n_neurons), dtype=torch.float32, device=edges.device)
     true_weights[edges[1], edges[0]] = gt_weights
 
@@ -3715,7 +3717,7 @@ def plot_ising_comparison_from_saved(config_list, labels=None, output_path='fig/
     for config_file_ in config_list:
         try:
             config_file, pre_folder = add_pre_folder(config_file_)
-            data_path = f'./log/{config_file}/results/info_ratio_results.npz'
+            data_path = log_path(config_file, 'results', 'info_ratio_results.npz')
             if not os.path.exists(data_path):
                 print(f"Warning: {data_path} not found")
                 continue
@@ -3737,7 +3739,7 @@ def plot_ising_comparison_from_saved(config_list, labels=None, output_path='fig/
     plt.subplots_adjust(wspace=0.4)
 
     for col, (config_file, label) in enumerate(zip(valid_configs, labels)):
-        data_path = f'./log/{config_file}/results/info_ratio_results.npz'
+        data_path = log_path(config_file, 'results', 'info_ratio_results.npz')
         data = np.load(data_path)
 
         obs_rates = data['observed_rates'].flatten()
@@ -4725,7 +4727,7 @@ def plot_results_figure(config_file_, config_indices, panel_suffix='domain'):
     #           style='white color', extended='plots', device=device)
 
     # Setup paths
-    log_dir = f'log/fly/{config_file_}'
+    log_dir = log_path('fly', config_file_)
     panels = {
         'a': f"{log_dir}/results/weights_comparison_corrected.png",
         'b': f"{log_dir}/results/embedding_{config_indices}.png",
@@ -4776,7 +4778,7 @@ def get_figures(index):
                 config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
                 config.dataset = pre_folder + config.dataset
                 config.config_file = pre_folder + config_file_
-                logdir = f'log/fly/{config_file_}'
+                logdir = log_path('fly', config_file_)
                 data_test(
                     config,
                     visualize=True,
@@ -4806,7 +4808,7 @@ def get_figures(index):
                 60: 'TmY18', 61: 'TmY3', 62: 'TmY4', 63: 'TmY5a', 64: 'TmY9'}
 
             print('plot figure 1...')
-            x = np.load('graphs_data/fly/flyvis_18_4_0/x_list_0.npy')
+            x = np.load(graphs_data_path('fly', 'flyvis_18_4_0', 'x_list_0.npy'))
             type_list = x[-1,:, 6].astype(int)
             len(type_list)
 
@@ -4823,9 +4825,9 @@ def get_figures(index):
             print(f"Found {len(neuron_indices)} neurons out of {len(selected_types)}")
             print(f"Unique types in type_list: {np.unique(type_list)}")
 
-            logdirs = {'a': 'log/fly/flyvis_22_10',
-                    'b': 'log/fly/flyvis_22_10',
-                    'c': 'log/fly/flyvis_44_6'}
+            logdirs = {'a': log_path('fly', 'flyvis_22_10'),
+                    'b': log_path('fly', 'flyvis_22_10'),
+                    'c': log_path('fly', 'flyvis_44_6')}
 
             start_frame = 88000
             end_frame = 88500
@@ -4900,7 +4902,7 @@ def get_figures(index):
             config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
             config.dataset = pre_folder + config.dataset
             config.config_file = pre_folder + config_file_
-            logdir = 'log/fly/flyvis_44_6'
+            logdir = log_path('fly', 'flyvis_44_6')
 
             # config.simulation.noise_model_level = 0.0
             config.simulation.visual_input_type = "DAVIS"
@@ -4979,7 +4981,7 @@ def get_figures(index):
             config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
             config.dataset = pre_folder + config.dataset
             config.config_file = pre_folder + config_file_
-            logdir = 'log/fly/flyvis_51_2'
+            logdir = log_path('fly', 'flyvis_51_2')
 
             data_test(
                 config,
@@ -5068,7 +5070,7 @@ def get_figures(index):
             config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
             config.dataset = pre_folder + config.dataset
             config.config_file = pre_folder + config_file_
-            logdir = 'log/fly/flyvis_22_10'
+            logdir = log_path('fly', 'flyvis_22_10')
             config.simulation.visual_input_type = "DAVIS"
             data_test(
                 config,
@@ -5355,7 +5357,7 @@ def get_figures(index):
 
             data_plot(config=config, config_file=config_file, epoch_list=['best'], style='white color', extended='plots', device=device)
 
-            log_dir = 'log/fly/flyvis_22_10'
+            log_dir = log_path('fly', 'flyvis_22_10')
             config_indices = '18_4_0'
 
             fig = plt.figure(figsize=(12, 10))
@@ -5450,7 +5452,7 @@ def get_figures(index):
 
             data_plot(config=config, config_file=config_file, epoch_list=['best'], style='black color', extended='plots', device=device)
 
-            log_dir = 'log/fly/flyvis_44_6'
+            log_dir = log_path('fly', 'flyvis_44_6')
             config_indices = '44_6'
 
             fig = plt.figure(figsize=(10, 9))
@@ -5561,7 +5563,7 @@ if __name__ == '__main__':
         config.dataset = pre_folder + config.dataset
         config.config_file = pre_folder + config_file_
         print(f'\033[94mconfig_file  {config.config_file}\033[0m')
-        folder_name = './log/' + pre_folder + '/tmp_results/'
+        folder_name = log_path(pre_folder, 'tmp_results') + '/'
         os.makedirs(folder_name, exist_ok=True)
         data_plot(config=config, config_file=config_file, epoch_list=['best'], style='black color', extended='plots', device=device, apply_weight_correction=True)
         # data_plot(config=config, config_file=config_file, epoch_list=['all'], style='black color', extended='plots', device=device, apply_weight_correction=False)
