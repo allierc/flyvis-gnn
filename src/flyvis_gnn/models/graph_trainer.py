@@ -1263,22 +1263,41 @@ def data_train_INR(config=None, device=None, total_steps=50000, field_name='stim
     if inr_type == 'siren_txy':
         neuron_pos = torch.tensor(neuron_pos_np / xy_period, dtype=torch.float32, device=device)
 
-    # --- predict_all helper ---
-    def _predict_all():
-        results = []
+    # --- predict helper for siren_txy (single frame) ---
+    def _predict_frame_txy(frame_idx):
+        """Predict a single frame for siren_txy."""
         with torch.no_grad():
-            if inr_type == 'siren_t':
+            t_val = torch.full((n_neurons, 1), frame_idx / t_period, device=device)
+            inp = torch.cat([t_val, neuron_pos], dim=1)
+            return nnr_f(inp).squeeze()
+
+    # --- predict sampled frames for R² ---
+    def _predict_sampled(n_sample=200):
+        """Predict a random subset of frames for fast R² estimation."""
+        sample_ids = np.linspace(0, n_frames - 1, n_sample, dtype=int)
+        gt_sample = ground_truth[sample_ids]
+        with torch.no_grad():
+            if inr_type == 'siren_txy':
+                preds = []
+                for t_idx in sample_ids:
+                    preds.append(_predict_frame_txy(t_idx))
+                pred_sample = torch.stack(preds, dim=0)
+            elif inr_type in ('siren_t', 'ngp'):
+                t_batch = torch.tensor(sample_ids, dtype=torch.float32, device=device).unsqueeze(1) / t_period
+                pred_sample = nnr_f(t_batch)
+        return gt_sample.cpu().numpy(), pred_sample.cpu().numpy()
+
+    # --- predict all frames (used for final evaluation) ---
+    def _predict_all():
+        with torch.no_grad():
+            if inr_type in ('siren_t', 'ngp'):
                 t_all = torch.arange(n_frames, dtype=torch.float32, device=device).unsqueeze(1) / t_period
                 return nnr_f(t_all)
             elif inr_type == 'siren_txy':
+                results = []
                 for t_idx in range(n_frames):
-                    t_val = torch.full((n_neurons, 1), t_idx / t_period, device=device)
-                    inp = torch.cat([t_val, neuron_pos], dim=1)
-                    results.append(nnr_f(inp).squeeze())
+                    results.append(_predict_frame_txy(t_idx))
                 return torch.stack(results, dim=0)
-            elif inr_type == 'ngp':
-                t_all = torch.arange(n_frames, dtype=torch.float32, device=device).unsqueeze(1) / t_period
-                return nnr_f(t_all)
 
     # --- training loop ---
     loss_list = []
@@ -1326,12 +1345,10 @@ def data_train_INR(config=None, device=None, total_steps=50000, field_name='stim
         optim.step()
         loss_list.append(loss.item())
 
-        # R² evaluation
+        # R² evaluation (sampled for speed)
         if step > 0 and step % report_interval == 0:
-            pred_all = _predict_all()
-            gt_flat = ground_truth.cpu().numpy().reshape(-1)
-            pred_flat = pred_all.cpu().numpy().reshape(-1)
-            _, _, r_value, _, _ = linregress(gt_flat, pred_flat)
+            gt_s, pred_s = _predict_sampled(n_sample=200)
+            _, _, r_value, _, _ = linregress(gt_s.reshape(-1), pred_s.reshape(-1))
             last_r2 = r_value ** 2
 
         if step % 1000 == 0:
