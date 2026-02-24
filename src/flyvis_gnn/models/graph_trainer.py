@@ -1121,9 +1121,9 @@ def data_train_INR(config=None, device=None, total_steps=50000, field_name='stim
     Loads the specified field from the zarr V3 dataset, trains the INR,
     and produces loss/trace plots plus a results log.
 
-    INR types (set via graph_model.inr_type in config):
-        siren_t:  input=t,        output=n_neurons
-        siren_x:  input=(t,x,y),  output=1
+    INR types (auto-detected from config, or set via graph_model.inr_type):
+        siren_t:    input=t,        output=n_neurons  (input_size_nnr_f=1)
+        siren_txy:  input=(t,x,y),  output=1          (input_size_nnr_f=3)
 
     Args:
         config: NeuralGraphConfig
@@ -1179,11 +1179,19 @@ def data_train_INR(config=None, device=None, total_steps=50000, field_name='stim
     rank_99 = int(np.searchsorted(cumvar, 0.99) + 1)
     print(f'  effective rank: 90%={rank_90}, 99%={rank_99}')
 
-    # neuron positions (static field, used for siren_x)
+    # neuron positions (static field, used for siren_txy)
     neuron_pos_np = x_ts.pos.numpy() if x_ts.pos is not None else None  # (N, 2)
 
     # config parameters
-    inr_type = getattr(model_config, 'inr_type', 'siren_t')
+    # auto-detect INR type from config dimensions if not explicitly set
+    inr_type = getattr(model_config, 'inr_type', None)
+    if inr_type is None:
+        input_size_nnr = getattr(model_config, 'input_size_nnr_f', 1)
+        output_size_nnr = getattr(model_config, 'output_size_nnr_f', None)
+        if input_size_nnr == 3 and output_size_nnr == 1:
+            inr_type = 'siren_txy'
+        else:
+            inr_type = 'siren_t'
     hidden_dim = getattr(model_config, 'hidden_dim_nnr_f', 1024)
     n_layers = getattr(model_config, 'n_layers_nnr_f', 3)
     omega_f = getattr(model_config, 'omega_f', 1024)
@@ -1196,7 +1204,7 @@ def data_train_INR(config=None, device=None, total_steps=50000, field_name='stim
     # --- build model ---
     if inr_type == 'siren_t':
         input_dim, output_dim = 1, n_neurons
-    elif inr_type == 'siren_x':
+    elif inr_type == 'siren_txy':
         input_dim, output_dim = 3, 1  # (t, x, y) -> scalar
     elif inr_type == 'ngp':
         input_dim = getattr(model_config, 'input_size_nnr_f', 1)
@@ -1252,7 +1260,7 @@ def data_train_INR(config=None, device=None, total_steps=50000, field_name='stim
 
     # prepare tensors
     ground_truth = torch.tensor(field_np, dtype=torch.float32, device=device)
-    if inr_type == 'siren_x':
+    if inr_type == 'siren_txy':
         neuron_pos = torch.tensor(neuron_pos_np / xy_period, dtype=torch.float32, device=device)
 
     # --- predict_all helper ---
@@ -1262,7 +1270,7 @@ def data_train_INR(config=None, device=None, total_steps=50000, field_name='stim
             if inr_type == 'siren_t':
                 t_all = torch.arange(n_frames, dtype=torch.float32, device=device).unsqueeze(1) / t_period
                 return nnr_f(t_all)
-            elif inr_type == 'siren_x':
+            elif inr_type == 'siren_txy':
                 for t_idx in range(n_frames):
                     t_val = torch.full((n_neurons, 1), t_idx / t_period, device=device)
                     inp = torch.cat([t_val, neuron_pos], dim=1)
@@ -1293,7 +1301,7 @@ def data_train_INR(config=None, device=None, total_steps=50000, field_name='stim
             pred = nnr_f(t_batch)
             loss = F.mse_loss(pred, gt_batch)
 
-        elif inr_type == 'siren_x':
+        elif inr_type == 'siren_txy':
             t_norm = torch.tensor(sample_ids / t_period, dtype=torch.float32, device=device)
             t_expanded = t_norm[:, None, None].expand(batch_size, n_neurons, 1)
             pos_expanded = neuron_pos[None, :, :].expand(batch_size, n_neurons, 2)
