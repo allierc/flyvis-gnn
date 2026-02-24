@@ -1033,8 +1033,12 @@ def data_train_flyvis_RNN(config, erase, best_model, device):
 
 
 def _generate_inr_video(gt_np, predict_frame_fn, pos_np, field_name,
-                        output_folder, n_frames, step_video=10, fps=30):
+                        output_folder, n_frames, step_video=2, fps=10,
+                        n_video_frames=800):
     """Generate GT vs Pred MP4 video using FFMpegWriter (streaming).
+
+    Three-panel layout matching data_train: GT hex | Pred hex | rolling traces.
+    Includes linear correction (a*pred + b) and per-frame RMSE.
 
     Args:
         gt_np: (T, N) ground truth numpy array
@@ -1043,45 +1047,100 @@ def _generate_inr_video(gt_np, predict_frame_fn, pos_np, field_name,
         field_name: label for the video
         output_folder: where to write output
         n_frames: total number of frames
-        step_video: sample every N-th frame
-        fps: output video framerate
+        step_video: sample every N-th frame (default 2)
+        fps: output video framerate (default 10)
+        n_video_frames: number of data frames to include (default 800)
     """
     if pos_np is None:
         print('  no neuron positions — skipping video')
         return
 
+    n_video_frames = min(n_video_frames, n_frames)
     x, y = pos_np[:, 0], pos_np[:, 1]
-    # color limits from a sample of GT frames
-    sample_idx = np.linspace(0, n_frames - 1, min(200, n_frames), dtype=int)
-    sample_vals = gt_np[sample_idx].ravel()
-    clim = (np.percentile(sample_vals, 2), np.percentile(sample_vals, 98))
 
-    frame_indices = list(range(0, n_frames, step_video))
-    print(f'  generating video: {len(frame_indices)} frames ...')
+    # first pass: collect gt and pred for linear fit + color limits
+    all_gt, all_pred = [], []
+    for k in range(0, n_video_frames, step_video):
+        all_gt.append(gt_np[k])
+        all_pred.append(predict_frame_fn(k))
+    all_gt_flat = np.concatenate(all_gt)
+    all_pred_flat = np.concatenate(all_pred)
 
-    fig = plt.figure(figsize=(10, 4.5))
+    # linear fit: gt = a * pred + b
+    A_fit = np.vstack([all_pred_flat, np.ones(len(all_pred_flat))]).T
+    a_coeff, b_coeff = np.linalg.lstsq(A_fit, all_gt_flat, rcond=None)[0]
+    gt_vmin, gt_vmax = float(all_gt_flat.min()), float(all_gt_flat.max())
+
+    # trace neuron selection (10 evenly spaced)
+    n_neurons = pos_np.shape[0]
+    trace_ids = np.linspace(0, n_neurons - 1, 10, dtype=int)
+    win = 200
+    offset = 1.25
+    hist_t = deque(maxlen=win)
+    hist_gt = {i: deque(maxlen=win) for i in trace_ids}
+    hist_pred = {i: deque(maxlen=win) for i in trace_ids}
+
+    frame_indices = list(range(0, n_video_frames, step_video))
+    print(f'  generating video: {len(frame_indices)} frames, a={a_coeff:.4f} b={b_coeff:.4f}')
+
+    fig = plt.figure(figsize=(12, 4))
     video_path = os.path.join(output_folder, f'{field_name}_gt_vs_pred.mp4')
     metadata = dict(title=f'{field_name} GT vs Pred', artist='Matplotlib')
     writer = FFMpegWriter(fps=fps, metadata=metadata)
 
-    with writer.saving(fig, video_path, dpi=100):
-        for k in trange(0, n_frames, step_video, ncols=100, desc='video'):
+    with writer.saving(fig, video_path, dpi=200):
+        error_list = []
+        for k in trange(0, n_video_frames, step_video, ncols=100, desc='video'):
+            gt_vec = gt_np[k]
+            pred_vec = predict_frame_fn(k)
+            pred_corrected = a_coeff * pred_vec
+
+            # RMSE
+            rmse_frame = float(np.sqrt(((pred_corrected - gt_vec) ** 2).mean()))
+            running_rmse = float(np.mean(error_list + [rmse_frame])) if error_list else rmse_frame
+
+            # update rolling traces
+            hist_t.append(k)
+            for i in trace_ids:
+                hist_gt[i].append(gt_vec[i])
+                hist_pred[i].append(pred_corrected[i])
+
             fig.clf()
-            ax1 = fig.add_subplot(1, 2, 1)
-            ax2 = fig.add_subplot(1, 2, 2)
-            pred_frame = predict_frame_fn(k)
-            ax1.scatter(x, y, s=256, c=gt_np[k], cmap='viridis',
-                        marker='h', vmin=clim[0], vmax=clim[1])
-            ax2.scatter(x, y, s=256, c=pred_frame, cmap='viridis',
-                        marker='h', vmin=clim[0], vmax=clim[1])
+
+            # panel 1: GT hex field
+            ax1 = fig.add_subplot(1, 3, 1)
+            ax1.scatter(x, y, s=256, c=gt_vec, cmap=default_style.cmap,
+                        marker='h', vmin=gt_vmin, vmax=gt_vmax)
+            ax1.set_axis_off()
             ax1.set_title('ground truth', fontsize=12)
-            ax2.set_title('prediction', fontsize=12)
-            ax1.set_axis_off(); ax2.set_axis_off()
-            fig.suptitle(f'{field_name}  frame {k}', fontsize=11)
+
+            # panel 2: Pred hex field (corrected)
+            ax2 = fig.add_subplot(1, 3, 2)
+            ax2.scatter(x, y, s=256, c=pred_corrected, cmap=default_style.cmap,
+                        marker='h', vmin=gt_vmin, vmax=gt_vmax)
+            ax2.set_axis_off()
+            ax2.set_title('prediction (corrected)', fontsize=12)
+
+            # panel 3: rolling traces
+            ax3 = fig.add_subplot(1, 3, 3)
+            ax3.set_axis_off()
+            ax3.set_facecolor('black')
+            t_arr = np.arange(len(hist_t))
+            for j, i in enumerate(trace_ids):
+                y0 = j * offset
+                ax3.plot(t_arr, np.array(hist_gt[i]) + y0, color='lime', lw=1.6, alpha=0.95)
+                ax3.plot(t_arr, np.array(hist_pred[i]) + y0, color='k', lw=1.2, alpha=0.95)
+            ax3.set_xlim(max(0, len(t_arr) - win), len(t_arr))
+            ax3.set_ylim(-offset * 0.5, offset * (len(trace_ids) + 0.5))
+            ax3.text(0.02, 0.98,
+                     f'frame: {k}   RMSE: {rmse_frame:.3f}   avg RMSE: {running_rmse:.3f}   a={a_coeff:.3f} b={b_coeff:.3f}',
+                     transform=ax3.transAxes, va='top', ha='left', fontsize=6, color='k')
+
             plt.tight_layout()
             writer.grab_frame()
-    plt.close(fig)
+            error_list.append(rmse_frame)
 
+    plt.close(fig)
     size_mb = os.path.getsize(video_path) / 1e6
     print(f'  video saved: {video_path} ({size_mb:.1f} MB)')
 
@@ -1400,7 +1459,7 @@ def data_train_INR(config=None, device=None, total_steps=50000, field_name='stim
                 return nnr_f(t_val).squeeze().cpu().numpy()
 
     _generate_inr_video(field_np, _predict_frame_np, neuron_pos_np, field_name,
-                        output_folder, n_frames=n_frames, step_video=10, fps=30)
+                        output_folder, n_frames=n_frames)
 
     return nnr_f, loss_list
 
