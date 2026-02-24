@@ -96,9 +96,17 @@ def _plot_sequence_preview(sequences, hex_x, hex_y, title, save_path, fig_style,
     """Plot first frame of first N sequences as hex maps.
 
     Args:
-        metadata: optional list of (name, flip_ax, n_rot, tsplit, n_frames) tuples per sequence.
+        metadata: optional list of (name, flip_ax, n_rot) tuples per sequence.
     """
     try:
+        # Compute cumulative frame offsets from actual sequence lengths
+        cum_offsets = []
+        offset = 0
+        for seq in sequences:
+            n_fr = seq["lum"].shape[0]
+            cum_offsets.append((offset, offset + n_fr))
+            offset += n_fr
+
         n_cols = 8
         n_preview = min(n_cols * 8, len(sequences))
         n_rows = (n_preview + n_cols - 1) // n_cols
@@ -107,8 +115,8 @@ def _plot_sequence_preview(sequences, hex_x, hex_y, title, save_path, fig_style,
         for i in range(n_preview):
             row, col = divmod(i, n_cols)
             lum = sequences[i]["lum"]
-            n_frames_seq = lum.shape[0]
             vals = lum[0].squeeze().cpu().numpy() if isinstance(lum, torch.Tensor) else lum[0].squeeze()
+            start, stop = cum_offsets[i]
             ax = axes_preview[row, col]
             ax.scatter(hex_x, hex_y, c=vals,
                        s=fig_style.hex_stimulus_marker_size,
@@ -119,11 +127,11 @@ def _plot_sequence_preview(sequences, hex_x, hex_y, title, save_path, fig_style,
                        alpha=1.0, linewidths=0)
             ax.set_facecolor(fig_style.background)
             if metadata is not None and i < len(metadata):
-                name, flip, rot, tsplit, nf = metadata[i]
+                name, flip, rot = metadata[i][:3]
                 short = str(name).split('_split_')[0].split('sequence_')[-1] if 'sequence_' in str(name) else str(name)
-                ax.set_title(f"{short}\nf{flip} r{rot} t{tsplit} [{nf}fr]", fontsize=4)
+                ax.set_title(f"{short}\nf{flip} r{rot} [{start}:{stop}]", fontsize=4)
             else:
-                ax.set_title(f"seq {i} [{n_frames_seq}fr]", fontsize=6)
+                ax.set_title(f"seq {i} [{start}:{stop}]", fontsize=6)
             ax.set_xticks([])
             ax.set_yticks([])
             ax.set_aspect('equal')
@@ -449,7 +457,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
             "max_frames": 80,
             "flip_axes": [0, 1],
             "n_rotations": [0, 90, 180, 270],
-            "temporal_split": True,
+            "temporal_split": False,
             "dt": sim.delta_t,
             "interpolate": True,
             "boxfilter": dict(extent=extent, kernel_size=13),
@@ -492,6 +500,9 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     # This loads the biological connectome (neuron types, synaptic weights, time constants)
     # from the flyvis library, using ensemble_id/model_id to select a specific trained model.
     # The network is then used as the "simulator" to generate voltage traces via its PDE dynamics.
+    # Suppress noisy flyvis "epe not in ... Falling back to loss" warning
+    import logging as _logging
+    _logging.getLogger("flyvis.utils.logging_utils").setLevel(_logging.ERROR)
     config_net = get_default_config(overrides=[], path=f"{CONFIG_PATH}/network/network.yaml")
     config_net.connectome.extent = extent
     net = Network(**config_net)
@@ -637,26 +648,24 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     assert len(overlap) == 0, f"TRAIN/TEST OVERLAP: {overlap}"
     print(f"subdirectory split: {n_train_vids} train / {len(unique_videos) - n_train_vids} test videos"
           f"  ({len(train_indices)} train seqs, {len(test_indices)} test seqs)")
+    print(f"overlap: {overlap} (must be empty)")
 
     # Build sequences lists for ODE generation
     train_sequences = [stimulus_dataset[i] for i in train_indices]
     test_sequences = [stimulus_dataset[i] for i in test_indices]
 
-    # Build metadata labels for preview plots (name, flip_ax, n_rot, tsplit, n_frames)
+    # Build metadata labels for preview plots (name, flip_ax, n_rot)
     train_meta = [
-        (df.iloc[idx]['name'], df.iloc[idx]['flip_ax'],
-         df.iloc[idx]['n_rot'], df.iloc[idx].get('temporal_split_index', 0),
-         df.iloc[idx].get('frames', 0))
+        (df.iloc[idx]['name'], df.iloc[idx]['flip_ax'], df.iloc[idx]['n_rot'])
         for idx in train_indices
     ]
     test_meta = [
-        (df.iloc[idx]['name'], df.iloc[idx]['flip_ax'],
-         df.iloc[idx]['n_rot'], df.iloc[idx].get('temporal_split_index', 0),
-         df.iloc[idx].get('frames', 0))
+        (df.iloc[idx]['name'], df.iloc[idx]['flip_ax'], df.iloc[idx]['n_rot'])
         for idx in test_indices
     ]
 
     # Plot preview for train and test splits
+    frames_per_sequence = 35
     n_hexals = stimulus_dataset[0]["lum"].shape[-1]
     hex_x = x_coords[:n_hexals]
     hex_y = y_coords[:n_hexals]
@@ -670,7 +679,6 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                            metadata=test_meta)
 
     # --- Generate TRAIN split ---
-    frames_per_sequence = 35
     total_frames_per_pass = len(train_sequences) * frames_per_sequence
 
     if n_frames == 0:
