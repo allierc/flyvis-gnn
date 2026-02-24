@@ -1145,7 +1145,7 @@ def _generate_inr_video(gt_np, predict_frame_fn, pos_np, field_name,
     print(f'  video saved: {video_path} ({size_mb:.1f} MB)')
 
 
-def data_train_INR(config=None, device=None, total_steps=50000, field_name='stimulus'):
+def data_train_INR(config=None, device=None, total_steps=10000, field_name='stimulus'):
     """Train an INR (SIREN or instantNGP) on a field from x_list_train.
 
     Loads the specified field from the zarr V3 dataset, trains the INR,
