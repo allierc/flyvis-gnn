@@ -41,11 +41,15 @@ def get_data_root():
     if _DATA_ROOT_CACHE is not None:
         return _DATA_ROOT_CACHE
     json_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'data_paths.json')
+    json_path = os.path.normpath(json_path)
+    print(f"[get_data_root] looking for {json_path}  exists={os.path.isfile(json_path)}")
     if os.path.isfile(json_path):
         with open(json_path) as f:
             _DATA_ROOT_CACHE = json.load(f)['data_root']
+        print(f"[get_data_root] loaded data_root = {_DATA_ROOT_CACHE!r}")
     else:
         _DATA_ROOT_CACHE = '.'
+        print(f"[get_data_root] data_paths.json not found, using '.'")
     return _DATA_ROOT_CACHE
 
 
