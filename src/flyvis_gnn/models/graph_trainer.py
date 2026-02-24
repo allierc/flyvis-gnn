@@ -1235,8 +1235,8 @@ def data_train_INR(config=None, device=None, total_steps=10000, field_name='stim
     n_layers = getattr(model_config, 'n_layers_nnr_f', 3)
     omega_f = getattr(model_config, 'omega_f', 1024)
     omega_f_learning = getattr(model_config, 'omega_f_learning', False)
-    t_period = getattr(model_config, 'nnr_f_T_period', n_frames)
-    xy_period = getattr(model_config, 'nnr_f_xy_period', 1.0)
+    t_period = getattr(model_config, 'nnr_f_T_period', n_frames) / (2 * np.pi)
+    xy_period = getattr(model_config, 'nnr_f_xy_period', 1.0) / (2 * np.pi)
     batch_size = getattr(tc, 'inr_batch_size', 8)
     learning_rate = getattr(tc, 'learning_rate_NNR_f', 1e-6)
 
@@ -1422,7 +1422,6 @@ def data_train_INR(config=None, device=None, total_steps=10000, field_name='stim
             cmp_path = f"{output_folder}/{inr_type}_comparison_{step}.png"
             fig_cmp.savefig(cmp_path, dpi=150)
             plt.close(fig_cmp)
-            print(f'  R²={last_r2:.4f}  saved {cmp_path}')
 
     # --- final evaluation (sampled) ---
     elapsed = time.time() - t_start

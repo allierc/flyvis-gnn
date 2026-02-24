@@ -187,10 +187,10 @@ class FlyVisGNN(nn.Module):
 
                 # Match training normalization (graph_trainer.py divides by raw period).
                 # Previous code divided by 2*pi here — revert if needed:
-                #   self.NNR_f_xy_period = model_config.nnr_f_xy_period / (2*np.pi)
-                #   self.NNR_f_T_period = model_config.nnr_f_T_period / (2*np.pi)
-                self.NNR_f_xy_period = model_config.nnr_f_xy_period
-                self.NNR_f_T_period = model_config.nnr_f_T_period
+                self.NNR_f_xy_period = model_config.nnr_f_xy_period / (2*np.pi)
+                self.NNR_f_T_period = model_config.nnr_f_T_period / (2*np.pi)
+                # self.NNR_f_xy_period = model_config.nnr_f_xy_period
+                # self.NNR_f_T_period = model_config.nnr_f_T_period
 
     def forward_visual(self, state: NeuronState, k):
         """Reconstruct visual field from neuron positions and time step k."""
