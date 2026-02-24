@@ -1338,70 +1338,35 @@ def data_train_INR(config=None, device=None, total_steps=50000, field_name='stim
             c = _r2c(last_r2)
             pbar.set_postfix_str(f'loss={loss.item():.6f} {c}R²={last_r2:.4f}{_RESET}')
 
-        # visualization
-        if step > 0 and step % viz_interval == 0:
-            pred_all = _predict_all()
-            gt_np = ground_truth.cpu().numpy()
-            pred_np = pred_all.cpu().numpy()
-
-            fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-            fig.patch.set_facecolor('black')
-
-            # loss plot
-            axes[0].set_facecolor('black')
-            axes[0].plot(loss_list, color='white', lw=0.1)
-            axes[0].set_xlabel('step', color='white', fontsize=12)
-            axes[0].set_ylabel('MSE Loss', color='white', fontsize=12)
-            axes[0].set_yscale('log')
-            axes[0].tick_params(colors='white', labelsize=11)
-            for spine in axes[0].spines.values():
-                spine.set_color('white')
-
-            # traces plot
-            axes[1].set_facecolor('black')
-            axes[1].set_axis_off()
-            n_traces = 10
-            trace_ids = np.linspace(0, n_neurons - 1, n_traces, dtype=int)
-            offset_val = np.abs(gt_np).max() * 1.5
-            t_arr = np.arange(n_frames)
-            for j, n_idx in enumerate(trace_ids):
-                y0 = j * offset_val
-                axes[1].plot(t_arr, gt_np[:, n_idx] + y0, color='darkgreen', lw=2.0, alpha=0.95)
-                axes[1].plot(t_arr, pred_np[:, n_idx] + y0, color='white', lw=0.5, alpha=0.95)
-            axes[1].set_xlim(0, min(20000, n_frames))
-            axes[1].set_ylim(-offset_val * 0.5, offset_val * (n_traces + 0.5))
-            mse = ((pred_np - gt_np) ** 2).mean()
-            axes[1].text(0.02, 0.98, f'MSE: {mse:.6f}  R²: {last_r2:.4f}',
-                         transform=axes[1].transAxes, va='top', ha='left',
-                         fontsize=12, color='white')
-            plt.tight_layout()
-            save_path = f"{output_folder}/{inr_type}_{step}.png"
-            plt.savefig(save_path, dpi=150)
-            plt.close()
-            print(f'  saved {save_path}')
-
-            # hex comparison: GT vs Pred (two panels, mid-frame)
-            if neuron_pos_np is not None:
-                mid_fr = n_frames // 2
-                gt_frame = gt_np[mid_fr]
-                pred_frame = pred_np[mid_fr]
-                vmin, vmax = np.percentile(gt_frame, 2), np.percentile(gt_frame, 98)
-                fig_cmp, (ax_gt, ax_pr) = plt.subplots(1, 2, figsize=(10, 5))
-                px, py = neuron_pos_np[:, 0], neuron_pos_np[:, 1]
-                ax_gt.scatter(px, py, s=256, c=gt_frame, cmap='viridis',
-                              marker='h', vmin=vmin, vmax=vmax)
-                ax_gt.set_title('ground truth', fontsize=12)
-                ax_gt.set_axis_off()
-                ax_pr.scatter(px, py, s=256, c=pred_frame, cmap='viridis',
-                              marker='h', vmin=vmin, vmax=vmax)
-                ax_pr.set_title('prediction', fontsize=12)
-                ax_pr.set_axis_off()
-                fig_cmp.suptitle(f'{field_name}  step {step}  R²={last_r2:.4f}', fontsize=11)
-                fig_cmp.tight_layout()
-                cmp_path = f"{output_folder}/{inr_type}_comparison_{step}.png"
-                fig_cmp.savefig(cmp_path, dpi=150)
-                plt.close(fig_cmp)
-                print(f'  R²={last_r2:.4f}  saved {cmp_path}')
+        # visualization: hex comparison at frame n_frames//2
+        if step > 0 and step % viz_interval == 0 and neuron_pos_np is not None:
+            mid_fr = n_frames // 2
+            with torch.no_grad():
+                if inr_type == 'siren_txy':
+                    t_val = torch.full((n_neurons, 1), mid_fr / t_period, device=device)
+                    inp = torch.cat([t_val, neuron_pos], dim=1)
+                    pred_frame = nnr_f(inp).squeeze().cpu().numpy()
+                else:
+                    pred_all = _predict_all()
+                    pred_frame = pred_all.cpu().numpy()[mid_fr]
+            gt_frame = field_np[mid_fr]
+            vmin, vmax = np.percentile(gt_frame, 2), np.percentile(gt_frame, 98)
+            fig_cmp, (ax_gt, ax_pr) = plt.subplots(1, 2, figsize=(10, 5))
+            px, py = neuron_pos_np[:, 0], neuron_pos_np[:, 1]
+            ax_gt.scatter(px, py, s=256, c=gt_frame, cmap='viridis',
+                          marker='h', vmin=vmin, vmax=vmax)
+            ax_gt.set_title('ground truth', fontsize=12)
+            ax_gt.set_axis_off()
+            ax_pr.scatter(px, py, s=256, c=pred_frame, cmap='viridis',
+                          marker='h', vmin=vmin, vmax=vmax)
+            ax_pr.set_title('prediction', fontsize=12)
+            ax_pr.set_axis_off()
+            fig_cmp.suptitle(f'{field_name}  step {step}  R²={last_r2:.4f}', fontsize=11)
+            fig_cmp.tight_layout()
+            cmp_path = f"{output_folder}/{inr_type}_comparison_{step}.png"
+            fig_cmp.savefig(cmp_path, dpi=150)
+            plt.close(fig_cmp)
+            print(f'  R²={last_r2:.4f}  saved {cmp_path}')
 
     # --- final evaluation ---
     elapsed = time.time() - t_start
