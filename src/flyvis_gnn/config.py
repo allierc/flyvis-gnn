@@ -438,6 +438,7 @@ class TrainingConfig(BaseModel):
     epoch_reset_freq: int = 99999
     batch_size: int = 1
     inr_batch_size: int = 8
+    n_training_frames: int = 0  # 0 = use all frames; >0 = crop centered window
     batch_ratio: float = 1
     small_init_batch_size: bool = True
     embedding_step: int = 1000

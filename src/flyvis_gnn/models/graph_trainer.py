@@ -1212,6 +1212,14 @@ def data_train_INR(config=None, device=None, total_steps=10000, field_name='stim
         print(f'training INR on field "{field_name}"')
         print(f'  data: {n_frames} frames, {n_neurons} neurons')
 
+    # crop to centered window if n_training_frames is set
+    n_training_frames = getattr(tc, 'n_training_frames', 0)
+    if n_training_frames > 0 and n_training_frames < n_frames:
+        start = n_frames // 2 - n_training_frames // 2
+        field_np = field_np[start:start + n_training_frames]
+        n_frames = n_training_frames
+        print(f'  cropped to {n_training_frames} centered frames')
+
     # SVD analysis
     from sklearn.utils.extmath import randomized_svd
     n_comp = min(50, min(field_np.shape) - 1)

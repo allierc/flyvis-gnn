@@ -58,6 +58,7 @@ training:
   recurrent_training: false
   batch_size: 1
   inr_batch_size: 16
+  n_training_frames: 1000
   batch_ratio: 1
   sparsity: none
   data_augmentation_loop: 20
