@@ -75,6 +75,7 @@ class MLPActivation(StrEnum):
 
 class INRType(StrEnum):
     SIREN_T = "siren_t"
+    SIREN_TXY = "siren_txy"
     SIREN_ID = "siren_id"
     SIREN_X = "siren_x"
     NGP = "ngp"
