@@ -1282,8 +1282,8 @@ def data_train_INR(config=None, device=None, total_steps=50000, field_name='stim
 
     # --- training loop ---
     loss_list = []
-    report_interval = max(1, total_steps // 10)
-    viz_interval = max(1, total_steps // 5)
+    report_interval = 10000
+    viz_interval = 10000
     last_r2 = 0.0
     t_start = time.time()
 
@@ -1380,28 +1380,28 @@ def data_train_INR(config=None, device=None, total_steps=50000, field_name='stim
             plt.close()
             print(f'  saved {save_path}')
 
-            # hex scatter comparison: GT vs Pred for sample frames
+            # hex comparison: GT vs Pred (two panels, mid-frame)
             if neuron_pos_np is not None:
-                sample_frames = np.linspace(0, n_frames - 1, 4, dtype=int)
-                clim = (np.percentile(gt_np, 2), np.percentile(gt_np, 98))
-                fig_cmp, axes_cmp = plt.subplots(2, 4, figsize=(16, 7))
+                mid_fr = n_frames // 2
+                gt_frame = gt_np[mid_fr]
+                pred_frame = pred_np[mid_fr]
+                vmin, vmax = np.percentile(gt_frame, 2), np.percentile(gt_frame, 98)
+                fig_cmp, (ax_gt, ax_pr) = plt.subplots(1, 2, figsize=(10, 5))
                 px, py = neuron_pos_np[:, 0], neuron_pos_np[:, 1]
-                for col, fr in enumerate(sample_frames):
-                    axes_cmp[0, col].scatter(px, py, c=gt_np[fr], cmap='coolwarm', s=2,
-                                             vmin=clim[0], vmax=clim[1], linewidths=0)
-                    axes_cmp[0, col].set_title(f'GT  t={fr}', fontsize=8)
-                    axes_cmp[1, col].scatter(px, py, c=pred_np[fr], cmap='coolwarm', s=2,
-                                             vmin=clim[0], vmax=clim[1], linewidths=0)
-                    axes_cmp[1, col].set_title(f'Pred  t={fr}', fontsize=8)
-                    for row in range(2):
-                        axes_cmp[row, col].set_aspect('equal')
-                        axes_cmp[row, col].set_xticks([]); axes_cmp[row, col].set_yticks([])
-                fig_cmp.suptitle(f'{field_name}  step {step}  MSE={mse:.6f}  R²={last_r2:.4f}', fontsize=10)
+                ax_gt.scatter(px, py, s=256, c=gt_frame, cmap='viridis',
+                              marker='h', vmin=vmin, vmax=vmax)
+                ax_gt.set_title('ground truth', fontsize=12)
+                ax_gt.set_axis_off()
+                ax_pr.scatter(px, py, s=256, c=pred_frame, cmap='viridis',
+                              marker='h', vmin=vmin, vmax=vmax)
+                ax_pr.set_title('prediction', fontsize=12)
+                ax_pr.set_axis_off()
+                fig_cmp.suptitle(f'{field_name}  step {step}  R²={last_r2:.4f}', fontsize=11)
                 fig_cmp.tight_layout()
                 cmp_path = f"{output_folder}/{inr_type}_comparison_{step}.png"
                 fig_cmp.savefig(cmp_path, dpi=150)
                 plt.close(fig_cmp)
-                print(f'  saved {cmp_path}')
+                print(f'  R²={last_r2:.4f}  saved {cmp_path}')
 
     # --- final evaluation ---
     elapsed = time.time() - t_start
