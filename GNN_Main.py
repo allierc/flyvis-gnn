@@ -98,9 +98,10 @@ if __name__ == "__main__":
             data_train_NGP(config=config, device=device)
 
         elif 'train_INR' in task:
-            print()
-            # pre-train nnr_f (SIREN) on external_input data before joint GNN learning
-            data_train_INR(config=config, device=device, total_steps=50000)
+            # train INR (SIREN/NGP) on a field from x_list_train
+            field_name = args.option[2] if len(args.option) > 2 else 'stimulus'
+            data_train_INR(config=config, device=device, total_steps=50000,
+                           field_name=field_name)
 
         elif "train" in task:
             data_train(
