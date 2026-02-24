@@ -11,6 +11,7 @@ papers/
 
 # Log folder - include models/*.pt, exclude everything else
 log/**/*
+!log/.gitkeep
 !log/fly/
 !log/fly/**/
 !log/fly/**/models/
