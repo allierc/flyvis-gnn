@@ -1,5 +1,5 @@
 ---
-title: "FlyVis-GNN: Graph neural networks for fly visual system connectivity recovery"
+title: "FlyVis-GNN: Graph neural networks recover interpretable circuit models from neural activity"
 listing:
   contents: "Notebook_*.py"
   type: default
@@ -11,5 +11,15 @@ listing:
   filter-ui: true
 ---
 
-Graph neural networks trained to predict observable dynamics can be used to recover the connectivity of the fly visual system.
-This repository applies the GNN framework to FlyVis connectome data, using LLM-guided exploration to systematically search the training configuration space.
+A message-passing GNN is trained to forecast the activity of simulated *Drosophila* visual system neurons (13,741 neurons, 65 cell types, 434,112 connections).
+Given only the binary adjacency matrix and recorded voltage traces, the model recovers effective connectivity weights, neuron-type identities via latent embeddings, and nonlinear activation functions.
+
+The simulated dynamics follow:
+
+$$\tau_i\frac{dv_i}{dt} = -v_i + V_i^{\text{rest}} + \sum_{j\in\mathcal{N}_i} W_{ij}\,\text{ReLU}(v_j) + I_i(t)$$
+
+The GNN learns to approximate these dynamics with:
+
+$$\frac{\widehat{dv}_i}{dt} = f_\theta\!\left(v_i,\,\mathbf{a}_i,\,\sum_{j\in\mathcal{N}_i} \widehat{W}_{ij}\,g_\phi(v_j, \mathbf{a}_j)^2,\,I_i(t)\right)$$
+
+where $f_\theta$ and $g_\phi$ are learned MLPs, $\mathbf{a}_i \in \mathbb{R}^2$ are latent embeddings, and $\widehat{W}_{ij}$ are learned synaptic weights.

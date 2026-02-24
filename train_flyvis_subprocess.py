@@ -13,6 +13,8 @@ import matplotlib
 matplotlib.use('Agg')  # set non-interactive backend before other imports
 
 import argparse
+import glob
+import shutil
 import sys
 import os
 import traceback
@@ -37,6 +39,9 @@ def main():
     parser.add_argument('--best_model', type=str, default=None, help='Best model path')
     parser.add_argument('--generate', action='store_true', help='Regenerate data before training')
     parser.add_argument('--seed', type=int, default=None, help='Override simulation seed (for data variance)')
+    parser.add_argument('--exploration_dir', type=str, default=None, help='Copy models here after training')
+    parser.add_argument('--iteration', type=int, default=None, help='Iteration number (for model naming)')
+    parser.add_argument('--slot', type=int, default=None, help='Slot number (for model naming)')
 
     args = parser.parse_args()
 
@@ -83,6 +88,9 @@ def main():
                 save=True,
                 step=100,
             )
+
+        # Suppress iteration-level model saves
+        config.training.save_all_checkpoints = False
 
         # Open log file if specified
         log_file = None
@@ -132,6 +140,19 @@ def main():
                 device=device,
                 log_file=log_file
             )
+
+            # Phase 4: Copy models to exploration dir
+            if args.exploration_dir is not None and args.iteration is not None and args.slot is not None:
+                log_dir = os.path.join('.', 'log', config.config_file)
+                src_models = glob.glob(os.path.join(log_dir, 'models', '*.pt'))
+                if src_models:
+                    dst_dir = os.path.join(args.exploration_dir, 'models')
+                    os.makedirs(dst_dir, exist_ok=True)
+                    for src in src_models:
+                        fname = os.path.basename(src)
+                        dst = os.path.join(dst_dir, f'iter_{args.iteration:03d}_slot_{args.slot:02d}_{fname}')
+                        shutil.copy2(src, dst)
+                        print(f"copied model: {dst}")
 
         finally:
             if log_file:

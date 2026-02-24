@@ -185,6 +185,11 @@ class FlyVisGNN(nn.Module):
                             outermost_linear=model_config.outermost_linear_nnr_f)
                 self.NNR_f.to(self.device)
 
+                # BUG: dividing by 2*pi here means inference uses different normalization
+                # than training (graph_trainer.py uses raw nnr_f_T_period / nnr_f_xy_period).
+                # Training: t_norm = sample_ids / nnr_f_T_period
+                # Inference: t_norm = k / (nnr_f_T_period / 2*pi) = k * 2*pi / nnr_f_T_period
+                # These are inconsistent — inference sees 2*pi larger input than training.
                 self.NNR_f_xy_period = model_config.nnr_f_xy_period / (2*np.pi)
                 self.NNR_f_T_period = model_config.nnr_f_T_period / (2*np.pi)
 

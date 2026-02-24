@@ -573,6 +573,8 @@ class TrainingConfig(BaseModel):
     # external input learning
     learn_external_input: bool = False
 
+    save_all_checkpoints: bool = False  # True = save iteration-level checkpoints too
+
     data_augmentation_loop: int = 40
 
     recurrent_training: bool = False

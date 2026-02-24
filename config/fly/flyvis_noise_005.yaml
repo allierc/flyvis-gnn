@@ -1,7 +1,5 @@
-description:
-  "Best robust config from 104-iteration gs exploration (4 runs, conn_R2=0.946,
-  CV=2.6%, min=0.916, 0% catastrophic)"
-dataset: flyvis_62_1_gs
+description: "flyvis DAVIS training noise_model_level 0.05"
+dataset: flyvis_noise_005
 simulation:
   connectivity_file: to be specified
   adjacency_matrix: ""
@@ -44,7 +42,7 @@ plotting:
     - -100
     - 100
 training:
-  n_epochs: 1
+  n_epochs: 2
   n_runs: 1
   device: auto
   recurrent_training: false

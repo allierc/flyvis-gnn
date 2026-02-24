@@ -1,6 +1,7 @@
 import matplotlib
 matplotlib.use('Agg')  # set non-interactive backend before other imports
 import argparse
+import glob
 import os
 import re
 import shutil
@@ -25,19 +26,6 @@ from GNN_PlotFigure import data_plot
 
 import warnings
 warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API")
-
-
-# ---------------------------------------------------------------------------
-# Model assignment: each slot trains a different difficult FlyVis model
-# ---------------------------------------------------------------------------
-
-MODEL_IDS = ['049', '011', '041', '003']
-MODEL_DATASETS = {
-    0: 'flyvis_62_1_id_049',
-    1: 'flyvis_62_1_id_011',
-    2: 'flyvis_62_1_id_041',
-    3: 'flyvis_62_1_id_003',
-}
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +73,8 @@ CLUSTER_ROOT_DIR = f"{CLUSTER_HOME}/Graph/flyvis-gnn"
 
 
 def submit_cluster_job(slot, config_path, analysis_log_path, config_file_field,
-                       log_dir, root_dir, erase=True, node_name='a100'):
+                       log_dir, root_dir, erase=True, node_name='a100',
+                       generate=False, seed=None, exploration_dir=None, iteration=None):
     """Submit a single flyvis training job to the cluster WITHOUT -K (non-blocking)."""
     cluster_script_path = f"{log_dir}/cluster_train_{slot:02d}.sh"
     error_details_path = f"{log_dir}/training_error_{slot:02d}.log"
@@ -100,6 +89,15 @@ def submit_cluster_job(slot, config_path, analysis_log_path, config_file_field,
     cluster_train_cmd += f" --error_log '{cluster_error_log}'"
     if erase:
         cluster_train_cmd += " --erase"
+    if generate:
+        cluster_train_cmd += " --generate"
+    if seed is not None:
+        cluster_train_cmd += f" --seed {seed}"
+    if exploration_dir is not None and iteration is not None:
+        cluster_exploration_dir = exploration_dir.replace(root_dir, CLUSTER_ROOT_DIR)
+        cluster_train_cmd += f" --exploration_dir '{cluster_exploration_dir}'"
+        cluster_train_cmd += f" --iteration {iteration}"
+        cluster_train_cmd += f" --slot {slot}"
 
     with open(cluster_script_path, 'w') as f:
         f.write("#!/bin/bash\n")
@@ -113,7 +111,7 @@ def submit_cluster_job(slot, config_path, analysis_log_path, config_file_field,
     cluster_stderr = f"{cluster_log_dir}/cluster_train_{slot:02d}.err"
 
     ssh_cmd = (
-        f"ssh allierc@login1 \"cd {CLUSTER_ROOT_DIR} && "
+        f"ssh allierc@login2 \"cd {CLUSTER_ROOT_DIR} && "
         f"bsub -n 8 -gpu 'num=1' -q gpu_{node_name} -W 6000 "
         f"-o '{cluster_stdout}' -e '{cluster_stderr}' "
         f"'bash {cluster_script}'\""
@@ -140,7 +138,7 @@ def wait_for_cluster_jobs(job_ids, log_dir=None, poll_interval=60):
 
     while pending:
         ids_str = ' '.join(pending.values())
-        ssh_cmd = f'ssh allierc@login1 "bjobs {ids_str} 2>/dev/null"'
+        ssh_cmd = f'ssh allierc@login2 "bjobs {ids_str} 2>/dev/null"'
         out = subprocess.run(ssh_cmd, shell=True, capture_output=True, text=True)
 
         for slot, jid in list(pending.items()):
@@ -245,98 +243,20 @@ def run_claude_cli(prompt, root_dir, max_turns=500):
 
 
 # ---------------------------------------------------------------------------
-# Analysis tool execution + auto-repair
-# ---------------------------------------------------------------------------
-
-def execute_analysis_tool(tool_path, root_dir, max_repair_attempts=3):
-    """Execute an analysis tool script with auto-repair on failure.
-
-    Returns (success: bool, output: str).
-    """
-    tools_output_dir = os.path.join(root_dir, 'tools', 'output')
-    os.makedirs(tools_output_dir, exist_ok=True)
-
-    for attempt in range(max_repair_attempts + 1):
-        print(f"\033[96m  analysis tool: running {os.path.basename(tool_path)}"
-              f"{f' (repair attempt {attempt})' if attempt > 0 else ''}\033[0m")
-
-        result = subprocess.run(
-            ['python', tool_path],
-            cwd=root_dir,
-            capture_output=True,
-            text=True,
-            timeout=300
-        )
-
-        if result.returncode == 0:
-            output = result.stdout
-            print(f"\033[92m  analysis tool: SUCCESS\033[0m")
-
-            # Save stdout to output file
-            iter_match = re.search(r'analysis_iter_(\d+)', tool_path)
-            if iter_match:
-                iter_num = iter_match.group(1)
-                output_path = os.path.join(tools_output_dir, f'analysis_iter_{iter_num}.txt')
-                with open(output_path, 'w') as f:
-                    f.write(output)
-
-            # Git-commit the tool
-            if is_git_repo(root_dir):
-                try:
-                    subprocess.run(['git', 'add', tool_path], cwd=root_dir,
-                                   capture_output=True, timeout=10)
-                    # Also add output files
-                    subprocess.run(['git', 'add', 'tools/output/'], cwd=root_dir,
-                                   capture_output=True, timeout=10)
-                    subprocess.run(
-                        ['git', 'commit', '-m',
-                         f'[Analysis] {os.path.basename(tool_path)}'],
-                        cwd=root_dir, capture_output=True, timeout=10
-                    )
-                    print(f"\033[92m  analysis tool: git-committed\033[0m")
-                except Exception:
-                    pass
-
-            return True, output
-
-        # Tool crashed — attempt auto-repair
-        error_msg = result.stderr[-2000:] if result.stderr else result.stdout[-2000:]
-        print(f"\033[91m  analysis tool: CRASHED (attempt {attempt + 1}/{max_repair_attempts + 1})\033[0m")
-
-        if attempt < max_repair_attempts:
-            print(f"\033[93m  analysis tool: calling Claude for repair\033[0m")
-            repair_prompt = (
-                f"Analysis tool crashed. Please fix the bug.\n\n"
-                f"Tool path: {tool_path}\n\n"
-                f"Error:\n```\n{error_msg}\n```\n\n"
-                f"Fix the bug in the script. Do NOT change the analysis logic, "
-                f"only fix the crash. Do NOT make other changes."
-            )
-            run_claude_cli(repair_prompt, root_dir, max_turns=10)
-
-    print(f"\033[91m  analysis tool: FAILED after {max_repair_attempts + 1} attempts\033[0m")
-    return False, f"ANALYSIS TOOL FAILED: {error_msg}"
-
-
-# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     warnings.filterwarnings("ignore", category=FutureWarning)
-    parser = argparse.ArgumentParser(
-        description="FlyVis-GNN — Understanding Exploration (4 Difficult Models)"
-    )
+    parser = argparse.ArgumentParser(description="FlyVis-GNN — FlyVis Parallel LLM Loop")
     parser.add_argument(
         "-o", "--option", nargs="+", help="option that takes multiple values"
     )
     parser.add_argument(
-        "--fresh", action="store_true", default=True,
-        help="start from iteration 1 (ignore auto-resume)"
+        "--fresh", action="store_true", default=True, help="start from iteration 1 (ignore auto-resume)"
     )
     parser.add_argument(
-        "--resume", action="store_true",
-        help="auto-resume from last completed batch"
+        "--resume", action="store_true", help="auto-resume from last completed batch"
     )
 
     print()
@@ -359,13 +279,15 @@ if __name__ == "__main__":
     else:
         best_model = ''
         task = 'train_test_plot_Claude_cluster'
-        config_list = ['flyvis_62_1_understand']
-        task_params = {'iterations': 48}
+        config_list = ['flyvis_62_0']
+        task_params = {'iterations': 144}
 
-    n_iterations = task_params.get('iterations', 48)
-    base_config_name = config_list[0] if config_list else 'flyvis_62_1_understand'
-    instruction_name = task_params.get('instruction', 'instruction_flyvis_62_1_understanding')
+    n_iterations = task_params.get('iterations', 144)
+    base_config_name = config_list[0] if config_list else 'flyvis_62_0'
+    instruction_name = task_params.get('instruction', f'instruction_{base_config_name}')
     llm_task_name = task_params.get('llm_task', f'{base_config_name}_Claude')
+    exploration_name = task_params.get('exploration_name', f'LLM_{base_config_name}')
+    generate_data = "generate" in task
 
     # -----------------------------------------------------------------------
     # Claude mode setup
@@ -373,7 +295,7 @@ if __name__ == "__main__":
     root_dir = os.path.dirname(os.path.abspath(__file__))
     config_root = root_dir + "/config"
     llm_dir = f"{root_dir}/LLM"
-    exploration_dir = f"{root_dir}/log/Claude_exploration/{instruction_name}_parallel"
+    exploration_dir = f"{root_dir}/log/Claude_exploration/{exploration_name}"
 
     if args.resume:
         analysis_path_probe = f"{exploration_dir}/{llm_task_name}_analysis.md"
@@ -396,37 +318,22 @@ if __name__ == "__main__":
                 sys.exit(0)
         print("\033[93mFresh start\033[0m")
 
-    # --- Initialize 4 slot configs (each pointing to a different model) ---
+    # --- Initialize 4 slot configs from source ---
     for cfg in config_list:
         cfg_file, pre = add_pre_folder(cfg)
-        source_config_base = f"{config_root}/{pre}{cfg}.yaml"
+        source_config = f"{config_root}/{pre}{cfg}.yaml"
 
-    # Read claude settings from slot 0 source config
-    slot0_source = f"{config_root}/{pre}{llm_task_name}_00.yaml"
-    if os.path.exists(slot0_source):
-        with open(slot0_source, 'r') as f:
-            source_data = yaml.safe_load(f)
-    else:
-        # Fall back to the base config template
-        # Look for any of the slot configs or the base
-        for fallback in [source_config_base,
-                         f"{config_root}/{pre}flyvis_62_1_Claude_02.yaml"]:
-            if os.path.exists(fallback):
-                with open(fallback, 'r') as f:
-                    source_data = yaml.safe_load(f)
-                break
-        else:
-            print(f"\033[91merror: no source config found\033[0m")
-            sys.exit(1)
-
+    with open(source_config, 'r') as f:
+        source_data = yaml.safe_load(f)
     claude_cfg = source_data.get('claude', {})
     claude_n_epochs = claude_cfg.get('n_epochs', 1)
     claude_data_augmentation_loop = claude_cfg.get('data_augmentation_loop', 25)
+    claude_n_iter_block = claude_cfg.get('n_iter_block', 12)
     claude_ucb_c = claude_cfg.get('ucb_c', 1.414)
     claude_node_name = claude_cfg.get('node_name', 'h100')
+    n_iter_block = claude_n_iter_block
 
     print(f"\033[94mCluster node: gpu_{claude_node_name}\033[0m")
-    print(f"\033[94mModels: {', '.join(f'slot {i}={MODEL_IDS[i]}' for i in range(N_PARALLEL))}\033[0m")
 
     # Slot config paths and analysis log paths
     config_paths = {}
@@ -441,15 +348,45 @@ if __name__ == "__main__":
         analysis_log_paths[slot] = f"{exploration_dir}/{slot_name}_analysis.log"
 
         if start_iteration == 1 and not args.resume:
-            # Each slot gets its own config pointing to a different model dataset
-            slot_source = f"{config_root}/{pre}{llm_task_name}_{slot:02d}.yaml"
-            if os.path.exists(slot_source):
-                print(f"\033[93m  slot {slot}: using existing {slot_source} "
-                      f"(model {MODEL_IDS[slot]})\033[0m")
+            if os.path.exists(target):
+                # Slot config already exists (pre-seeded) — preserve ALL training/graph_model params
+                # Only update n_epochs and claude section (not data_augmentation_loop or other training params)
+                with open(target, 'r') as f:
+                    config_data = yaml.safe_load(f)
+                config_data['training']['n_epochs'] = claude_n_epochs
+                if generate_data:
+                    config_data['dataset'] = f"{base_config_name}_{slot:02d}"
+                config_data['claude'] = {
+                    'n_epochs': claude_n_epochs,
+                    'data_augmentation_loop': claude_data_augmentation_loop,
+                    'n_iter_block': claude_n_iter_block,
+                    'ucb_c': claude_ucb_c,
+                    'node_name': claude_node_name
+                }
+                with open(target, 'w') as f:
+                    yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+                print(f"\033[93m  slot {slot}: preserved pre-seeded {target} (dataset='{config_data['dataset']}')\033[0m")
             else:
-                print(f"\033[91m  slot {slot}: config not found: {slot_source}\033[0m")
-                print(f"\033[91m  Please create config files first.\033[0m")
-                sys.exit(1)
+                # No pre-seeded config — create from source
+                shutil.copy2(source_config, target)
+                with open(target, 'r') as f:
+                    config_data = yaml.safe_load(f)
+                # For generate mode, each slot gets its own dataset directory
+                if generate_data:
+                    config_data['dataset'] = f"{base_config_name}_{slot:02d}"
+                config_data['training']['n_epochs'] = claude_n_epochs
+                config_data['training']['data_augmentation_loop'] = claude_data_augmentation_loop
+                config_data['description'] = 'designed by Claude (parallel flyvis)'
+                config_data['claude'] = {
+                    'n_epochs': claude_n_epochs,
+                    'data_augmentation_loop': claude_data_augmentation_loop,
+                    'n_iter_block': claude_n_iter_block,
+                    'ucb_c': claude_ucb_c,
+                    'node_name': claude_node_name
+                }
+                with open(target, 'w') as f:
+                    yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+                print(f"\033[93m  slot {slot}: created {target} from source (dataset='{config_data['dataset']}')\033[0m")
         else:
             print(f"\033[93m  slot {slot}: preserving {target} (resuming)\033[0m")
 
@@ -461,11 +398,9 @@ if __name__ == "__main__":
     instruction_path = f"{llm_dir}/{instruction_name}.md"
     parallel_instruction_path = f"{llm_dir}/{instruction_name}_parallel.md"
     reasoning_log_path = f"{exploration_dir}/{llm_task_name}_reasoning.log"
-    tools_dir = f"{root_dir}/tools"
 
     log_dir = exploration_dir
     os.makedirs(exploration_dir, exist_ok=True)
-    os.makedirs(f"{tools_dir}/output", exist_ok=True)
 
     cluster_enabled = 'cluster' in task
 
@@ -481,98 +416,34 @@ if __name__ == "__main__":
     # Initialize shared files on fresh start
     if start_iteration == 1 and not args.resume:
         with open(analysis_path, 'w') as f:
-            f.write(f"# Understanding Exploration Log: Difficult FlyVis Models (parallel)\n\n")
+            f.write(f"# FlyVis Experiment Log: {base_config_name} (parallel)\n\n")
         print(f"\033[93mcleared {analysis_path}\033[0m")
         open(reasoning_log_path, 'w').close()
         print(f"\033[93mcleared {reasoning_log_path}\033[0m")
-
-        # Initialize memory with UNDERSTANDING section and model profiles
         with open(memory_path, 'w') as f:
-            f.write("# Understanding Exploration: Difficult FlyVis Models\n\n")
-            f.write("## UNDERSTANDING\n\n")
-            f.write("### Model 049 (svd_rank_99=19, baseline R²=0.634)\n")
-            f.write("**Profile**: 13741 neurons, activity_rank_99=16, svd_activity_rank_99=19. "
-                    "Low-dimensional neural activity.\n")
-            f.write("**Hypothesis**: [to be filled after first results]\n")
-            f.write("**Status**: untested\n")
-            f.write("**Evidence FOR**:\n")
-            f.write("**Evidence AGAINST**:\n")
-            f.write("**Best R² so far**: 0.634\n")
-            f.write("**Next experiment**: baseline with Node 79 params\n\n")
-
-            f.write("### Model 011 (svd_rank_99=45, baseline R²=0.308)\n")
-            f.write("**Profile**: 13741 neurons, activity_rank_99=26, svd_activity_rank_99=45. "
-                    "High activity diversity yet worst R². Hard connectivity structure.\n")
-            f.write("**Hypothesis**: [to be filled after first results]\n")
-            f.write("**Status**: untested\n")
-            f.write("**Evidence FOR**:\n")
-            f.write("**Evidence AGAINST**:\n")
-            f.write("**Best R² so far**: 0.308\n")
-            f.write("**Next experiment**: baseline with Node 79 params\n\n")
-
-            f.write("### Model 041 (svd_rank_99=6, baseline R²=0.629)\n")
-            f.write("**Profile**: 13741 neurons, activity_rank_99=5, svd_activity_rank_99=6. "
-                    "Near-collapsed activity. Only 6 SVD components at 99%.\n")
-            f.write("**Hypothesis**: [to be filled after first results]\n")
-            f.write("**Status**: untested\n")
-            f.write("**Evidence FOR**:\n")
-            f.write("**Evidence AGAINST**:\n")
-            f.write("**Best R² so far**: 0.629\n")
-            f.write("**Next experiment**: baseline with Node 79 params\n\n")
-
-            f.write("### Model 003 (svd_rank_99=60, baseline R²=0.627)\n")
-            f.write("**Profile**: 13741 neurons, activity_rank_99=35, svd_activity_rank_99=60. "
-                    "Moderate activity diversity but hard connectivity.\n")
-            f.write("**Hypothesis**: [to be filled after first results]\n")
-            f.write("**Status**: untested\n")
-            f.write("**Evidence FOR**:\n")
-            f.write("**Evidence AGAINST**:\n")
-            f.write("**Best R² so far**: 0.627\n")
-            f.write("**Next experiment**: baseline with Node 79 params\n\n")
-
+            f.write(f"# FlyVis Working Memory: {base_config_name} (parallel)\n\n")
+            f.write("## Knowledge Base (accumulated across all blocks)\n\n")
+            f.write("### Parameter Effects Table\n")
+            f.write("| Block | Focus | Best conn_R2 | Best tau_R2 | Best V_rest_R2 | Best Cluster_Acc | Time_min | Key finding |\n")
+            f.write("| ----- | ----- | ------------ | ----------- | -------------- | ---------------- | -------- | ----------- |\n\n")
+            f.write("### Established Principles\n\n")
+            f.write("### Open Questions\n\n")
             f.write("---\n\n")
-            f.write("## Established Principles (from base 62_1 exploration)\n\n")
-            f.write("1. lr_W=6E-4 with edge_L1=0.3 achieves best conn_R2\n")
-            f.write("2. lr_W=1E-3 requires lr=1E-3 (not 1.2E-3)\n")
-            f.write("3. lr_emb=1.5E-3 is required for lr_W < 1E-3\n")
-            f.write("4. lr_emb >= 1.8E-3 destroys V_rest recovery\n")
-            f.write("5. coeff_edge_norm >= 10 is catastrophic\n")
-            f.write("6. coeff_edge_weight_L1=0.3 is optimal\n")
-            f.write("7. coeff_phi_weight_L1=0.5 improves V_rest recovery\n")
-            f.write("8. coeff_edge_diff=750 is optimal\n")
-            f.write("9. coeff_W_L1=5E-5 is optimal for V_rest\n")
-            f.write("10. coeff_phi_weight_L2 must stay at 0.001\n")
-            f.write("11. n_layers=4 is harmful\n")
-            f.write("12. hidden_dim=80 + hidden_dim_update=80 is optimal architecture\n")
-            f.write("13. batch_size=2 maintains conn_R2 with faster training\n")
-            f.write("14. batch_size >= 3 causes V_rest collapse\n")
-            f.write("15. data_augmentation_loop=20 is viable for speed\n")
-            f.write("16. lr=1.2E-3 is optimal for MLPs\n\n")
-            f.write("NOTE: These principles were derived on the standard model (R²=0.980). "
-                    "They may not hold for difficult models.\n\n")
-
+            f.write("## Previous Block Summary\n\n")
             f.write("---\n\n")
-            f.write("## New Principles (discovered in this exploration)\n\n")
-            f.write("---\n\n")
-            f.write("## Cross-Model Observations\n\n")
-            f.write("---\n\n")
-            f.write("## Analysis Tools Log\n\n")
-            f.write("Summary of each analysis tool: what it measured, key findings, "
-                    "and which UNDERSTANDING hypothesis it informed.\n\n")
-            f.write("| Iter | Tool | What it measured | Key finding | Informed hypothesis |\n")
-            f.write("|------|------|-----------------|-------------|---------------------|\n\n")
-            f.write("---\n\n")
-            f.write("## Iterations\n\n")
-        print(f"\033[93minitialized {memory_path} with UNDERSTANDING section\033[0m")
-
+            f.write("## Current Block (Block 1)\n\n")
+            f.write("### Block Info\n\n")
+            f.write("### Hypothesis\n\n")
+            f.write("### Iterations This Block\n\n")
+            f.write("### Emerging Observations\n\n")
+        print(f"\033[93mcleared {memory_path}\033[0m")
         if os.path.exists(ucb_path):
             os.remove(ucb_path)
             print(f"\033[93mdeleted {ucb_path}\033[0m")
     else:
         print(f"\033[93mpreserving shared files (resuming from iter {start_iteration})\033[0m")
 
-    print(f"\033[93mUNDERSTANDING EXPLORATION (N={N_PARALLEL}, "
-          f"{n_iterations} iterations, starting at {start_iteration})\033[0m")
+    print(f"\033[93m{instruction_name} PARALLEL FLYVIS (N={N_PARALLEL}, {n_iterations} iterations, starting at {start_iteration})\033[0m")
 
     # -----------------------------------------------------------------------
     # BATCH 0: Claude "start" call — initialize 4 config variations
@@ -583,16 +454,17 @@ if __name__ == "__main__":
         print(f"\033[94m{'='*60}\033[0m")
 
         slot_list = "\n".join(
-            f"  Slot {s} (model {MODEL_IDS[s]}): {config_paths[s]}"
-            for s in range(N_PARALLEL)
-        )
-
-        model_gen_logs = "\n".join(
-            f"  Model {MODEL_IDS[s]}: {root_dir}/graphs_data/fly/{MODEL_DATASETS[s]}/generation_log.txt"
+            f"  Slot {s}: {config_paths[s]}"
             for s in range(N_PARALLEL)
         )
 
         parallel_ref = f"\nParallel instructions: {parallel_instruction_path}" if parallel_instruction_path else ""
+
+        # Build seed suggestions for first batch
+        seed_suggestions = "\n".join(
+            f"  Slot {s} (iter {start_iteration + s}): simulation.seed={start_iteration + s}, training.seed={(start_iteration + s) * 4 + s}"
+            for s in range(N_PARALLEL)
+        )
 
         start_prompt = f"""PARALLEL START: Initialize {N_PARALLEL} config variations for the first batch.
 
@@ -603,20 +475,18 @@ Full log (append only): {analysis_path}
 Config files to edit (all {N_PARALLEL}):
 {slot_list}
 
-Generation logs for each model:
-{model_gen_logs}
+Suggested seeds for this batch (set simulation.seed and training.seed in each config YAML):
+{seed_suggestions}
+You may override these — e.g. use the same simulation.seed across slots with different training.seed to test training robustness. Log your seed choices and rationale.
 
-Each slot trains a DIFFERENT flyvis model. Read the instructions, the generation logs,
-and the base configs. Then create {N_PARALLEL} initial training parameter variations.
-Each config already has a unique dataset name — do NOT change the dataset field.
+Read the instructions and the base config, then create {N_PARALLEL} diverse initial training
+parameter variations. Each config already has a unique dataset name — do NOT change the
+dataset field. Vary training parameters (e.g. lr_W, lr, coeff_edge_diff, coeff_W_L1, batch_size)
+across the {N_PARALLEL} slots to explore different starting points.
 
-Starting point: Node 79 best params (lr_W=6E-4, lr=1.2E-3, lr_emb=1.5E-3, edge_diff=750,
-phi_L1=0.5, edge_L1=0.3, W_L1=5E-5, hidden_dim=80, hidden_dim_update=80, batch=2, data_aug=20).
+IMPORTANT: Data is PRE-GENERATED in graphs_data/ — do NOT change simulation parameters.
 
-For the first batch, you may vary params across slots to explore whether different models
-need different settings. Write initial hypotheses to the UNDERSTANDING section in memory.md.
-
-IMPORTANT: Data is PRE-GENERATED — do NOT change simulation parameters."""
+Write the planned mutations to the working memory file."""
 
         print("\033[93mClaude start call...\033[0m")
         output_text = run_claude_cli(start_prompt, root_dir, max_turns=100)
@@ -638,8 +508,6 @@ IMPORTANT: Data is PRE-GENERATED — do NOT change simulation parameters."""
     # -----------------------------------------------------------------------
     # Main batch loop
     # -----------------------------------------------------------------------
-    prev_batch_last = None  # Track previous batch for analysis tool feedback
-
     for batch_start in range(start_iteration, n_iterations + 1, N_PARALLEL):
         iterations = [batch_start + s for s in range(N_PARALLEL)
                       if batch_start + s <= n_iterations]
@@ -648,16 +516,28 @@ IMPORTANT: Data is PRE-GENERATED — do NOT change simulation parameters."""
         batch_last = iterations[-1]
         n_slots = len(iterations)
 
-        # No block boundaries in understanding exploration
+        block_number = (batch_first - 1) // n_iter_block + 1
+        iter_in_block_first = (batch_first - 1) % n_iter_block + 1
+        iter_in_block_last = (batch_last - 1) % n_iter_block + 1
+        is_block_end = any((it - 1) % n_iter_block + 1 == n_iter_block for it in iterations)
+
+        # Block boundary: erase UCB at start of new block
+        if batch_first > 1 and (batch_first - 1) % n_iter_block == 0:
+            if os.path.exists(ucb_path):
+                os.remove(ucb_path)
+                print(f"\033[93mblock boundary: deleted {ucb_path}\033[0m")
 
         print(f"\n\n\033[94m{'='*60}\033[0m")
-        print(f"\033[94mBATCH: iterations {batch_first}-{batch_last} / {n_iterations}\033[0m")
+        print(f"\033[94mBATCH: iterations {batch_first}-{batch_last} / {n_iterations}  (block {block_number})\033[0m")
         print(f"\033[94m{'='*60}\033[0m")
 
         # -------------------------------------------------------------------
-        # PHASE 1: No data generation needed for flyvis (pre-generated)
+        # PHASE 1: Load configs (data generation handled per-slot if needed)
         # -------------------------------------------------------------------
-        print(f"\n\033[93mPHASE 1: Loading configs for {n_slots} slots (data is pre-generated)\033[0m")
+        if generate_data:
+            print(f"\n\033[93mPHASE 1: Loading configs for {n_slots} slots (data will be re-generated per slot)\033[0m")
+        else:
+            print(f"\n\033[93mPHASE 1: Loading configs for {n_slots} slots (data is pre-generated)\033[0m")
 
         configs = {}
         for slot_idx, iteration in enumerate(iterations):
@@ -683,6 +563,7 @@ IMPORTANT: Data is PRE-GENERATED — do NOT change simulation parameters."""
                 for slot_idx, iteration in enumerate(iterations):
                     slot = slot_idx
                     config = configs[slot]
+                    slot_seed = (iteration * 1000 + slot) if generate_data else None
                     jid = submit_cluster_job(
                         slot=slot,
                         config_path=config_paths[slot],
@@ -691,7 +572,11 @@ IMPORTANT: Data is PRE-GENERATED — do NOT change simulation parameters."""
                         log_dir=log_dir,
                         root_dir=root_dir,
                         erase=True,
-                        node_name=claude_node_name
+                        node_name=claude_node_name,
+                        generate=generate_data,
+                        seed=slot_seed,
+                        exploration_dir=exploration_dir,
+                        iteration=iteration
                     )
                     if jid:
                         job_ids[slot] = jid
@@ -703,7 +588,7 @@ IMPORTANT: Data is PRE-GENERATED — do NOT change simulation parameters."""
                     cluster_results = wait_for_cluster_jobs(job_ids, log_dir=log_dir, poll_interval=60)
                     job_results.update(cluster_results)
 
-                # Auto-repair for failed training jobs
+                # Auto-repair for failed jobs
                 for slot_idx in range(n_slots):
                     if job_results.get(slot_idx) == False:
                         err_content = None
@@ -724,7 +609,7 @@ IMPORTANT: Data is PRE-GENERATED — do NOT change simulation parameters."""
                         if not err_content:
                             continue
 
-                        print(f"\033[91m  slot {slot_idx}: TRAINING ERROR — attempting auto-repair\033[0m")
+                        print(f"\033[91m  slot {slot_idx}: TRAINING ERROR detected — attempting auto-repair\033[0m")
 
                         code_files = [
                             'src/flyvis_gnn/models/graph_trainer.py',
@@ -772,7 +657,9 @@ Fix the bug. Do NOT make other changes."""
                                 log_dir=log_dir,
                                 root_dir=root_dir,
                                 erase=True,
-                                node_name=claude_node_name
+                                node_name=claude_node_name,
+                                exploration_dir=exploration_dir,
+                                iteration=iterations[slot_idx]
                             )
                             if jid:
                                 retry_results = wait_for_cluster_jobs(
@@ -793,7 +680,7 @@ Fix the bug. Do NOT make other changes."""
                                             pass
 
                         if not repaired:
-                            print(f"\033[91m  slot {slot_idx}: repair failed after {max_repair_attempts} attempts\033[0m")
+                            print(f"\033[91m  slot {slot_idx}: repair failed after {max_repair_attempts} attempts — skipping\033[0m")
                             if is_git_repo(root_dir):
                                 for fp in code_files:
                                     try:
@@ -809,10 +696,32 @@ Fix the bug. Do NOT make other changes."""
                 for slot_idx, iteration in enumerate(iterations):
                     slot = slot_idx
                     config = configs[slot]
-                    print(f"\033[90m  slot {slot} (iter {iteration}, model {MODEL_IDS[slot]}): training locally...\033[0m")
+                    print(f"\033[90m  slot {slot} (iter {iteration}): training locally...\033[0m")
+
+                    # Suppress iteration-level model saves
+                    config.training.save_all_checkpoints = False
 
                     log_file = open(analysis_log_paths[slot], 'w')
                     try:
+                        # Generate data if requested
+                        if generate_data:
+                            from flyvis_gnn.generators.graph_data_generator import data_generate
+                            slot_seed = iteration * 1000 + slot
+                            config.simulation.seed = slot_seed
+                            print(f"\033[90m  slot {slot}: generating data with seed={slot_seed}\033[0m")
+                            data_generate(
+                                config=config,
+                                device=device,
+                                visualize=False,
+                                run_vizualized=0,
+                                style="color",
+                                alpha=1,
+                                erase=True,
+                                save=True,
+                                step=100,
+                            )
+
+                        # Train
                         data_train(
                             config=config,
                             erase=True,
@@ -822,6 +731,7 @@ Fix the bug. Do NOT make other changes."""
                             log_file=log_file
                         )
 
+                        # Test
                         config.simulation.noise_model_level = 0.0
                         data_test(
                             config=config,
@@ -840,6 +750,7 @@ Fix the bug. Do NOT make other changes."""
                             log_file=log_file,
                         )
 
+                        # Plot
                         slot_config_file = pre_folder + slot_names[slot]
                         folder_name = './log/' + pre_folder + '/tmp_results/'
                         os.makedirs(folder_name, exist_ok=True)
@@ -852,6 +763,18 @@ Fix the bug. Do NOT make other changes."""
                             device=device,
                             log_file=log_file
                         )
+
+                        # Copy models to exploration dir
+                        slot_log_dir = os.path.join('log', config.config_file)
+                        src_models = glob.glob(os.path.join(slot_log_dir, 'models', '*.pt'))
+                        if src_models:
+                            models_save_dir = os.path.join(exploration_dir, 'models')
+                            os.makedirs(models_save_dir, exist_ok=True)
+                            for src in src_models:
+                                fname = os.path.basename(src)
+                                dst = os.path.join(models_save_dir, f'iter_{iteration:03d}_slot_{slot:02d}_{fname}')
+                                shutil.copy2(src, dst)
+                                print(f"\033[92m  copied model: {dst}\033[0m")
 
                         job_results[slot] = True
                     except Exception as e:
@@ -878,10 +801,12 @@ Fix the bug. Do NOT make other changes."""
 
             config = configs[slot]
 
+            # Save exploration artifacts (flyvis-specific panels)
+            iter_in_block = (iteration - 1) % n_iter_block + 1
             artifact_paths = save_exploration_artifacts_flyvis(
                 root_dir, exploration_dir, config, slot_names[slot],
                 pre_folder, iteration,
-                iter_in_block=iteration, block_number=1
+                iter_in_block=iter_in_block, block_number=block_number
             )
             activity_paths[slot] = artifact_paths['activity_path']
 
@@ -905,9 +830,9 @@ Fix the bug. Do NOT make other changes."""
                         print(f"\033[92m  slot {slot}: training time {training_time:.1f} min\033[0m")
 
         # -------------------------------------------------------------------
-        # PHASE 5: UCB update (no block scoping)
+        # PHASE 5: Batch UCB update
         # -------------------------------------------------------------------
-        print("\n\033[93mPHASE 5: Computing UCB scores (no block scoping)\033[0m")
+        print("\n\033[93mPHASE 5: Computing UCB scores\033[0m")
 
         with open(config_paths[0], 'r') as f:
             raw_config = yaml.safe_load(f)
@@ -944,7 +869,6 @@ Fix the bug. Do NOT make other changes."""
                     stub_entries += (
                         f"\n## Iter {iteration}: pending\n"
                         f"Node: id={iteration}, parent=root\n"
-                        f"Model: {MODEL_IDS[slot_idx]}\n"
                         f"Metrics: test_R2=0, test_pearson={pearson_val}, "
                         f"connectivity_R2={r2_val}, tau_R2={tau_val}, "
                         f"V_rest_R2={vrest_val}, cluster_accuracy={cluster_val}\n"
@@ -954,20 +878,19 @@ Fix the bug. Do NOT make other changes."""
         with open(tmp_analysis, 'w') as f:
             f.write(existing_content + stub_entries)
 
-        # block_size=0 → no block scoping, all nodes always in scope
         compute_ucb_scores(
             tmp_analysis, ucb_path, c=ucb_c,
             current_log_path=None,
             current_iteration=batch_last,
-            block_size=0
+            block_size=n_iter_block
         )
         os.remove(tmp_analysis)
-        print(f"\033[92mUCB scores computed (c={ucb_c}, block_size=0): {ucb_path}\033[0m")
+        print(f"\033[92mUCB scores computed (c={ucb_c}): {ucb_path}\033[0m")
 
         # -------------------------------------------------------------------
-        # PHASE 6a: Claude PASS 1 — analyze results + write analysis tool
+        # PHASE 6: Claude analyzes results + proposes next 4 mutations
         # -------------------------------------------------------------------
-        print("\n\033[93mPHASE 6a: Claude pass 1 — analyze results + write analysis tool\033[0m")
+        print("\n\033[93mPHASE 6: Claude analysis + next mutations\033[0m")
 
         slot_info_lines = []
         for slot_idx, iteration in enumerate(iterations):
@@ -975,18 +898,28 @@ Fix the bug. Do NOT make other changes."""
             status = "COMPLETED" if job_results.get(slot, False) else "FAILED"
             act_path = activity_paths.get(slot, "N/A")
             slot_info_lines.append(
-                f"Slot {slot} (iteration {iteration}, model {MODEL_IDS[slot]}) [{status}]:\n"
+                f"Slot {slot} (iteration {iteration}) [{status}]:\n"
                 f"  Metrics: {analysis_log_paths[slot]}\n"
                 f"  Activity: {act_path}\n"
                 f"  Config: {config_paths[slot]}"
             )
         slot_info = "\n\n".join(slot_info_lines)
 
+        block_end_marker = "\n>>> BLOCK END <<<" if is_block_end else ""
+
         parallel_ref = f"\nParallel instructions: {parallel_instruction_path}" if parallel_instruction_path else ""
 
-        claude_prompt_pass1 = f"""Batch iterations {batch_first}-{batch_last} / {n_iterations}
+        # Build seed suggestions for next batch
+        next_batch_start = batch_start + N_PARALLEL
+        next_seed_suggestions = "\n".join(
+            f"  Slot {s} (iter {next_batch_start + s}): simulation.seed={next_batch_start + s}, training.seed={(next_batch_start + s) * 4 + s}"
+            for s in range(N_PARALLEL)
+        )
 
-UNDERSTANDING EXPLORATION — PASS 1 of 2: Analyze results and write analysis tool.
+        claude_prompt = f"""Batch iterations {batch_first}-{batch_last} / {n_iterations}
+Block info: block {block_number}, iterations {iter_in_block_first}-{iter_in_block_last}/{n_iter_block} within block{block_end_marker}
+
+PARALLEL MODE: Analyze {n_slots} results, then propose next {N_PARALLEL} mutations.
 
 Instructions (follow all instructions): {instruction_path}{parallel_ref}
 Working memory: {memory_path}
@@ -995,148 +928,77 @@ UCB scores: {ucb_path}
 
 {slot_info}
 
-In this pass:
-1. Read metrics for all {n_slots} slots
-2. Write ## Iter N: entries to full log and memory
-3. Update UNDERSTANDING section in memory.md (hypotheses, evidence, status)
-4. Write analysis tool to tools/analysis_iter_{batch_last:03d}.py
+Suggested seeds for next batch (set simulation.seed and training.seed in each config YAML):
+{next_seed_suggestions}
+You may override these — e.g. use the same simulation.seed across slots with different training.seed to test training robustness. Log your seed choices and rationale.
 
-Do NOT edit config files yet — that happens in pass 2 after the analysis tool runs.
+Analyze all {n_slots} results. For each successful slot, write a separate iteration entry
+(## Iter N: ...) to the full log and memory file. Then edit all {N_PARALLEL} config files
+to set up the next batch of {N_PARALLEL} experiments.
 
-IMPORTANT: The analysis tool you write will be executed as a subprocess right after this call.
-Its stdout output will be fed back to you in pass 2, where you will use it to refine
-UNDERSTANDING and propose the next 4 config mutations.
-IMPORTANT: Update hypothesis status (untested/supported/falsified/revised) based on training evidence."""
+IMPORTANT: Do NOT change the 'dataset' field in any config — it must stay as-is for each slot.
+IMPORTANT: Data is PRE-GENERATED — do NOT change simulation parameters (n_neurons, n_frames, etc.).
+IMPORTANT: Baseline training time is ~45 min/epoch on H100. With n_epochs=1, expect ~45 min total. Check training_time_min in the metrics."""
 
-        print("\033[93mClaude pass 1...\033[0m")
-        output_text_pass1 = run_claude_cli(claude_prompt_pass1, root_dir)
+        print("\033[93mClaude analysis...\033[0m")
+        output_text = run_claude_cli(claude_prompt, root_dir)
 
-        if 'OAuth token has expired' in output_text_pass1 or 'authentication_error' in output_text_pass1:
-            print(f"\n\033[91mOAuth token expired at batch {batch_first}-{batch_last} (pass 1)\033[0m")
+        if 'OAuth token has expired' in output_text or 'authentication_error' in output_text:
+            print(f"\n\033[91m{'='*60}\033[0m")
+            print(f"\033[91mOAuth token expired at batch {batch_first}-{batch_last}\033[0m")
+            print("\033[93mTo resume:\033[0m")
             print("\033[93m  1. Run: claude /login\033[0m")
             print(f"\033[93m  2. Then re-run with --resume\033[0m")
+            print(f"\033[91m{'='*60}\033[0m")
             sys.exit(1)
 
-        if output_text_pass1.strip():
+        if output_text.strip():
             with open(reasoning_log_path, 'a') as f:
                 f.write(f"\n{'='*60}\n")
-                f.write(f"=== Batch {batch_first}-{batch_last} (pass 1: analyze + write tool) ===\n")
+                f.write(f"=== Batch {batch_first}-{batch_last} ===\n")
                 f.write(f"{'='*60}\n")
-                f.write(output_text_pass1.strip())
-                f.write("\n\n")
-
-        # -------------------------------------------------------------------
-        # PHASE 6b: Execute analysis tool (just written by Claude in pass 1)
-        # -------------------------------------------------------------------
-        tool_path = f"{tools_dir}/analysis_iter_{batch_last:03d}.py"
-        analysis_tool_output = ""
-
-        if os.path.exists(tool_path):
-            print(f"\n\033[93mPHASE 6b: Executing analysis tool analysis_iter_{batch_last:03d}.py\033[0m")
-            success, output = execute_analysis_tool(tool_path, root_dir)
-            if success:
-                if len(output) > 5000:
-                    analysis_tool_output = output[:5000] + "\n... [truncated]"
-                else:
-                    analysis_tool_output = output
-            else:
-                analysis_tool_output = output  # Contains error message
-        else:
-            print(f"\033[93m  Claude did not write an analysis tool for this batch\033[0m")
-
-        # -------------------------------------------------------------------
-        # PHASE 6c: Claude PASS 2 — read analysis output + propose mutations
-        # -------------------------------------------------------------------
-        print(f"\n\033[93mPHASE 6c: Claude pass 2 — analysis feedback + propose mutations\033[0m")
-
-        analysis_feedback = ""
-        if analysis_tool_output:
-            analysis_feedback = (
-                f"\n--- ANALYSIS TOOL OUTPUT (tools/analysis_iter_{batch_last:03d}.py) ---\n"
-                f"{analysis_tool_output}\n"
-                f"--- END ANALYSIS TOOL OUTPUT ---\n"
-            )
-        else:
-            analysis_feedback = "\n(No analysis tool output available for this batch)\n"
-
-        claude_prompt_pass2 = f"""UNDERSTANDING EXPLORATION — PASS 2 of 2: Read analysis results + propose mutations.
-
-Batch iterations {batch_first}-{batch_last} / {n_iterations}
-
-Instructions (follow all instructions): {instruction_path}{parallel_ref}
-Working memory: {memory_path}
-Full log (append only): {analysis_path}
-UCB scores: {ucb_path}
-{analysis_feedback}
-In this pass:
-1. Read the analysis tool output above
-2. Update the UNDERSTANDING section in memory.md based on analysis findings
-3. Update the Analysis Tools Log table in memory.md
-4. Use UCB scores + UNDERSTANDING to select parents for next batch
-5. Edit all {N_PARALLEL} config files for the next batch
-
-Config files to edit:
-{chr(10).join(f'  Slot {s} (model {MODEL_IDS[s]}): {config_paths[s]}' for s in range(N_PARALLEL))}
-
-IMPORTANT: Do NOT change the 'dataset' field in any config.
-IMPORTANT: Data is PRE-GENERATED — do NOT change simulation parameters.
-IMPORTANT: Each slot trains a different model. Mutations should be model-specific.
-IMPORTANT: Use the analysis tool findings to inform your mutations — if the analysis
-revealed something about WHY a model is hard, design the next experiment to test that."""
-
-        print("\033[93mClaude pass 2...\033[0m")
-        output_text_pass2 = run_claude_cli(claude_prompt_pass2, root_dir)
-
-        if 'OAuth token has expired' in output_text_pass2 or 'authentication_error' in output_text_pass2:
-            print(f"\n\033[91mOAuth token expired at batch {batch_first}-{batch_last} (pass 2)\033[0m")
-            print("\033[93m  1. Run: claude /login\033[0m")
-            print(f"\033[93m  2. Then re-run with --resume\033[0m")
-            sys.exit(1)
-
-        if output_text_pass2.strip():
-            with open(reasoning_log_path, 'a') as f:
-                f.write(f"\n{'='*60}\n")
-                f.write(f"=== Batch {batch_first}-{batch_last} (pass 2: analysis feedback + mutations) ===\n")
-                f.write(f"{'='*60}\n")
-                f.write(output_text_pass2.strip())
+                f.write(output_text.strip())
                 f.write("\n\n")
 
         # Recompute UCB after Claude writes iteration entries
         compute_ucb_scores(analysis_path, ucb_path, c=ucb_c,
                            current_log_path=None,
                            current_iteration=batch_last,
-                           block_size=0)
+                           block_size=n_iter_block)
 
-        # UCB tree visualization (save every 4 batches)
-        should_save_tree = (batch_first == 1) or (batch_last % 16 == 0)
-        if should_save_tree and os.path.exists(ucb_path):
+        # UCB tree visualization
+        should_save_tree = (block_number == 1) or is_block_end
+        if should_save_tree:
             tree_save_dir = f"{exploration_dir}/exploration_tree"
             os.makedirs(tree_save_dir, exist_ok=True)
             ucb_tree_path = f"{tree_save_dir}/ucb_tree_iter_{batch_last:03d}.png"
             nodes = parse_ucb_scores(ucb_path) if os.path.exists(ucb_path) else []
             if nodes:
                 config = configs[0]
-                sim_info = f"Models: {', '.join(MODEL_IDS)}"
-                sim_info += f", n_neurons={config.simulation.n_neurons}"
+                sim_info = f"n_neurons={config.simulation.n_neurons}"
+                sim_info += f", n_neuron_types={config.simulation.n_neuron_types}"
+                sim_info += f", n_edges={config.simulation.n_edges}"
                 if hasattr(config.simulation, 'visual_input_type'):
                     sim_info += f", visual_input={config.simulation.visual_input_type}"
+                if hasattr(config.simulation, 'noise_model_level'):
+                    sim_info += f", noise={config.simulation.noise_model_level}"
                 plot_ucb_tree(nodes, ucb_tree_path,
-                              title=f"Understanding UCB Tree - Batch {batch_first}-{batch_last}",
+                              title=f"FlyVis UCB Tree - Batch {batch_first}-{batch_last}",
                               simulation_info=sim_info)
 
-        # Save protocol at first batch
+        # Save instruction file at first iteration of each block
         protocol_save_dir = f"{exploration_dir}/protocol"
         os.makedirs(protocol_save_dir, exist_ok=True)
-        if batch_first == 1:
-            dst_instruction = f"{protocol_save_dir}/understanding_instruction.md"
+        if iter_in_block_first == 1:
+            dst_instruction = f"{protocol_save_dir}/block_{block_number:03d}.md"
             if os.path.exists(instruction_path):
                 shutil.copy2(instruction_path, dst_instruction)
 
-        # Save memory periodically (every 16 iterations)
-        if batch_last % 16 == 0:
+        # Save memory file at end of block
+        if is_block_end:
             memory_save_dir = f"{exploration_dir}/memory"
             os.makedirs(memory_save_dir, exist_ok=True)
-            dst_memory = f"{memory_save_dir}/iter_{batch_last:03d}_memory.md"
+            dst_memory = f"{memory_save_dir}/block_{block_number:03d}_memory.md"
             if os.path.exists(memory_path):
                 shutil.copy2(memory_path, dst_memory)
                 print(f"\033[92msaved memory snapshot: {dst_memory}\033[0m")
@@ -1147,5 +1009,9 @@ revealed something about WHY a model is hard, design the next experiment to test
         print(f"\n\033[92mBatch {batch_first}-{batch_last} complete: {n_success} succeeded, {n_failed} failed\033[0m")
 
 
-# python GNN_LLM_parallel_flyvis_understanding.py -o train_test_plot_Claude_cluster flyvis_62_1_understand iterations=144 --fresh
-# python GNN_LLM_parallel_flyvis_understanding.py -o train_test_plot_Claude_cluster flyvis_62_1_understand iterations=144 --resume
+# python GNN_LLM_parallel_flyvis.py -o train_test_plot_Claude_cluster flyvis_62_0 iterations=144 --resume
+# python GNN_LLM_parallel_flyvis.py -o train_test_plot_Claude_cluster flyvis_62_1 iterations=144 --resume
+# python GNN_LLM_parallel_flyvis.py -o train_test_plot_Claude_cluster flyvis_63_1 iterations=144 --resume
+# python GNN_LLM_parallel_flyvis.py -o generate_train_test_plot_Claude_cluster flyvis_62_1_gs_vrest iterations=144 instruction=instruction_flyvis_62_1_gs_vrest
+# python GNN_LLM_parallel_flyvis.py -o generate_train_test_plot_Claude_cluster flyvis_62_1_gs iterations=144 instruction=instruction_flyvis_62_1_gs
+# python GNN_LLM_parallel_flyvis.py -o generate_train_test_plot_Claude_cluster flyvis_62_1_gs_alternate iterations=144 instruction=instruction_flyvis_62_1_gs_alternate

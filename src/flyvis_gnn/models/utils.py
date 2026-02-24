@@ -925,21 +925,15 @@ def save_exploration_artifacts(root_dir, exploration_dir, config, config_file_, 
     kinograph_save_dir = f"{exploration_dir}/kinograph"
     embedding_save_dir = f"{exploration_dir}/embedding"
 
-    # create directories at start of experiment (clear only on iteration 1)
+    # clear exploration folder on first iteration
     if iteration == 1:
-        # clear and recreate exploration folder
         if os.path.exists(exploration_dir):
             shutil.rmtree(exploration_dir)
-    # always ensure directories exist (for resume support)
-    os.makedirs(config_save_dir, exist_ok=True)
-    os.makedirs(scatter_save_dir, exist_ok=True)
-    os.makedirs(matrix_save_dir, exist_ok=True)
-    os.makedirs(activity_save_dir, exist_ok=True)
-    os.makedirs(mlp_save_dir, exist_ok=True)
-    os.makedirs(tree_save_dir, exist_ok=True)
-    os.makedirs(protocol_save_dir, exist_ok=True)
-    os.makedirs(kinograph_save_dir, exist_ok=True)
-    os.makedirs(embedding_save_dir, exist_ok=True)
+
+    def _copy(src, dst):
+        """Copy src to dst, creating parent directory only when needed."""
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.copy2(src, dst)
 
     # determine if this is first iteration of a block
     is_block_start = (iter_in_block == 1)
@@ -949,31 +943,27 @@ def save_exploration_artifacts(root_dir, exploration_dir, config, config_file_, 
         src_config = f"{root_dir}/config/{pre_folder}{config_file_}.yaml"
         dst_config = f"{config_save_dir}/block_{block_number:03d}.yaml"
         if os.path.exists(src_config):
-            shutil.copy2(src_config, dst_config)
+            _copy(src_config, dst_config)
 
     # save connectivity scatterplot (most recent comparison_*.png from matrix folder)
     matrix_dir = f"{root_dir}/log/{pre_folder}{config_file_}/tmp_training/matrix"
     scatter_files = glob.glob(f"{matrix_dir}/comparison_*.png")
     if scatter_files:
-        # get most recent file
         latest_scatter = max(scatter_files, key=os.path.getmtime)
-        dst_scatter = f"{scatter_save_dir}/iter_{iteration:03d}.png"
-        shutil.copy2(latest_scatter, dst_scatter)
+        _copy(latest_scatter, f"{scatter_save_dir}/iter_{iteration:03d}.png")
 
     # save connectivity matrix heatmap only at first iteration of each block
     data_folder = f"{root_dir}/graphs_data/{config.dataset}"
     if is_block_start:
         src_matrix = f"{data_folder}/connectivity_matrix.png"
-        dst_matrix = f"{matrix_save_dir}/block_{block_number:03d}.png"
         if os.path.exists(src_matrix):
-            shutil.copy2(src_matrix, dst_matrix)
+            _copy(src_matrix, f"{matrix_save_dir}/block_{block_number:03d}.png")
 
     # save activity plot only at first iteration of each block
     activity_path = f"{data_folder}/activity.png"
     if is_block_start:
-        dst_activity = f"{activity_save_dir}/block_{block_number:03d}.png"
         if os.path.exists(activity_path):
-            shutil.copy2(activity_path, dst_activity)
+            _copy(activity_path, f"{activity_save_dir}/block_{block_number:03d}.png")
 
     # save combined MLP plot (MLP0 + MLP1 side by side) using PNG files from results
     results_dir = f"{root_dir}/log/{pre_folder}{config_file_}/results"
@@ -981,16 +971,14 @@ def save_exploration_artifacts(root_dir, exploration_dir, config, config_file_, 
     src_mlp1 = f"{results_dir}/MLP1_corrected.png"
     if os.path.exists(src_mlp0) and os.path.exists(src_mlp1):
         try:
-            # Load PNG images
             img0 = mpimg.imread(src_mlp0)
             img1 = mpimg.imread(src_mlp1)
-
-            # Create combined figure
             fig, axes = default_style.figure(ncols=2, width=14, height=6)
             axes[0].imshow(img0)
             axes[0].axis('off')
             axes[1].imshow(img1)
             axes[1].axis('off')
+            os.makedirs(mlp_save_dir, exist_ok=True)
             default_style.savefig(fig, f"{mlp_save_dir}/iter_{iteration:03d}_MLP.png")
         except Exception as e:
             print(f"\033[93mwarning: could not combine MLP plots: {e}\033[0m")
@@ -998,7 +986,7 @@ def save_exploration_artifacts(root_dir, exploration_dir, config, config_file_, 
     # save kinograph montage (every iteration)
     src_montage = f"{results_dir}/kinograph_montage.png"
     if os.path.exists(src_montage):
-        shutil.copy2(src_montage, f"{kinograph_save_dir}/iter_{iteration:03d}.png")
+        _copy(src_montage, f"{kinograph_save_dir}/iter_{iteration:03d}.png")
 
     # save embedding plot (latest from tmp_training/embedding/)
     embedding_dir = f"{root_dir}/log/{pre_folder}{config_file_}/tmp_training/embedding"
@@ -1006,10 +994,9 @@ def save_exploration_artifacts(root_dir, exploration_dir, config, config_file_, 
         embed_files = glob.glob(f"{embedding_dir}/*.png")
         if embed_files:
             latest_embed = max(embed_files, key=os.path.getmtime)
-            shutil.copy2(latest_embed, f"{embedding_save_dir}/iter_{iteration:03d}.png")
-            # also save per-block snapshot at block start
+            _copy(latest_embed, f"{embedding_save_dir}/iter_{iteration:03d}.png")
             if is_block_start:
-                shutil.copy2(latest_embed, f"{embedding_save_dir}/block_{block_number:03d}.png")
+                _copy(latest_embed, f"{embedding_save_dir}/block_{block_number:03d}.png")
 
     return {
         'config_save_dir': config_save_dir,
@@ -1064,16 +1051,15 @@ def save_exploration_artifacts_flyvis(root_dir, exploration_dir, config, config_
     memory_save_dir = f"{exploration_dir}/memory"
     r2_trajectory_dir = f"{exploration_dir}/r2_trajectory"
 
-    # create directories at start of experiment (clear only on iteration 1)
+    # clear exploration folder on first iteration
     if iteration == 1:
         if os.path.exists(exploration_dir):
             shutil.rmtree(exploration_dir)
-    # always ensure directories exist (for resume support)
-    for d in [config_save_dir, connectivity_scatter_dir, connectivity_matrix_dir,
-              activity_dir, embedding_dir, tau_scatter_dir, v_rest_scatter_dir,
-              mlp0_dir, mlp1_dir, umap_dir, tree_save_dir, protocol_save_dir,
-              memory_save_dir, r2_trajectory_dir]:
-        os.makedirs(d, exist_ok=True)
+
+    def _copy(src, dst):
+        """Copy src to dst, creating parent directory only when needed."""
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.copy2(src, dst)
 
     is_block_start = (iter_in_block == 1)
 
@@ -1086,68 +1072,64 @@ def save_exploration_artifacts_flyvis(root_dir, exploration_dir, config, config_
 
     # --- Per-iteration panels ---
 
-    # connectivity_scatter: weights_comparison_corrected.png (matches connectivity_R2 in analysis.log)
+    # connectivity_scatter: weights_comparison_corrected.png
     src = f"{results_dir}/weights_comparison_corrected.png"
     if not os.path.exists(src):
         src = f"{results_dir}/weights_comparison_raw.png"
     if os.path.exists(src):
-        shutil.copy2(src, f"{connectivity_scatter_dir}/iter_{iteration:03d}.png")
+        _copy(src, f"{connectivity_scatter_dir}/iter_{iteration:03d}.png")
 
     # embedding: embedding_{indices}.png
     embed_files = glob.glob(f"{results_dir}/embedding_*.png")
-    # Filter out augmented (UMAP) files
     embed_files = [f for f in embed_files if 'augmented' not in f]
     if embed_files:
         latest = max(embed_files, key=os.path.getmtime)
-        shutil.copy2(latest, f"{embedding_dir}/iter_{iteration:03d}.png")
+        _copy(latest, f"{embedding_dir}/iter_{iteration:03d}.png")
         if is_block_start:
-            shutil.copy2(latest, f"{embedding_dir}/block_{block_number:03d}.png")
+            _copy(latest, f"{embedding_dir}/block_{block_number:03d}.png")
 
     # tau_scatter: tau_comparison_{indices}.png
     tau_files = glob.glob(f"{results_dir}/tau_comparison_*.png")
     if tau_files:
         latest = max(tau_files, key=os.path.getmtime)
-        shutil.copy2(latest, f"{tau_scatter_dir}/iter_{iteration:03d}.png")
+        _copy(latest, f"{tau_scatter_dir}/iter_{iteration:03d}.png")
 
     # V_rest_scatter: V_rest_comparison_{indices}.png
     vrest_files = glob.glob(f"{results_dir}/V_rest_comparison_*.png")
     if vrest_files:
         latest = max(vrest_files, key=os.path.getmtime)
-        shutil.copy2(latest, f"{v_rest_scatter_dir}/iter_{iteration:03d}.png")
+        _copy(latest, f"{v_rest_scatter_dir}/iter_{iteration:03d}.png")
 
     # MLP0: MLP0_{indices}.png (all neurons overlay, not per-type like MLP0_Tm30.png)
     mlp0_src = f"{results_dir}/MLP0_{config_indices}.png"
     if os.path.exists(mlp0_src):
-        shutil.copy2(mlp0_src, f"{mlp0_dir}/iter_{iteration:03d}.png")
+        _copy(mlp0_src, f"{mlp0_dir}/iter_{iteration:03d}.png")
     else:
-        # Fallback: glob but filter out domain/params/per-type variants
         mlp0_files = glob.glob(f"{results_dir}/MLP0_*.png")
         mlp0_files = [f for f in mlp0_files if '_domain' not in f and '_params' not in f]
-        # Per-type files have alphabetic names (e.g. MLP0_R1.png), indices have digits (e.g. MLP0_62_1.png)
         mlp0_files = [f for f in mlp0_files if any(c.isdigit() for c in os.path.basename(f).replace('MLP0_', ''))]
         if mlp0_files:
             latest = max(mlp0_files, key=os.path.getmtime)
-            shutil.copy2(latest, f"{mlp0_dir}/iter_{iteration:03d}.png")
+            _copy(latest, f"{mlp0_dir}/iter_{iteration:03d}.png")
 
     # MLP1: MLP1_{indices}.png
     mlp1_files = glob.glob(f"{results_dir}/MLP1_*.png")
-    # Filter out domain/slope variants
     mlp1_files = [f for f in mlp1_files if '_domain' not in f and '_slope' not in f]
     if mlp1_files:
         latest = max(mlp1_files, key=os.path.getmtime)
-        shutil.copy2(latest, f"{mlp1_dir}/iter_{iteration:03d}.png")
+        _copy(latest, f"{mlp1_dir}/iter_{iteration:03d}.png")
 
     # UMAP: embedding_augmented_{indices}.png
     umap_files = glob.glob(f"{results_dir}/embedding_augmented_*.png")
     if umap_files:
         latest = max(umap_files, key=os.path.getmtime)
-        shutil.copy2(latest, f"{umap_dir}/iter_{iteration:03d}.png")
+        _copy(latest, f"{umap_dir}/iter_{iteration:03d}.png")
 
     # r2_trajectory: metrics.log (training R2 trajectory per iteration)
     training_dir = f"{root_dir}/log/{pre_folder}{config_file_}/tmp_training"
     r2_log_src = f"{training_dir}/metrics.log"
     if os.path.exists(r2_log_src):
-        shutil.copy2(r2_log_src, f"{r2_trajectory_dir}/iter_{iteration:03d}.log")
+        _copy(r2_log_src, f"{r2_trajectory_dir}/iter_{iteration:03d}.log")
 
     # --- Per-block panels (block start only) ---
 
@@ -1155,14 +1137,12 @@ def save_exploration_artifacts_flyvis(root_dir, exploration_dir, config, config_
     activity_path = f"{data_folder}/activity.png"
 
     if is_block_start:
-        # connectivity_matrix
         src_matrix = f"{data_folder}/connectivity_matrix.png"
         if os.path.exists(src_matrix):
-            shutil.copy2(src_matrix, f"{connectivity_matrix_dir}/block_{block_number:03d}.png")
+            _copy(src_matrix, f"{connectivity_matrix_dir}/block_{block_number:03d}.png")
 
-        # activity
         if os.path.exists(activity_path):
-            shutil.copy2(activity_path, f"{activity_dir}/block_{block_number:03d}.png")
+            _copy(activity_path, f"{activity_dir}/block_{block_number:03d}.png")
 
     return {
         'config_save_dir': config_save_dir,

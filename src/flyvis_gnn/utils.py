@@ -2232,3 +2232,14 @@ def get_datavis_root_dir() -> str:
 Specify environment variable $DATAVIS_ROOT, e.g., \
 DATAVIS_ROOT = \"${{USER}}/Downloads/DATAVIS"
     return datavis_root
+
+
+def load_and_display(file_name, *, title=None, **kwargs):
+    """Load and show an image file in the current matplotlib figure."""
+    img = imageio.imread(file_name)
+    plt.imshow(img, **kwargs)
+    plt.axis('off')
+    if title:
+        plt.title(title)
+    plt.tight_layout()
+    plt.show()

@@ -64,7 +64,7 @@ if __name__ == "__main__":
                 best_model = None
     else:
         best_model = ''
-        task = task = 'generate'
+        task = task = 'traimn'
         config_list = ['flyvis_62_1_gs']
 
     for config_file_ in config_list:
@@ -119,15 +119,15 @@ if __name__ == "__main__":
 
             data_test(
                 config=config,
-                visualize=False,
+                visualize=True,
                 style="color name continuous_slice",
                 verbose=False,
                 best_model='best',
                 run=0,
                 test_mode="",   # test_ablation_50
                 sample_embedding=False,
-                step=1000,
-                n_rollout_frames=10000,
+                step=10,
+                n_rollout_frames=250,
                 device=device,
                 particle_of_interest=0,
                 new_params=None,

@@ -561,9 +561,10 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                                    current_loss=current_loss / n_neurons, current_regul=regul_total_this_iter / n_neurons,
                                    total_loss=total_loss, total_loss_regul=total_loss_regul)
 
-                    torch.save(
-                        {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
-                        os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs - 1}_graphs_{epoch}_{N}.pt'))
+                    if tc.save_all_checkpoints:
+                        torch.save(
+                            {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
+                            os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs - 1}_graphs_{epoch}_{N}.pt'))
 
                 # R2 checkpoint: regular interval + early-phase extra points
                 is_regular_r2 = (N > 0) and (N % connectivity_plot_frequency == 0)
@@ -708,9 +709,10 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
                     if last_connectivity_r2 is not None:
                         pbar.set_postfix_str(f'{r2_color(last_connectivity_r2)}R²={last_connectivity_r2:.3f}{ANSI_RESET}')
-                    torch.save(
-                        {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
-                        os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs - 1}_graphs_{epoch}_{N}.pt'))
+                    if tc.save_all_checkpoints:
+                        torch.save(
+                            {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
+                            os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs - 1}_graphs_{epoch}_{N}.pt'))
 
             # check_and_clear_memory(device=device, iteration_number=N, every_n_iterations=Niter // 50, memory_percentage_threshold=0.6)
 
@@ -851,6 +853,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         if field_R2 is not None:
             log_file.write(f"field_R2: {field_R2:.4f}\n")
             log_file.write(f"field_slope: {field_slope:.4f}\n")
+
 
 def data_train_flyvis_alternate(config, erase, best_model, device, log_file=None):
     """Alternating W/V_rest phase training for flyvis models."""
@@ -1311,9 +1314,10 @@ def data_train_flyvis_alternate(config, erase, best_model, device, log_file=None
                                    current_loss=current_loss / n_neurons, current_regul=regul_total_this_iter / n_neurons,
                                    total_loss=total_loss, total_loss_regul=total_loss_regul)
 
-                    torch.save(
-                        {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
-                        os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs - 1}_graphs_{epoch}_{N}.pt'))
+                    if tc.save_all_checkpoints:
+                        torch.save(
+                            {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
+                            os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs - 1}_graphs_{epoch}_{N}.pt'))
 
                 # R2 checkpoint: regular interval + early-phase extra points
                 is_regular_r2 = (N > 0) and (N % connectivity_plot_frequency == 0)
@@ -1458,9 +1462,10 @@ def data_train_flyvis_alternate(config, erase, best_model, device, log_file=None
 
                     if last_connectivity_r2 is not None:
                         pbar.set_postfix_str(f'{r2_color(last_connectivity_r2)}R²={last_connectivity_r2:.3f}{ANSI_RESET}')
-                    torch.save(
-                        {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
-                        os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs - 1}_graphs_{epoch}_{N}.pt'))
+                    if tc.save_all_checkpoints:
+                        torch.save(
+                            {'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
+                            os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs - 1}_graphs_{epoch}_{N}.pt'))
 
             # check_and_clear_memory(device=device, iteration_number=N, every_n_iterations=Niter // 50, memory_percentage_threshold=0.6)
 
@@ -1709,7 +1714,7 @@ def data_train_flyvis_RNN(config, erase, best_model, device):
 
             total_loss += loss.item()
 
-            if (seq_idx % plot_frequency == 0) and (seq_idx > 0):
+            if tc.save_all_checkpoints and (seq_idx % plot_frequency == 0) and (seq_idx > 0):
                 # Save intermediate model
                 torch.save({
                     'model_state_dict': model.state_dict(),
