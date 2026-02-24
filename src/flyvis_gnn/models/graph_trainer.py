@@ -1194,11 +1194,23 @@ def data_train_INR(config=None, device=None, total_steps=50000, field_name='stim
         raise ValueError(f"field '{field_name}' not found in NeuronTimeSeries "
                          f"(available: voltage, stimulus, calcium, fluorescence)")
 
-    # field_data: (T, N) tensor
+    # field_data: (T, N) tensor — restrict to input neurons for stimulus
     field_np = field_data.numpy()
-    n_frames, n_neurons = field_np.shape
-    print(f'training INR on field "{field_name}"')
-    print(f'  data: {n_frames} frames, {n_neurons} neurons')
+    n_frames, n_neurons_full = field_np.shape
+    neuron_pos_full = x_ts.pos.numpy() if x_ts.pos is not None else None
+
+    if field_name == 'stimulus':
+        n_input = sim.n_input_neurons
+        field_np = field_np[:, :n_input]
+        neuron_pos_np = neuron_pos_full[:n_input] if neuron_pos_full is not None else None
+        n_neurons = n_input
+        print(f'training INR on field "{field_name}" (input neurons only)')
+        print(f'  data: {n_frames} frames, {n_neurons} neurons (of {n_neurons_full} total)')
+    else:
+        neuron_pos_np = neuron_pos_full
+        n_neurons = n_neurons_full
+        print(f'training INR on field "{field_name}"')
+        print(f'  data: {n_frames} frames, {n_neurons} neurons')
 
     # SVD analysis
     from sklearn.utils.extmath import randomized_svd
@@ -1208,9 +1220,6 @@ def data_train_INR(config=None, device=None, total_steps=50000, field_name='stim
     rank_90 = int(np.searchsorted(cumvar, 0.90) + 1)
     rank_99 = int(np.searchsorted(cumvar, 0.99) + 1)
     print(f'  effective rank: 90%={rank_90}, 99%={rank_99}')
-
-    # neuron positions (static field, used for siren_txy)
-    neuron_pos_np = x_ts.pos.numpy() if x_ts.pos is not None else None  # (N, 2)
 
     # config parameters
     # auto-detect INR type from config dimensions if not explicitly set
