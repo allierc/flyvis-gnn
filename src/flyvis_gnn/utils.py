@@ -36,20 +36,28 @@ _DATA_ROOT_CACHE = None
 
 
 def get_data_root():
-    """Return the data root directory from data_paths.json, or '.' if not found."""
+    """Return the data root directory from data_paths.json, or '.' if not found.
+
+    Searches for data_paths.json in two locations (first match wins):
+      1. Current working directory
+      2. Two levels up from this file (repo root when running from source)
+    """
     global _DATA_ROOT_CACHE
     if _DATA_ROOT_CACHE is not None:
         return _DATA_ROOT_CACHE
-    json_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'data_paths.json')
-    json_path = os.path.normpath(json_path)
-    print(f"[get_data_root] looking for {json_path}  exists={os.path.isfile(json_path)}")
-    if os.path.isfile(json_path):
-        with open(json_path) as f:
-            _DATA_ROOT_CACHE = json.load(f)['data_root']
-        print(f"[get_data_root] loaded data_root = {_DATA_ROOT_CACHE!r}")
-    else:
-        _DATA_ROOT_CACHE = '.'
-        print(f"[get_data_root] data_paths.json not found, using '.'")
+    candidates = [
+        os.path.join(os.getcwd(), 'data_paths.json'),
+        os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'data_paths.json')),
+    ]
+    for json_path in candidates:
+        print(f"[get_data_root] checking {json_path}  exists={os.path.isfile(json_path)}")
+        if os.path.isfile(json_path):
+            with open(json_path) as f:
+                _DATA_ROOT_CACHE = json.load(f)['data_root']
+            print(f"[get_data_root] loaded data_root = {_DATA_ROOT_CACHE!r}")
+            return _DATA_ROOT_CACHE
+    _DATA_ROOT_CACHE = '.'
+    print(f"[get_data_root] data_paths.json not found, using '.'")
     return _DATA_ROOT_CACHE
 
 
