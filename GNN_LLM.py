@@ -74,8 +74,12 @@ CLUSTER_ROOT_DIR = f"{CLUSTER_HOME}/GraphCluster/flyvis-gnn"
 
 def submit_cluster_job(slot, config_path, analysis_log_path, config_file_field,
                        log_dir, root_dir, erase=True, node_name='a100',
-                       generate=False, seed=None, exploration_dir=None, iteration=None):
-    """Submit a single flyvis training job to the cluster WITHOUT -K (non-blocking)."""
+                       exploration_dir=None, iteration=None):
+    """Submit a single flyvis training job to the cluster WITHOUT -K (non-blocking).
+
+    Data generation and test/plot are handled locally in GNN_LLM.py.
+    The cluster job runs training only.
+    """
     cluster_script_path = f"{log_dir}/cluster_train_{slot:02d}.sh"
     error_details_path = f"{log_dir}/training_error_{slot:02d}.log"
 
@@ -89,10 +93,6 @@ def submit_cluster_job(slot, config_path, analysis_log_path, config_file_field,
     cluster_train_cmd += f" --error_log '{cluster_error_log}'"
     if erase:
         cluster_train_cmd += " --erase"
-    if generate:
-        cluster_train_cmd += " --generate"
-    if seed is not None:
-        cluster_train_cmd += f" --seed {seed}"
     if exploration_dir is not None and iteration is not None:
         cluster_exploration_dir = exploration_dir.replace(root_dir, CLUSTER_ROOT_DIR)
         cluster_train_cmd += f" --exploration_dir '{cluster_exploration_dir}'"
@@ -285,8 +285,6 @@ if __name__ == "__main__":
     instruction_name = task_params.get('instruction', f'instruction_{base_config_name}')
     llm_task_name = task_params.get('llm_task', f'{base_config_name}_Claude')
     exploration_name = task_params.get('exploration_name', f'LLM_{base_config_name}')
-    generate_data = "generate" in task
-
     # -----------------------------------------------------------------------
     # Claude mode setup
     # -----------------------------------------------------------------------
@@ -330,9 +328,12 @@ if __name__ == "__main__":
     claude_ucb_c = claude_cfg.get('ucb_c', 1.414)
     claude_node_name = claude_cfg.get('node_name', 'h100')
     N_PARALLEL = claude_cfg.get('n_parallel', 4)
+    # generate_data: prefer YAML claude.generate_data, fall back to "generate" in task name
+    generate_data = claude_cfg.get('generate_data', "generate" in task)
+    training_time_target_min = claude_cfg.get('training_time_target_min', 60)
     n_iter_block = claude_n_iter_block
 
-    print(f"\033[94mCluster node: gpu_{claude_node_name}, n_parallel: {N_PARALLEL}\033[0m")
+    print(f"\033[94mCluster node: gpu_{claude_node_name}, n_parallel: {N_PARALLEL}, generate_data: {generate_data}, training_time_target_min: {training_time_target_min}\033[0m")
 
     # Slot config paths and analysis log paths
     config_paths = {}
@@ -361,7 +362,9 @@ if __name__ == "__main__":
                     'n_iter_block': claude_n_iter_block,
                     'ucb_c': claude_ucb_c,
                     'n_parallel': N_PARALLEL,
-                    'node_name': claude_node_name
+                    'node_name': claude_node_name,
+                    'generate_data': generate_data,
+                    'training_time_target_min': training_time_target_min,
                 }
                 with open(target, 'w') as f:
                     yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
@@ -383,7 +386,9 @@ if __name__ == "__main__":
                     'n_iter_block': claude_n_iter_block,
                     'ucb_c': claude_ucb_c,
                     'n_parallel': N_PARALLEL,
-                    'node_name': claude_node_name
+                    'node_name': claude_node_name,
+                    'generate_data': generate_data,
+                    'training_time_target_min': training_time_target_min,
                 }
                 with open(target, 'w') as f:
                     yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
@@ -490,6 +495,7 @@ dataset field. Vary training parameters (e.g. lr_W, lr, coeff_g_phi_diff, coeff_
 across the {N_PARALLEL} slots to explore different starting points.
 
 IMPORTANT: Data is PRE-GENERATED in graphs_data/ — do NOT change simulation parameters.
+IMPORTANT: Training time target is {training_time_target_min} min per iteration — keep configurations within this budget.
 IMPORTANT: Read user_input.md — if there are pending instructions, acknowledge them by appending to the "Acknowledged" section with timestamp and moving them out of "Pending Instructions".
 
 Write the planned mutations to the working memory file."""
@@ -563,13 +569,36 @@ Write the planned mutations to the working memory file."""
 
         if "train" in task:
             if cluster_enabled:
+                # ------------------------------------------------------------------
+                # PHASE 1.5: Generate data locally (if requested) before cluster jobs
+                # ------------------------------------------------------------------
+                if generate_data:
+                    print(f"\n\033[93mPHASE 1.5: Generating data locally for {n_slots} slots\033[0m")
+                    from flyvis_gnn.generators.graph_data_generator import data_generate
+                    for slot_idx, iteration in enumerate(iterations):
+                        slot = slot_idx
+                        config = configs[slot]
+                        slot_seed = iteration * 1000 + slot
+                        config.simulation.seed = slot_seed
+                        print(f"\033[90m  slot {slot} (iter {iteration}): generating data with seed={slot_seed}\033[0m")
+                        data_generate(
+                            config=config,
+                            device=device,
+                            visualize=False,
+                            run_vizualized=0,
+                            style="color",
+                            alpha=1,
+                            erase=True,
+                            save=True,
+                            step=100,
+                        )
+
                 print(f"\n\033[93mPHASE 2: Submitting {n_slots} flyvis training jobs to cluster\033[0m")
 
                 job_ids = {}
                 for slot_idx, iteration in enumerate(iterations):
                     slot = slot_idx
                     config = configs[slot]
-                    slot_seed = (iteration * 1000 + slot) if generate_data else None
                     jid = submit_cluster_job(
                         slot=slot,
                         config_path=config_paths[slot],
@@ -579,8 +608,6 @@ Write the planned mutations to the working memory file."""
                         root_dir=root_dir,
                         erase=True,
                         node_name=claude_node_name,
-                        generate=generate_data,
-                        seed=slot_seed,
                         exploration_dir=exploration_dir,
                         iteration=iteration
                     )
@@ -880,8 +907,8 @@ Fix the bug. Do NOT make other changes."""
                 time_m = re.search(r'training_time_min[=:]\s*([\d.]+)', log_content)
                 if time_m:
                     training_time = float(time_m.group(1))
-                    if training_time > 60:
-                        print(f"\033[91m  WARNING: slot {slot} training took {training_time:.1f} min (>60 min limit)\033[0m")
+                    if training_time > training_time_target_min:
+                        print(f"\033[91m  WARNING: slot {slot} training took {training_time:.1f} min (>{training_time_target_min} min target)\033[0m")
                     else:
                         print(f"\033[92m  slot {slot}: training time {training_time:.1f} min\033[0m")
 
@@ -993,7 +1020,7 @@ to set up the next batch of {N_PARALLEL} experiments.
 
 IMPORTANT: Do NOT change the 'dataset' field in any config — it must stay as-is for each slot.
 IMPORTANT: Data is PRE-GENERATED — do NOT change simulation parameters (n_neurons, n_frames, etc.).
-IMPORTANT: Baseline training time is ~45 min/epoch on H100. With n_epochs=1, expect ~45 min total. Check training_time_min in the metrics.
+IMPORTANT: Training time target is {training_time_target_min} min per iteration. Check training_time_min in the metrics and flag any slot that exceeds this limit.
 IMPORTANT: Read user_input.md — if there are pending instructions, acknowledge them by appending to the "Acknowledged" section with a timestamp and moving them out of "Pending Instructions".
 
         print("\033[93mClaude analysis...\033[0m")

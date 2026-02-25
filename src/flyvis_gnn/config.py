@@ -264,6 +264,8 @@ class ClaudeConfig(BaseModel):
     ucb_c: float = 1.414  # UCB exploration constant: UCB(k) = R²_k + c * sqrt(ln(N) / n_k)
     n_parallel: int = 4  # number of parallel config slots per batch (GNN_LLM_parallel.py)
     node_name: str = "a100"  # cluster GPU node: h100, a100, or l4
+    generate_data: bool = False  # generate new simulation data before each training iteration
+    training_time_target_min: int = 60  # target training time per iteration in minutes (for LLM guidance)
 
 
 class GraphModelConfig(BaseModel):

@@ -74,3 +74,5 @@ claude:
   ucb_c: 1.414
   n_parallel: 4
   node_name: h100
+  generate_data: false
+  training_time_target_min: 60

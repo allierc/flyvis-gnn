@@ -28,7 +28,7 @@ from flyvis_gnn.utils import set_device, log_path
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Train+test+plot flyvis GNN')
+    parser = argparse.ArgumentParser(description='Train flyvis GNN (cluster, train only)')
     parser.add_argument('--config', type=str, required=True, help='Path to config YAML file')
     parser.add_argument('--device', type=str, default='auto', help='Device to use')
     parser.add_argument('--erase', action='store_true', help='Erase existing log files')
@@ -36,8 +36,6 @@ def main():
     parser.add_argument('--config_file', type=str, default=None, help='Config file name for log directory')
     parser.add_argument('--error_log', type=str, default=None, help='Path to error log file')
     parser.add_argument('--best_model', type=str, default=None, help='Best model path')
-    parser.add_argument('--generate', action='store_true', help='Regenerate data before training')
-    parser.add_argument('--seed', type=int, default=None, help='Override simulation seed (for data variance)')
     parser.add_argument('--exploration_dir', type=str, default=None, help='Copy models here after training')
     parser.add_argument('--iteration', type=int, default=None, help='Iteration number (for model naming)')
     parser.add_argument('--slot', type=int, default=None, help='Slot number (for model naming)')
@@ -65,28 +63,8 @@ def main():
                 pre_folder += '/'
             config.dataset = pre_folder + config.dataset
 
-        # Override seed if specified
-        if args.seed is not None:
-            config.simulation.seed = args.seed
-
         # Set device
         device = set_device(args.device)
-
-        # Phase 0: Generate data (if requested)
-        if args.generate:
-            from flyvis_gnn.generators.graph_data_generator import data_generate
-            print(f"Generating data with seed={config.simulation.seed} ...")
-            data_generate(
-                config=config,
-                device=device,
-                visualize=False,
-                run_vizualized=0,
-                style="color",
-                alpha=1,
-                erase=True,
-                save=True,
-                step=100,
-            )
 
         # Suppress iteration-level model saves
         config.training.save_all_checkpoints = False
