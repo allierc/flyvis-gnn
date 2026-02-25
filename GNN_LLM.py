@@ -86,6 +86,27 @@ def local_to_cluster(path: str, root_dir: str) -> str:
     return path.replace(root_dir, CLUSTER_ROOT_DIR)
 
 
+def check_cluster_repo():
+    """Check that GraphCluster/flyvis-gnn has no uncommitted source changes.
+
+    Runs `git diff HEAD` on the cluster via SSH, excluding config/ (which is
+    expected to be modified by the LLM).  Returns True if clean, False if dirty.
+    """
+    ssh_cmd = (
+        f"ssh allierc@login2 "
+        f"\"cd {CLUSTER_ROOT_DIR} && git diff HEAD --stat -- . ':!config/'\""
+    )
+    result = subprocess.run(ssh_cmd, shell=True, capture_output=True, text=True)
+    diff_output = result.stdout.strip()
+    if diff_output:
+        print(f"\033[91mWARNING: GraphCluster repo has uncommitted changes:\033[0m")
+        for line in diff_output.splitlines():
+            print(f"  \033[91m{line}\033[0m")
+        return False
+    print(f"\033[92mCluster repo clean (no uncommitted source changes)\033[0m")
+    return True
+
+
 def submit_cluster_job(slot, config_path, analysis_log_path, config_file_field,
                        log_dir, root_dir, erase=True, node_name='a100',
                        exploration_dir=None, iteration=None):
@@ -317,19 +338,19 @@ if __name__ == "__main__":
         if start_iteration > 1:
             print(f"\033[93mAuto-resume: resuming from batch starting at {start_iteration}\033[0m")
         else:
-            print("\033[93mFresh start (no previous iterations found)\033[0m")
+            print("\033[93mfresh start (no previous iterations found)\033[0m")
     else:
         start_iteration = 1
         _analysis_check = f"{exploration_dir}/{llm_task_name}_analysis.md"
         if os.path.exists(_analysis_check):
-            print("\033[91mWARNING: Fresh start will erase existing results in:\033[0m")
+            print("\033[91mWARNING: fresh start will erase existing results in:\033[0m")
             print(f"\033[91m  {_analysis_check}\033[0m")
             print(f"\033[91m  {exploration_dir}/{llm_task_name}_memory.md\033[0m")
             answer = input("\033[91mContinue? (y/n): \033[0m").strip().lower()
             if answer != 'y':
                 print("Aborted.")
                 sys.exit(0)
-        print("\033[93mFresh start\033[0m")
+        print("\033[93mfresh start\033[0m")
 
     # --- Initialize 4 slot configs from source ---
     for cfg in config_list:
@@ -613,6 +634,11 @@ Write the planned mutations to the working memory file."""
 
                 print(f"\n\033[93mPHASE 2: Submitting {n_slots} flyvis training jobs to cluster\033[0m")
 
+                # Guardrail: verify cluster repo is clean before submitting
+                if not check_cluster_repo():
+                    print("\033[91mAborting batch — fix cluster repo before resubmitting (use --resume)\033[0m")
+                    sys.exit(1)
+
                 job_ids = {}
                 for slot_idx, iteration in enumerate(iterations):
                     slot = slot_idx
@@ -699,6 +725,7 @@ Fix the bug. Do NOT make other changes."""
                                 break
 
                             print(f"\033[96m  slot {slot_idx}: resubmitting after repair\033[0m")
+                            check_cluster_repo()  # log state after repair (non-blocking)
                             config = configs[slot_idx]
                             jid = submit_cluster_job(
                                 slot=slot_idx,
