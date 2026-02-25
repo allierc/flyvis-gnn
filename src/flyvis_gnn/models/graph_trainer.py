@@ -1667,6 +1667,201 @@ def data_test_flyvis(config, best_model=None, device=None, log_file=None):
             f.write(f'R2: {np.nanmean(r2):.3f} +/- {np.nanstd(r2):.3f}\n')
             f.write(f'FEVE: {np.mean(feve):.3f} +/- {np.std(feve):.3f}\n')
 
+    # --- Rollout evaluation ---
+    # Start from initial voltages at t=0, predict autoregressively
+    print('running rollout evaluation ...')
+    results_dir = os.path.join(log_dir, 'results')
+    os.makedirs(results_dir, exist_ok=True)
+
+    x = x_ts.frame(0)
+
+    h_state = None
+    c_state = None
+
+    rollout_pred_list = []
+    rollout_true_list = []
+    rollout_stim_list = []
+
+    with torch.no_grad():
+        for k in trange(n_frames - 1, ncols=100, desc="rollout"):
+            # Collect state before integration
+            rollout_pred_list.append(to_numpy(x.voltage))
+            rollout_true_list.append(to_numpy(x_ts.frame(k).voltage))
+
+            # Set stimulus from test data
+            x.stimulus = x_ts.frame(k).stimulus.clone()
+            rollout_stim_list.append(to_numpy(x.stimulus))
+
+            if has_visual_field:
+                visual_input = model.forward_visual(x, k)
+                x.stimulus[:model.n_input_neurons] = visual_input.squeeze(-1)
+                x.stimulus[model.n_input_neurons:] = 0
+
+            # Model prediction
+            if 'RNN' in model_config.signal_model_name:
+                y, h_state = model(x.to_packed(), h=h_state, return_all=True)
+            elif 'LSTM' in model_config.signal_model_name:
+                y, h_state, c_state = model(x.to_packed(), h=h_state, c=c_state, return_all=True)
+            elif 'MLP_ODE' in model_config.signal_model_name:
+                v = x.voltage.unsqueeze(-1)
+                if tc.training_selected_neurons:
+                    I = x.stimulus.unsqueeze(-1)
+                else:
+                    I = x.stimulus[:sim.n_input_neurons].unsqueeze(-1)
+                y = model.rollout_step(v, I, dt=sim.delta_t, method='rk4') - v
+            elif 'MLP' in model_config.signal_model_name:
+                y = model(x.to_packed(), data_id=data_id, return_all=False)
+            elif hasattr(tc, 'neural_ODE_training') and tc.neural_ODE_training:
+                v0 = x.voltage.flatten()
+                v_final, _ = integrate_neural_ode_FlyVis(
+                    model=model, v0=v0, x_template=x,
+                    edge_index=edges, data_id=data_id,
+                    time_steps=1, delta_t=sim.delta_t,
+                    neurons_per_sample=n_neurons, batch_size=1,
+                    has_visual_field=has_visual_field,
+                    x_ts=None, device=device,
+                    k_batch=torch.tensor([k], device=device),
+                    ode_method=tc.ode_method,
+                    rtol=tc.ode_rtol, atol=tc.ode_atol,
+                    adjoint=False, noise_level=0.0
+                )
+                y = (v_final.view(-1, 1) - x.voltage.unsqueeze(-1)) / sim.delta_t
+            else:
+                y = model(x, edges, data_id=data_id, return_all=False)
+
+            # Integration step
+            if 'MLP_ODE' in model_config.signal_model_name:
+                x.voltage = x.voltage + y.squeeze(-1)
+            else:
+                x.voltage = x.voltage + sim.delta_t * y.squeeze(-1)
+
+            # Calcium dynamics
+            if sim.calcium_type == "leaky":
+                if sim.calcium_activation == "softplus":
+                    u = torch.nn.functional.softplus(x.voltage)
+                elif sim.calcium_activation == "relu":
+                    u = torch.nn.functional.relu(x.voltage)
+                elif sim.calcium_activation == "tanh":
+                    u = torch.tanh(x.voltage)
+                elif sim.calcium_activation == "identity":
+                    u = x.voltage.clone()
+                x.calcium = x.calcium + (sim.delta_t / sim.calcium_tau) * (-x.calcium + u)
+                x.calcium = torch.clamp(x.calcium, min=0.0)
+                x.fluorescence = sim.calcium_alpha * x.calcium + sim.calcium_beta
+
+    rollout_pred_arr = np.array(rollout_pred_list)   # (n_frames-1, n_neurons)
+    rollout_true_arr = np.array(rollout_true_list)   # (n_frames-1, n_neurons)
+    rollout_stim_arr = np.array(rollout_stim_list)   # (n_frames-1, n_neurons)
+
+    activity_pred = rollout_pred_arr.T   # (n_neurons, n_frames-1)
+    activity_true = rollout_true_arr.T   # (n_neurons, n_frames-1)
+    stimulus_arr = rollout_stim_arr.T    # (n_neurons, n_frames-1)
+
+    # Compute rollout metrics
+    rmse_ro, pearson_ro, feve_ro, r2_ro = compute_trace_metrics(
+        activity_true, activity_pred, label="rollout"
+    )
+
+    # Save rollout metrics
+    rollout_log_path = os.path.join(log_dir, 'results_rollout.log')
+    with open(rollout_log_path, 'w') as f:
+        f.write("Rollout Metrics\n")
+        f.write("=" * 60 + "\n")
+        f.write(f"RMSE: {np.mean(rmse_ro):.4f} +/- {np.std(rmse_ro):.4f}\n")
+        f.write(f"Pearson r: {np.nanmean(pearson_ro):.3f} +/- {np.nanstd(pearson_ro):.3f}\n")
+        f.write(f"R2: {np.nanmean(r2_ro):.3f} +/- {np.nanstd(r2_ro):.3f}\n")
+        f.write(f"FEVE: {np.mean(feve_ro):.3f} +/- {np.std(feve_ro):.3f}\n")
+        f.write(f"\nNumber of neurons evaluated: {n_neurons}\n")
+        f.write(f"Frames evaluated: 0 to {n_frames - 1}\n")
+    print(f'rollout metrics saved to {rollout_log_path}')
+
+    if log_file:
+        with open(log_file, 'a') as f:
+            f.write(f'\n--- Rollout results ---\n')
+            f.write(f'RMSE: {np.mean(rmse_ro):.4f} +/- {np.std(rmse_ro):.4f}\n')
+            f.write(f'Pearson r: {np.nanmean(pearson_ro):.3f} +/- {np.nanstd(pearson_ro):.3f}\n')
+            f.write(f'R2: {np.nanmean(r2_ro):.3f} +/- {np.nanstd(r2_ro):.3f}\n')
+            f.write(f'FEVE: {np.mean(feve_ro):.3f} +/- {np.std(feve_ro):.3f}\n')
+
+    # --- Rollout trace plots ---
+    neuron_types = to_numpy(type_list).astype(int).squeeze()
+    n_neuron_types = sim.n_neuron_types
+    index_to_name = INDEX_TO_NAME
+
+    start_frame = 0
+    end_frame = activity_true.shape[1]
+
+    filename_ = config.dataset.split('flyvis_')[1] if 'flyvis_' in config.dataset else 'test'
+
+    for fig_name, selected_types in [
+        ("selected", [55, 15, 43, 39, 35, 31, 23, 19, 12, 5]),
+        ("all", np.arange(0, n_neuron_types)),
+    ]:
+        neuron_indices = []
+        for stype in selected_types:
+            indices = np.where(neuron_types == stype)[0]
+            if len(indices) > 0:
+                neuron_indices.append(indices[0])
+
+        if not neuron_indices:
+            continue
+
+        fig, ax = plt.subplots(1, 1, figsize=(15, 10))
+
+        true_slice = activity_true[neuron_indices, start_frame:end_frame]
+        stim_slice = stimulus_arr[neuron_indices, start_frame:end_frame]
+        pred_slice = activity_pred[neuron_indices, start_frame:end_frame]
+        step_v = 2.5
+        lw = 2
+
+        name_fontsize = 10 if len(selected_types) > 50 else 18
+
+        # ground truth (green, thick)
+        baselines = {}
+        for i in range(len(neuron_indices)):
+            baseline = np.mean(true_slice[i])
+            baselines[i] = baseline
+            ax.plot(true_slice[i] - baseline + i * step_v, linewidth=lw + 2, c='#66cc66', alpha=0.9,
+                    label='ground truth' if i == 0 else None)
+            if ((neuron_indices[i] == 0) or (len(neuron_indices) < 50)) and stim_slice[i].mean() > 0:
+                ax.plot(stim_slice[i] - baseline + i * step_v, linewidth=0.7, c='red', alpha=0.9,
+                        linestyle='--', label='visual input' if i == 0 else None)
+
+        # predictions (black, thin)
+        for i in range(len(neuron_indices)):
+            baseline = baselines[i]
+            ax.plot(pred_slice[i] - baseline + i * step_v, linewidth=0.7,
+                    label='prediction' if i == 0 else None, c='black')
+
+        for i in range(len(neuron_indices)):
+            type_idx = selected_types[i]
+            ax.text(-50, i * step_v, f'{index_to_name[type_idx]}', fontsize=name_fontsize,
+                    va='bottom', ha='right', color='black')
+
+        ax.set_ylim([-step_v, len(neuron_indices) * (step_v + 0.25 + 0.15 * (len(neuron_indices) // 50))])
+        ax.set_yticks([])
+        ax.set_xticks([0, (end_frame - start_frame) // 2, end_frame - start_frame])
+        ax.set_xticklabels([start_frame, end_frame // 2, end_frame], fontsize=16)
+        ax.set_xlabel('frame', fontsize=20)
+        ax.set_xlim([-50, end_frame - start_frame + 100])
+
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_visible(False)
+
+        ax.legend(loc='upper right', fontsize=14, frameon=False)
+
+        plt.tight_layout()
+        plt.savefig(f"{results_dir}/rollout_{filename_}_{sim.visual_input_type}_{fig_name}.png",
+                    dpi=300, bbox_inches='tight')
+        plt.close()
+
+    # Save activity arrays
+    np.save(f"{results_dir}/activity_true.npy", activity_true)
+    np.save(f"{results_dir}/activity_pred.npy", activity_pred)
+
+    print(f'rollout plots saved to {results_dir}/')
+
 
 def data_test_flyvis_special(
         config,

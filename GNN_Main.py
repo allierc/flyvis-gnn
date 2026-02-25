@@ -65,7 +65,7 @@ if __name__ == "__main__":
     else:
         best_model = ''
         task = task = 'traimn'
-        config_list = ['flyvis_62_1_gs']
+        config_list = ['flyvis_noise_005']
 
     for config_file_ in config_list:
         print(" ")
@@ -114,10 +114,6 @@ if __name__ == "__main__":
 
         if "test" in task:
             config.simulation.noise_model_level = 0.0
-
-            # if 'fly' in config_file_:
-            #     config.simulation.visual_input_type = 'optical_flow'
-
             data_test(
                 config=config,
                 visualize=True,
