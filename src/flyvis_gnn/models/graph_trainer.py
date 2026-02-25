@@ -1552,6 +1552,13 @@ def data_test_flyvis(config, best_model=None, device=None, log_file=None, test_c
     else:
         test_ds = config.dataset
 
+    # Suffix for output files when testing on a different dataset
+    if test_ds != config.dataset:
+        test_ds_short = test_ds.replace('flyvis_', '').replace('fly/', '')
+        test_suffix = f'_on_{test_ds_short}'
+    else:
+        test_suffix = ''
+
     # Determine which fields to load
     load_fields = ['voltage', 'stimulus', 'neuron_type']
     has_visual_field = 'visual' in model_config.field_type
@@ -1597,7 +1604,7 @@ def data_test_flyvis(config, best_model=None, device=None, log_file=None, test_c
     model = model.to(device)
 
     if best_model == 'best':
-        files = glob.glob(f"{log_dir}/models/*")
+        files = glob.glob(f"{log_dir}/models/best_model_with_*.pt")
         files.sort(key=sort_key)
         filename = files[-1]
         filename = filename.split('/')[-1]
@@ -1696,7 +1703,7 @@ def data_test_flyvis(config, best_model=None, device=None, log_file=None, test_c
     )
 
     # Save results
-    results_path = os.path.join(log_dir, 'results_test.log')
+    results_path = os.path.join(log_dir, f'results_test{test_suffix}.log')
     with open(results_path, 'w') as f:
         f.write(f'test_dataset: {test_ds}\n')
         f.write(f'n_frames: {len(all_pred)}\n')
@@ -1813,7 +1820,7 @@ def data_test_flyvis(config, best_model=None, device=None, log_file=None, test_c
     )
 
     # Save rollout metrics
-    rollout_log_path = os.path.join(log_dir, 'results_rollout.log')
+    rollout_log_path = os.path.join(log_dir, f'results_rollout{test_suffix}.log')
     with open(rollout_log_path, 'w') as f:
         f.write("Rollout Metrics\n")
         f.write("=" * 60 + "\n")
@@ -1904,13 +1911,13 @@ def data_test_flyvis(config, best_model=None, device=None, log_file=None, test_c
         ax.legend(loc='upper right', fontsize=14, frameon=False)
 
         plt.tight_layout()
-        plt.savefig(f"{results_dir}/rollout_{filename_}_{sim.visual_input_type}_{fig_name}.png",
+        plt.savefig(f"{results_dir}/rollout_{filename_}_{sim.visual_input_type}_{fig_name}{test_suffix}.png",
                     dpi=300, bbox_inches='tight')
         plt.close()
 
     # Save activity arrays
-    np.save(f"{results_dir}/activity_true.npy", activity_true)
-    np.save(f"{results_dir}/activity_pred.npy", activity_pred)
+    np.save(f"{results_dir}/activity_true{test_suffix}.npy", activity_true)
+    np.save(f"{results_dir}/activity_pred{test_suffix}.npy", activity_pred)
 
     print(f'rollout plots saved to {results_dir}/')
 
@@ -2071,7 +2078,7 @@ def data_test_flyvis_special(
 
 
     if best_model == 'best':
-        files = glob.glob(f"{log_dir}/models/*")
+        files = glob.glob(f"{log_dir}/models/best_model_with_*.pt")
         files.sort(key=sort_key)
         filename = files[-1]
         filename = filename.split('/')[-1]
