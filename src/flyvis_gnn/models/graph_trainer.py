@@ -739,6 +739,10 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                     'optimizer_state_dict': optimizer.state_dict()},
                    os.path.join(log_dir, 'models', f'best_model_with_{tc.n_runs - 1}_graphs_{epoch}.pt'))
 
+        if has_visual_field and hasattr(model, 'NNR_f'):
+            torch.save(model.NNR_f.state_dict(),
+                       os.path.join(log_dir, 'models', f'inr_stimulus_{epoch}.pt'))
+
         list_loss.append(epoch_pred_loss)
         list_loss_regul.append(epoch_regul_loss)
 
@@ -1482,7 +1486,7 @@ def data_train_INR(config=None, device=None, total_steps=10000, field_name='stim
 
 def data_test(config=None, config_file=None, visualize=False, style='color frame', verbose=True, best_model=20, step=15, n_rollout_frames=600,
               ratio=1, run=0, test_mode='', sample_embedding=False, particle_of_interest=1, new_params = None, device=[],
-              rollout_without_noise: bool = False, log_file=None):
+              rollout_without_noise: bool = False, log_file=None, test_config=None):
 
     dataset_name = config.dataset
     print(f"\033[94mdataset_name: {dataset_name}\033[0m")
@@ -1515,19 +1519,22 @@ def data_test(config=None, config_file=None, visualize=False, style='color frame
                 best_model=best_model,
                 device=device,
                 log_file=log_file,
+                test_config=test_config,
             )
     else:
         raise ValueError(f"Unknown dataset type: {config.dataset}")
 
 
-def data_test_flyvis(config, best_model=None, device=None, log_file=None):
+def data_test_flyvis(config, best_model=None, device=None, log_file=None, test_config=None):
     """Test using pre-generated test data (x_list_test / y_list_test).
 
     Loads the held-out test split, runs the trained model on every frame,
     and reports per-neuron RMSE, Pearson r, R², and FEVE.
 
-    If config.training.test_dataset is set, test data is loaded from that
-    dataset instead of the training dataset (cross-dataset evaluation).
+    Args:
+        config: model config (model + log dir come from here)
+        test_config: optional second config for cross-dataset evaluation
+                     (test data loaded from test_config.dataset)
     """
 
     sim = config.simulation
@@ -1536,8 +1543,14 @@ def data_test_flyvis(config, best_model=None, device=None, log_file=None):
 
     log_dir = log_path(config.config_file)
 
-    # Determine test dataset
-    test_ds = tc.test_dataset if tc.test_dataset else config.dataset
+    # Determine test dataset: test_config > tc.test_dataset > config.dataset
+    if test_config is not None:
+        test_ds = test_config.dataset
+        print(f'cross-dataset test: model from {config.dataset}, test data from {test_ds}')
+    elif tc.test_dataset:
+        test_ds = tc.test_dataset
+    else:
+        test_ds = config.dataset
 
     # Determine which fields to load
     load_fields = ['voltage', 'stimulus', 'neuron_type']
@@ -1595,7 +1608,44 @@ def data_test_flyvis(config, best_model=None, device=None, log_file=None):
     print(f'loading {netname} ...')
     state_dict = torch.load(netname, map_location=device)
     model.load_state_dict(state_dict['model_state_dict'])
+
+    # Load INR model if visual field is learned
+    if has_visual_field and hasattr(model, 'NNR_f'):
+        # Extract epoch from best_model to find matching INR checkpoint
+        epoch_str = best_model.split('_')[0] if best_model else '0'
+        inr_path = os.path.join(log_dir, 'models', f'inr_stimulus_{epoch_str}.pt')
+        if os.path.exists(inr_path):
+            model.NNR_f.load_state_dict(torch.load(inr_path, map_location=device))
+            print(f'loaded INR from {inr_path}')
+        else:
+            print(f'warning: INR checkpoint not found at {inr_path}')
+
     model.eval()
+
+    # When visual field is learned, use training data (INR was fit to it)
+    if has_visual_field:
+        train_path = graphs_data_path(config.dataset, 'x_list_train')
+        if os.path.exists(train_path):
+            x_ts_train = load_simulation_data(train_path, fields=load_fields).to(device)
+            y_ts_train = load_raw_array(graphs_data_path(config.dataset, 'y_list_train'))
+            x_ts_train.neuron_type = None
+            x_ts_train.index = torch.arange(x_ts_train.n_neurons, dtype=torch.long, device=device)
+            if tc.training_selected_neurons:
+                x_ts_train = x_ts_train.subset_neurons(selected_neuron_ids)
+                y_ts_train = y_ts_train[:, selected_neuron_ids, :]
+            n_eval_frames = min(n_frames, x_ts_train.n_frames)
+            print(f'visual field learned: evaluating on training data ({x_ts_train.n_frames} frames available, using {n_eval_frames})')
+            x_ts_eval = x_ts_train
+            y_ts_eval = y_ts_train
+        else:
+            print('warning: x_list_train not found, falling back to test data')
+            x_ts_eval = x_ts
+            y_ts_eval = y_ts
+            n_eval_frames = n_frames
+    else:
+        x_ts_eval = x_ts
+        y_ts_eval = y_ts
+        n_eval_frames = n_frames
 
     # Load edges from training dataset (model was trained on these edges)
     edges = torch.load(
@@ -1604,15 +1654,15 @@ def data_test_flyvis(config, best_model=None, device=None, log_file=None):
     ids = np.arange(n_neurons)
     data_id = torch.zeros((n_neurons, 1), dtype=torch.int, device=device)
 
-    # Run model on all test frames
-    print(f'evaluating on {n_frames} test frames ...')
+    # Run model on all frames (one-step prediction)
+    print(f'evaluating on {n_eval_frames} frames ...')
     all_pred = []
     all_true = []
 
     with torch.no_grad():
-        for k in range(n_frames - 1):
-            x = x_ts.frame(k)
-            y = torch.tensor(y_ts[k], device=device)
+        for k in range(n_eval_frames - 1):
+            x = x_ts_eval.frame(k)
+            y = torch.tensor(y_ts_eval[k], device=device)
 
             if torch.isnan(x.voltage).any() or torch.isnan(y).any():
                 continue
@@ -1673,7 +1723,7 @@ def data_test_flyvis(config, best_model=None, device=None, log_file=None):
     results_dir = os.path.join(log_dir, 'results')
     os.makedirs(results_dir, exist_ok=True)
 
-    x = x_ts.frame(0)
+    x = x_ts_eval.frame(0)
 
     h_state = None
     c_state = None
@@ -1683,13 +1733,13 @@ def data_test_flyvis(config, best_model=None, device=None, log_file=None):
     rollout_stim_list = []
 
     with torch.no_grad():
-        for k in trange(n_frames - 1, ncols=100, desc="rollout"):
+        for k in trange(n_eval_frames - 1, ncols=100, desc="rollout"):
             # Collect state before integration
             rollout_pred_list.append(to_numpy(x.voltage))
-            rollout_true_list.append(to_numpy(x_ts.frame(k).voltage))
+            rollout_true_list.append(to_numpy(x_ts_eval.frame(k).voltage))
 
-            # Set stimulus from test data
-            x.stimulus = x_ts.frame(k).stimulus.clone()
+            # Set stimulus from rollout data
+            x.stimulus = x_ts_eval.frame(k).stimulus.clone()
             rollout_stim_list.append(to_numpy(x.stimulus))
 
             if has_visual_field:
@@ -1772,7 +1822,9 @@ def data_test_flyvis(config, best_model=None, device=None, log_file=None):
         f.write(f"R2: {np.nanmean(r2_ro):.3f} +/- {np.nanstd(r2_ro):.3f}\n")
         f.write(f"FEVE: {np.mean(feve_ro):.3f} +/- {np.std(feve_ro):.3f}\n")
         f.write(f"\nNumber of neurons evaluated: {n_neurons}\n")
-        f.write(f"Frames evaluated: 0 to {n_frames - 1}\n")
+        f.write(f"Frames evaluated: 0 to {n_eval_frames - 1}\n")
+        if has_visual_field:
+            f.write(f"Rollout data source: training (INR learned on training data)\n")
     print(f'rollout metrics saved to {rollout_log_path}')
 
     if log_file:

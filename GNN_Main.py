@@ -56,16 +56,22 @@ if __name__ == "__main__":
         if config_name in CONFIG_LISTS:
             config_list = CONFIG_LISTS[config_name]
             best_model = None
+            test_config_name = None
         else:
             config_list = [config_name]
             if len(args.option) > 2:
                 best_model = args.option[2]
             else:
                 best_model = None
+            if len(args.option) > 3:
+                test_config_name = args.option[3]
+            else:
+                test_config_name = None
     else:
         best_model = ''
         task = task = 'traimn'
         config_list = ['flyvis_noise_005']
+        test_config_name = None
 
     for config_file_ in config_list:
         print(" ")
@@ -114,6 +120,16 @@ if __name__ == "__main__":
 
         if "test" in task:
             config.simulation.noise_model_level = 0.0
+
+            # Optional: load a second config for cross-dataset test data
+            test_config = None
+            if test_config_name:
+                tc_file, tc_pre = add_pre_folder(test_config_name)
+                test_config = NeuralGraphConfig.from_yaml(f"{config_root}/{tc_file}.yaml")
+                test_config.dataset = tc_pre + test_config.dataset
+                test_config.config_file = tc_pre + test_config_name
+                print(f'cross-dataset test: model from {config.dataset}, test data from {test_config.dataset}')
+
             data_test(
                 config=config,
                 visualize=True,
@@ -129,6 +145,7 @@ if __name__ == "__main__":
                 particle_of_interest=0,
                 new_params=None,
                 rollout_without_noise=False,
+                test_config=test_config,
             )
 
         if 'plot' in task:
