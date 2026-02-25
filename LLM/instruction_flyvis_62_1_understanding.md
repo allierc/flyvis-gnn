@@ -3,8 +3,9 @@
 **Follow-up of**: `instruction_flyvis_62_1` (base exploration, 96 iterations, 46 established principles)
 
 **Run command**:
+
 ```bash
-# Fresh start (48 iterations = 12 batches of 4)
+# fresh start (48 iterations = 12 batches of 4)
 python GNN_LLM_parallel_flyvis_understanding.py -o train_test_plot_Claude_cluster flyvis_62_1_understand iterations=144 --fresh
 
 # Resume from last completed batch
@@ -34,32 +35,36 @@ The data is **pre-generated** — do NOT modify simulation parameters.
 
 ## Target Models
 
-| Slot | Model ID | Baseline R² | svd_rank_99 | activity_rank_99 | Category |
-|------|----------|-------------|-------------|------------------|----------|
-| 0 | 049 | 0.634 | 19 | 16 | Low activity rank |
-| 1 | 011 | 0.308 | 45 | 26 | High rank, worst R² |
-| 2 | 041 | 0.629 | 6 | 5 | Near-collapsed activity |
-| 3 | 003 | 0.627 | 60 | 35 | Moderate rank, hard connectivity |
+| Slot | Model ID | Baseline R² | svd_rank_99 | activity_rank_99 | Category                         |
+| ---- | -------- | ----------- | ----------- | ---------------- | -------------------------------- |
+| 0    | 049      | 0.634       | 19          | 16               | Low activity rank                |
+| 1    | 011      | 0.308       | 45          | 26               | High rank, worst R²              |
+| 2    | 041      | 0.629       | 6           | 5                | Near-collapsed activity          |
+| 3    | 003      | 0.627       | 60          | 35               | Moderate rank, hard connectivity |
 
 ### Model Profiles (from generation logs)
 
 **Model 049** (`graphs_data/fly/flyvis_62_1_id_049/generation_log.txt`):
+
 - activity_rank_90=3, activity_rank_99=16
 - svd_activity_rank_90=3, svd_activity_rank_99=19
 - Low-dimensional neural activity. Most variance captured by few components.
 - R²=0.634 with default training.
 
 **Model 011** (`graphs_data/fly/flyvis_62_1_id_011/generation_log.txt`):
+
 - activity_rank_90=1, activity_rank_99=26
 - svd_activity_rank_90=1, svd_activity_rank_99=45
 - Paradox: high SVD rank (diverse activity) yet worst R²=0.308. Activity is diverse but connectivity structure is hard to recover. This is the most interesting model.
 
 **Model 041** (`graphs_data/fly/flyvis_62_1_id_041/generation_log.txt`):
+
 - activity_rank_90=1, activity_rank_99=5
 - svd_activity_rank_90=1, svd_activity_rank_99=6
 - Near-collapsed: only 6 SVD components at 99% variance. Very low-dimensional output signal gives the GNN very little to learn from.
 
 **Model 003** (`graphs_data/fly/flyvis_62_1_id_003/generation_log.txt`):
+
 - activity_rank_90=3, activity_rank_99=35
 - svd_activity_rank_90=5, svd_activity_rank_99=60
 - Moderate activity rank. Decent diversity but connectivity structure remains hard. Why? With svd_rank=60, there should be enough signal for the GNN.
@@ -67,6 +72,7 @@ The data is **pre-generated** — do NOT modify simulation parameters.
 ### Data Directories
 
 Each model's pre-generated data (activity traces, connectivity matrices, etc.) is in:
+
 ```
 graphs_data/fly/flyvis_62_1_id_049/
 graphs_data/fly/flyvis_62_1_id_011/
@@ -94,16 +100,19 @@ tau_i * dv_i(t)/dt = -v_i(t) + V_i^rest + sum_j W_ij * ReLU(v_j(t)) + I_i(t)
 ## GNN Architecture
 
 Two MLPs learn the neural dynamics:
+
 - **g_phi** (g_phi): Edge message function. Maps (v_j, a_i) -> message. If `g_phi_positive=True`, output is squared.
 - **f_theta** (f_theta): Node update function. Maps (v_i, a_i, aggregated_messages, I_i) -> dv_i/dt.
 - **Embedding a_i**: 2D learned embedding per neuron, encodes neuron type.
 
 Architecture parameters (explorable) — refer to `Signal_Propagation_FlyVis.PARAMS_DOC` for strict dependencies:
+
 - `hidden_dim` / `n_layers`: g_phi MLP dimensions (default: 64 / 3)
 - `hidden_dim_update` / `n_layers_update`: f_theta MLP dimensions (default: 64 / 3)
 - `embedding_dim`: embedding dimension (default: 2)
 
 **CRITICAL — coupled parameters**: `input_size`, `input_size_update`, and `embedding_dim` are linked. When changing `embedding_dim`, you MUST also update:
+
 - `input_size = 1 + embedding_dim` (for flyvis_A)
 - `input_size_update = 3 + embedding_dim` (v + embedding + msg + excitation)
 
@@ -117,31 +126,32 @@ L = ||y_hat - y||_2 + lambda_0 * ||theta||_1 + lambda_1 * ||phi||_1 + lambda_2 *
     + mu_0 * ||ReLU(-dg_phi/dv)||_2 + mu_1 * ||g_phi(v*, a) - v*||_2
 ```
 
-| Config parameter | Description | Baseline (Node 79) |
-|------------------|-------------|---------------------|
-| `coeff_g_phi_diff` | L1 on f_theta — same-type edge sharing | 750 |
-| `coeff_f_theta_weight_L1` | L1 on g_phi — sparsity | 0.5 |
-| `coeff_W_L1` | L1 on learned W — sparse connectivity | 5E-5 |
-| `coeff_phi_weight_L2` | L2 on g_phi — stabilization | 0.001 |
-| `coeff_g_phi_norm` | Monotonicity penalty on g_phi | 1.0 |
-| `coeff_g_phi_weight_L1` | L1 on g_phi weights | 0.3 |
+| Config parameter          | Description                            | Baseline (Node 79) |
+| ------------------------- | -------------------------------------- | ------------------ |
+| `coeff_g_phi_diff`        | L1 on f_theta — same-type edge sharing | 750                |
+| `coeff_f_theta_weight_L1` | L1 on g_phi — sparsity                 | 0.5                |
+| `coeff_W_L1`              | L1 on learned W — sparse connectivity  | 5E-5               |
+| `coeff_phi_weight_L2`     | L2 on g_phi — stabilization            | 0.001              |
+| `coeff_g_phi_norm`        | Monotonicity penalty on g_phi          | 1.0                |
+| `coeff_g_phi_weight_L1`   | L1 on g_phi weights                    | 0.3                |
 
 ## Training Parameters
 
-| Parameter | Baseline (Node 79) | Description |
-|-----------|---------------------|-------------|
-| `learning_rate_W_start` (lr_W) | 6E-4 | Learning rate for W |
-| `learning_rate_start` (lr) | 1.2E-3 | Learning rate for MLPs |
-| `learning_rate_embedding_start` (lr_emb) | 1.5E-3 | Learning rate for embeddings |
-| `n_epochs` | 1 | Training epochs |
-| `batch_size` | 2 | Batch size |
-| `data_augmentation_loop` | 20 | Data augmentation multiplier |
-| `hidden_dim` | 80 | g_phi MLP hidden dim |
-| `hidden_dim_update` | 80 | f_theta MLP hidden dim |
+| Parameter                                | Baseline (Node 79) | Description                  |
+| ---------------------------------------- | ------------------ | ---------------------------- |
+| `learning_rate_W_start` (lr_W)           | 6E-4               | Learning rate for W          |
+| `learning_rate_start` (lr)               | 1.2E-3             | Learning rate for MLPs       |
+| `learning_rate_embedding_start` (lr_emb) | 1.5E-3             | Learning rate for embeddings |
+| `n_epochs`                               | 1                  | Training epochs              |
+| `batch_size`                             | 2                  | Batch size                   |
+| `data_augmentation_loop`                 | 20                 | Data augmentation multiplier |
+| `hidden_dim`                             | 80                 | g_phi MLP hidden dim         |
+| `hidden_dim_update`                      | 80                 | f_theta MLP hidden dim       |
 
 ## Starting Point
 
 All 4 slots start from **Node 79** best params (from base exploration):
+
 ```
 lr_W=6E-4, lr=1.2E-3, lr_emb=1.5E-3, edge_diff=750, phi_L1=0.5, edge_L1=0.3,
 W_L1=5E-5, hidden_dim=80, hidden_dim_update=80, batch=2, data_aug=20
@@ -208,6 +218,7 @@ Next: parent=P
 After analyzing results, update the `## UNDERSTANDING` section in `{config}_memory.md`:
 
 For each model (049, 011, 041, 003), maintain:
+
 - **Hypothesis**: Current best explanation for why this model is difficult
 - **Status**: `untested` / `partially supported` / `supported` / `falsified` / `revised`
 - **Evidence FOR**: List of iterations/observations supporting the hypothesis
@@ -226,6 +237,7 @@ Write a Python analysis script to `tools/analysis_iter_NNN.py` (where NNN is the
 **CRITICAL**: The analysis tool output is TEXT ONLY. You will receive the stdout (print statements) as feedback. Do NOT rely on generated figures for understanding — you cannot see images. All quantitative findings MUST be printed as numbers/tables. You may save .png plots for the human record, but your analysis must be fully expressed through print() output.
 
 **Requirements**:
+
 - Self-contained Python script (no imports from flyvis_gnn)
 - Use only: numpy, scipy, torch (for loading .pt files), os, json
 - ALL findings must be printed to stdout (this is what you receive as feedback)
@@ -234,6 +246,7 @@ Write a Python analysis script to `tools/analysis_iter_NNN.py` (where NNN is the
 - May optionally save .png plots for human record, but NEVER depend on them for analysis
 
 **Output format** — print structured, quantitative results:
+
 ```python
 print("=== SVD Analysis of W_true ===")
 print(f"Model 049: rank={rank_049}, nnz={nnz_049}, density={dens_049:.4f}")
@@ -286,6 +299,7 @@ Trained model per slot (`log/fly/flyvis_62_1_understand_Claude_{SLOT:02d}/`):
 | 3 | 003 | `graphs_data/fly/flyvis_62_1_id_003/` | `log/fly/flyvis_62_1_understand_Claude_03/` |
 
 **Example analysis tool** (comparing W_true structure):
+
 ```python
 import torch, numpy as np
 MODEL_IDS = ['049', '011', '041', '003']
@@ -311,6 +325,7 @@ for mid, slot in zip(MODEL_IDS, SLOTS):
 ```
 
 **Example analysis ideas** (adapt based on current understanding):
+
 - SVD analysis of W_true: compare spectral structure across 4 models
 - Per-neuron-type weight recovery: which cell types are hardest?
 - Edge magnitude vs recovery error: are weak edges harder?
@@ -335,50 +350,59 @@ The working memory file (`{config}_memory.md`) has this structure:
 ## UNDERSTANDING
 
 ### Model 049 (svd_rank_99=19, R²=0.634)
+
 **Hypothesis**: ...
 **Evidence**: ...
 **Best R² so far**: ...
 **Next experiment**: ...
 
 ### Model 011 (svd_rank_99=45, R²=0.308)
+
 **Hypothesis**: ...
 **Evidence**: ...
 **Best R² so far**: ...
 **Next experiment**: ...
 
 ### Model 041 (svd_rank_99=6, R²=0.629)
+
 **Hypothesis**: ...
 **Evidence**: ...
 **Best R² so far**: ...
 **Next experiment**: ...
 
 ### Model 003 (svd_rank_99=60, R²=0.627)
+
 **Hypothesis**: ...
 **Evidence**: ...
 **Best R² so far**: ...
 **Next experiment**: ...
 
 ## Established Principles (from base 62_1 exploration)
+
 [46 principles — these are starting knowledge, may need revision for difficult models]
 
 ## New Principles (discovered in this exploration)
+
 [Add new findings here]
 
 ## Cross-Model Observations
+
 [Patterns that hold across models or differentiate them]
 
 ## Analysis Tools Log
+
 [Summary of each analysis tool: what it measured, key findings, and which UNDERSTANDING hypothesis it informed]
 
-| Iter | Tool | What it measured | Key finding | Informed hypothesis |
-|------|------|-----------------|-------------|---------------------|
-| 4 | analysis_iter_004.py | SVD spectrum of W_true for all 4 models | Model 011 has denser W with many small weights | Model 011: hard connectivity → many weak edges below GNN detection threshold |
-| ... | ... | ... | ... | ... |
+| Iter | Tool                 | What it measured                        | Key finding                                    | Informed hypothesis                                                          |
+| ---- | -------------------- | --------------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------- |
+| 4    | analysis_iter_004.py | SVD spectrum of W_true for all 4 models | Model 011 has denser W with many small weights | Model 011: hard connectivity → many weak edges below GNN detection threshold |
+| ...  | ...                  | ...                                     | ...                                            | ...                                                                          |
 
 Keep this table updated after each analysis tool runs. It connects the computational analysis
 to the scientific understanding. When a tool's finding changes a hypothesis status, note it here.
 
 ## Iterations
+
 [Recent iteration entries]
 ```
 
@@ -387,6 +411,7 @@ to the scientific understanding. When a tool's finding changes a hypothesis stat
 ## Analysis Tool Feedback (Two-Pass Architecture)
 
 Each batch uses two Claude passes:
+
 - **Pass 1**: You analyze training results, write log entries, update UNDERSTANDING, and write an analysis tool (`tools/analysis_iter_NNN.py`).
 - **Tool execution**: The analysis tool runs as a subprocess immediately after pass 1. If it crashes, it is auto-repaired (up to 3 attempts via Claude).
 - **Pass 2**: You receive the analysis tool's stdout output. Use it to refine UNDERSTANDING hypotheses, update the Analysis Tools Log, and propose the next 4 config mutations.
