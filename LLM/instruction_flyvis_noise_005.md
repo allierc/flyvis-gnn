@@ -297,11 +297,12 @@ If `user_input.md` has content in "Pending Instructions":
 
 At the end of each block:
 
-1. Summarize findings in memory.md "Previous Block Summary"
-2. Update "Established Principles" with confirmed insights (require 3+ supporting iterations AND cross-seed consistency)
-3. Move falsified hypotheses to "Falsified Hypotheses" with evidence summary
-4. Clear "Current Block" for next block
-5. Carry forward best **robust** config as starting point
+1. Update "Paper Summary" at the top of memory.md — rewrite both bullet points to reflect the current state of knowledge
+2. Summarize findings in memory.md "Previous Block Summary"
+3. Update "Established Principles" with confirmed insights (require 3+ supporting iterations AND cross-seed consistency)
+4. Move falsified hypotheses to "Falsified Hypotheses" with evidence summary
+5. Clear "Current Block" for next block
+6. Carry forward best **robust** config as starting point
 
 ## Failed Slots
 
@@ -340,6 +341,13 @@ The memory file (`{llm_task_name}_memory.md`) must follow this structure:
 
 ```markdown
 # Working Memory: flyvis_noise_005
+
+## Paper Summary (update at every block boundary)
+
+Brief paragraph for a scientific paper summarizing the current state of this exploration:
+
+- **GNN optimization**: [What has been learned about training GNN to recover Drosophila visual system connectivity from noisy DAVIS data. Best connectivity_R2 achieved, which regularization/learning rate regimes work, key challenges.]
+- **LLM-driven exploration**: [How the LLM-in-the-loop approach performed as an automated hyperparameter search strategy. Number of iterations run, how hypothesis-driven exploration compared to random search, whether the LLM discovered non-obvious parameter interactions.]
 
 ## Knowledge Base (accumulated across all blocks)
 

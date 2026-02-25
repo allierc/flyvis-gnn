@@ -474,6 +474,9 @@ if __name__ == "__main__":
         print(f"\033[93mcleared {reasoning_log_path}\033[0m")
         with open(memory_path, 'w') as f:
             f.write(f"# FlyVis Working Memory: {base_config_name} (parallel)\n\n")
+            f.write("## Paper Summary (update at every block boundary)\n\n")
+            f.write("- **GNN optimization**: [pending first results]\n")
+            f.write("- **LLM-driven exploration**: [pending first results]\n\n")
             f.write("## Knowledge Base (accumulated across all blocks)\n\n")
             f.write("### Parameter Effects Table\n")
             f.write("| Block | Focus | Best conn_R2 | Best tau_R2 | Best V_rest_R2 | Best Cluster_Acc | Time_min | Key finding |\n")
