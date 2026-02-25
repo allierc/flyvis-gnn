@@ -68,9 +68,12 @@ def detect_last_iteration(analysis_path, config_save_dir, n_parallel):
 # Cluster helpers
 # ---------------------------------------------------------------------------
 
+CLUSTER_USER = "allierc"
+CLUSTER_LOGIN = "login1"
 CLUSTER_HOME = "/groups/saalfeld/home/allierc"
 CLUSTER_ROOT_DIR = f"{CLUSTER_HOME}/GraphCluster/flyvis-gnn"
 CLUSTER_DATA_DIR = f"{CLUSTER_HOME}/GraphData"
+CLUSTER_SSH = f"{CLUSTER_USER}@{CLUSTER_LOGIN}"
 
 
 def local_to_cluster(path: str, root_dir: str) -> str:
@@ -93,7 +96,7 @@ def check_cluster_repo():
     expected to be modified by the LLM).  Returns True if clean, False if dirty.
     """
     ssh_cmd = (
-        f"ssh allierc@login2 "
+        f"ssh {CLUSTER_SSH} "
         f"\"cd {CLUSTER_ROOT_DIR} && git diff HEAD --stat -- . ':!config/'\""
     )
     result = subprocess.run(ssh_cmd, shell=True, capture_output=True, text=True)
@@ -146,7 +149,7 @@ def submit_cluster_job(slot, config_path, analysis_log_path, config_file_field,
     cluster_stderr = f"{cluster_log_dir}/cluster_train_{slot:02d}.err"
 
     ssh_cmd = (
-        f"ssh allierc@login2 \"cd {CLUSTER_ROOT_DIR} && "
+        f"ssh {CLUSTER_SSH} \"cd {CLUSTER_ROOT_DIR} && "
         f"bsub -n 8 -gpu 'num=1' -q gpu_{node_name} -W 6000 "
         f"-o '{cluster_stdout}' -e '{cluster_stderr}' "
         f"'bash {cluster_script}'\""
@@ -173,7 +176,7 @@ def wait_for_cluster_jobs(job_ids, log_dir=None, poll_interval=60):
 
     while pending:
         ids_str = ' '.join(pending.values())
-        ssh_cmd = f'ssh allierc@login2 "bjobs {ids_str} 2>/dev/null"'
+        ssh_cmd = f'ssh {CLUSTER_SSH} "bjobs {ids_str} 2>/dev/null"'
         out = subprocess.run(ssh_cmd, shell=True, capture_output=True, text=True)
 
         for slot, jid in list(pending.items()):
