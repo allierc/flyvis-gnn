@@ -263,8 +263,6 @@ if __name__ == "__main__":
     device = []
     args = parser.parse_args()
 
-    N_PARALLEL = 4
-
     if args.option:
         print(f"Options: {args.option}")
     if args.option is not None:
@@ -331,9 +329,10 @@ if __name__ == "__main__":
     claude_n_iter_block = claude_cfg.get('n_iter_block', 12)
     claude_ucb_c = claude_cfg.get('ucb_c', 1.414)
     claude_node_name = claude_cfg.get('node_name', 'h100')
+    N_PARALLEL = claude_cfg.get('n_parallel', 4)
     n_iter_block = claude_n_iter_block
 
-    print(f"\033[94mCluster node: gpu_{claude_node_name}\033[0m")
+    print(f"\033[94mCluster node: gpu_{claude_node_name}, n_parallel: {N_PARALLEL}\033[0m")
 
     # Slot config paths and analysis log paths
     config_paths = {}
@@ -361,6 +360,7 @@ if __name__ == "__main__":
                     'data_augmentation_loop': claude_data_augmentation_loop,
                     'n_iter_block': claude_n_iter_block,
                     'ucb_c': claude_ucb_c,
+                    'n_parallel': N_PARALLEL,
                     'node_name': claude_node_name
                 }
                 with open(target, 'w') as f:
@@ -382,6 +382,7 @@ if __name__ == "__main__":
                     'data_augmentation_loop': claude_data_augmentation_loop,
                     'n_iter_block': claude_n_iter_block,
                     'ucb_c': claude_ucb_c,
+                    'n_parallel': N_PARALLEL,
                     'node_name': claude_node_name
                 }
                 with open(target, 'w') as f:
@@ -396,22 +397,27 @@ if __name__ == "__main__":
     memory_path = f"{exploration_dir}/{llm_task_name}_memory.md"
     ucb_path = f"{exploration_dir}/{llm_task_name}_ucb_scores.txt"
     instruction_path = f"{llm_dir}/{instruction_name}.md"
-    parallel_instruction_path = f"{llm_dir}/{instruction_name}_parallel.md"
     reasoning_log_path = f"{exploration_dir}/{llm_task_name}_reasoning.log"
+    user_input_path = f"{llm_dir}/user_input.md"
 
     log_dir = exploration_dir
     os.makedirs(exploration_dir, exist_ok=True)
 
     cluster_enabled = 'cluster' in task
 
-    # Check instruction files exist
+    # Check instruction file exists
     if not os.path.exists(instruction_path):
         print(f"\033[91merror: instruction file not found: {instruction_path}\033[0m")
         sys.exit(1)
-    if not os.path.exists(parallel_instruction_path):
-        print(f"\033[93mwarning: parallel instruction file not found: {parallel_instruction_path}\033[0m")
-        print("\033[93m  Claude will use base instructions only\033[0m")
-        parallel_instruction_path = None
+
+    # Create user input file if missing
+    if not os.path.exists(user_input_path):
+        with open(user_input_path, 'w') as f:
+            f.write("# User Input\n\n")
+            f.write("_Write instructions or advice here. The LLM will read this file at each batch and acknowledge below._\n\n")
+            f.write("## Pending Instructions\n\n")
+            f.write("_(empty — add instructions here)_\n\n")
+            f.write("## Acknowledged\n\n")
 
     # Initialize shared files on fresh start
     if start_iteration == 1 and not args.resume:
@@ -458,8 +464,6 @@ if __name__ == "__main__":
             for s in range(N_PARALLEL)
         )
 
-        parallel_ref = f"\nParallel instructions: {parallel_instruction_path}" if parallel_instruction_path else ""
-
         # Build seed suggestions for first batch
         seed_suggestions = "\n".join(
             f"  Slot {s} (iter {start_iteration + s}): simulation.seed={start_iteration + s}, training.seed={(start_iteration + s) * 4 + s}"
@@ -468,9 +472,10 @@ if __name__ == "__main__":
 
         start_prompt = f"""PARALLEL START: Initialize {N_PARALLEL} config variations for the first batch.
 
-Instructions (follow all instructions): {instruction_path}{parallel_ref}
+Instructions (follow all instructions): {instruction_path}
 Working memory: {memory_path}
 Full log (append only): {analysis_path}
+User input (read and acknowledge any pending instructions): {user_input_path}
 
 Config files to edit (all {N_PARALLEL}):
 {slot_list}
@@ -481,10 +486,11 @@ You may override these — e.g. use the same simulation.seed across slots with d
 
 Read the instructions and the base config, then create {N_PARALLEL} diverse initial training
 parameter variations. Each config already has a unique dataset name — do NOT change the
-dataset field. Vary training parameters (e.g. lr_W, lr, coeff_edge_diff, coeff_W_L1, batch_size)
+dataset field. Vary training parameters (e.g. lr_W, lr, coeff_g_phi_diff, coeff_W_L1, batch_size)
 across the {N_PARALLEL} slots to explore different starting points.
 
 IMPORTANT: Data is PRE-GENERATED in graphs_data/ — do NOT change simulation parameters.
+IMPORTANT: Read user_input.md — if there are pending instructions, acknowledge them by appending to the "Acknowledged" section with timestamp and moving them out of "Pending Instructions".
 
 Write the planned mutations to the working memory file."""
 
@@ -907,8 +913,6 @@ Fix the bug. Do NOT make other changes."""
 
         block_end_marker = "\n>>> BLOCK END <<<" if is_block_end else ""
 
-        parallel_ref = f"\nParallel instructions: {parallel_instruction_path}" if parallel_instruction_path else ""
-
         # Build seed suggestions for next batch
         next_batch_start = batch_start + N_PARALLEL
         next_seed_suggestions = "\n".join(
@@ -921,10 +925,11 @@ Block info: block {block_number}, iterations {iter_in_block_first}-{iter_in_bloc
 
 PARALLEL MODE: Analyze {n_slots} results, then propose next {N_PARALLEL} mutations.
 
-Instructions (follow all instructions): {instruction_path}{parallel_ref}
+Instructions (follow all instructions): {instruction_path}
 Working memory: {memory_path}
 Full log (append only): {analysis_path}
 UCB scores: {ucb_path}
+User input (read and acknowledge any pending instructions): {user_input_path}
 
 {slot_info}
 
@@ -938,7 +943,8 @@ to set up the next batch of {N_PARALLEL} experiments.
 
 IMPORTANT: Do NOT change the 'dataset' field in any config — it must stay as-is for each slot.
 IMPORTANT: Data is PRE-GENERATED — do NOT change simulation parameters (n_neurons, n_frames, etc.).
-IMPORTANT: Baseline training time is ~45 min/epoch on H100. With n_epochs=1, expect ~45 min total. Check training_time_min in the metrics."""
+IMPORTANT: Baseline training time is ~45 min/epoch on H100. With n_epochs=1, expect ~45 min total. Check training_time_min in the metrics.
+IMPORTANT: Read user_input.md — if there are pending instructions, acknowledge them by appending to the "Acknowledged" section with a timestamp and moving them out of "Pending Instructions".
 
         print("\033[93mClaude analysis...\033[0m")
         output_text = run_claude_cli(claude_prompt, root_dir)
