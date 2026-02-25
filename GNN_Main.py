@@ -12,7 +12,7 @@ if os.path.isdir('/scratch'):
 from flyvis_gnn.config import NeuralGraphConfig
 from flyvis_gnn.generators.graph_data_generator import data_generate
 from flyvis_gnn.models.graph_trainer import data_train, data_test, data_train_INR
-from flyvis_gnn.utils import set_device, add_pre_folder, log_path
+from flyvis_gnn.utils import set_device, add_pre_folder, log_path, config_path
 
 # Optional imports (not available in flyvis-gnn spinoff)
 try:
@@ -75,11 +75,10 @@ if __name__ == "__main__":
 
     for config_file_ in config_list:
         print(" ")
-        config_root = os.path.dirname(os.path.abspath(__file__)) + "/config"
         config_file, pre_folder = add_pre_folder(config_file_)
 
         # load config
-        config = NeuralGraphConfig.from_yaml(f"{config_root}/{config_file}.yaml")
+        config = NeuralGraphConfig.from_yaml(config_path(f"{config_file}.yaml"))
         config.dataset = pre_folder + config.dataset
         config.config_file = pre_folder + config_file_
 
@@ -152,3 +151,6 @@ if __name__ == "__main__":
             folder_name = log_path(pre_folder, 'tmp_results') + '/'
             os.makedirs(folder_name, exist_ok=True)
             data_plot(config=config, config_file=config_file, epoch_list=['best'], style='color', extended='plots', device=device, apply_weight_correction=True)
+
+
+# python GNN_Main.py -o test flyvis_noise_005 best flyvis_noise_free

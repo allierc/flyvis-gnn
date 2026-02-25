@@ -49,6 +49,7 @@ from flyvis_gnn.utils import (
     choose_boundary_values,
     graphs_data_path,
     log_path,
+    config_path,
 )
 from flyvis_gnn.models.Siren_Network import Siren, Siren_Network
 from flyvis_gnn.models.flyvis_gnn import FlyVisGNN
@@ -3820,7 +3821,7 @@ def compare_gnn_results(config_list, varied_parameter):
     for config_file_ in config_list:
         try:
             config_file, pre_folder = add_pre_folder(config_file_)
-            config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
+            config = NeuralGraphConfig.from_yaml(config_path(f'{config_file}.yaml'))
 
             # Resolve varied parameter value
             if varied_parameter is None:
@@ -3843,7 +3844,7 @@ def compare_gnn_results(config_list, varied_parameter):
                     continue
 
             # Parse results.log
-            results_log_path = os.path.join('./log', config_file, 'results.log')
+            results_log_path = log_path(config_file, 'results.log')
             if not os.path.exists(results_log_path):
                 print(f"warning: {results_log_path} not found")
                 continue
@@ -4027,14 +4028,10 @@ def collect_gnn_results_multimodel(config_list, varied_parameter=None):
     """
     records = []
 
-    this_file_parent = os.path.dirname(__file__)
-    log_root = os.path.join(this_file_parent, "log")
-    config_root = os.path.join(this_file_parent, "config")
-
     for base_config in config_list:
         try:
             config_file, pre_folder = add_pre_folder(base_config)
-            config = NeuralGraphConfig.from_yaml(f'{config_root}/{config_file}.yaml')
+            config = NeuralGraphConfig.from_yaml(config_path(f'{config_file}.yaml'))
         except Exception as e:
             print(f"error loading base config '{base_config}': {e}")
             continue
@@ -4061,7 +4058,7 @@ def collect_gnn_results_multimodel(config_list, varied_parameter=None):
                     print(f"warning: parameter '{param_name}' not found in section '{section_name}' for '{base_config}'")
 
         # Discover per-model log directories created by GNN_Main_multimodel
-        pre_log_root = os.path.join(log_root, pre_folder)
+        pre_log_root = log_path(pre_folder)
         if not os.path.isdir(pre_log_root):
             print(f"warning: log root '{pre_log_root}' not found for base config '{base_config}'")
             continue
@@ -4078,7 +4075,7 @@ def collect_gnn_results_multimodel(config_list, varied_parameter=None):
                 model_id = None
 
             config_file_with_mid = os.path.join(pre_folder, entry)
-            log_dir = os.path.join(log_root, pre_folder, entry)
+            log_dir = log_path(pre_folder, entry)
 
             results_log_path = os.path.join(log_dir, "results.log")
             rollout_log_path = os.path.join(log_dir, "results_rollout.log")
@@ -4302,7 +4299,7 @@ def compare_ising_results(config_list, varied_parameter):
     for config_file_ in config_list:
         try:
             config_file, _ = add_pre_folder(config_file_)
-            config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
+            config = NeuralGraphConfig.from_yaml(config_path(f'{config_file}.yaml'))
 
             # Get parameter value
             if varied_parameter is None:
@@ -4314,7 +4311,7 @@ def compare_ising_results(config_list, varied_parameter):
                 param_value = getattr(section, param_name, config_file_) if section else config_file_
 
             # Read results.log
-            results_log_path = os.path.join('./log', config_file, 'results.log')
+            results_log_path = log_path(config_file, 'results.log')
             if not os.path.exists(results_log_path):
                 continue
 
@@ -4735,7 +4732,7 @@ def plot_results_figure(config_file_, config_indices, panel_suffix='domain'):
     """
     # Setup config
     config_file, pre_folder = add_pre_folder(config_file_)
-    config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
+    config = NeuralGraphConfig.from_yaml(config_path(f'{config_file}.yaml'))
     config.dataset = pre_folder + config.dataset
     config.config_file = pre_folder + config_file_
     print(f'figure results {config_file_}...')
@@ -4793,7 +4790,7 @@ def get_figures(index):
 
             for config_file_ in config_list:
                 config_file, pre_folder = add_pre_folder(config_file_)
-                config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
+                config = NeuralGraphConfig.from_yaml(config_path(f'{config_file}.yaml'))
                 config.dataset = pre_folder + config.dataset
                 config.config_file = pre_folder + config_file_
                 logdir = log_path('fly', config_file_)
@@ -4917,7 +4914,7 @@ def get_figures(index):
         case 'flyvis_44_6':
             config_file_ = 'flyvis_44_6'
             config_file, pre_folder = add_pre_folder(config_file_)
-            config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
+            config = NeuralGraphConfig.from_yaml(config_path(f'{config_file}.yaml'))
             config.dataset = pre_folder + config.dataset
             config.config_file = pre_folder + config_file_
             logdir = log_path('fly', 'flyvis_44_6')
@@ -4996,7 +4993,7 @@ def get_figures(index):
         case 'flyvis_51_2':
             config_file_ = 'flyvis_51_2'
             config_file, pre_folder = add_pre_folder(config_file_)
-            config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
+            config = NeuralGraphConfig.from_yaml(config_path(f'{config_file}.yaml'))
             config.dataset = pre_folder + config.dataset
             config.config_file = pre_folder + config_file_
             logdir = log_path('fly', 'flyvis_51_2')
@@ -5085,7 +5082,7 @@ def get_figures(index):
         case 'flyvis_22_10':
             config_file_ = 'flyvis_22_10'
             config_file, pre_folder = add_pre_folder(config_file_)
-            config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
+            config = NeuralGraphConfig.from_yaml(config_path(f'{config_file}.yaml'))
             config.dataset = pre_folder + config.dataset
             config.config_file = pre_folder + config_file_
             logdir = log_path('fly', 'flyvis_22_10')
@@ -5178,7 +5175,7 @@ def get_figures(index):
         case 'new_network_1':
             config_file_ = 'signal_N2_3'
             config_file, pre_folder = add_pre_folder(config_file_)
-            config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
+            config = NeuralGraphConfig.from_yaml(config_path(f'{config_file}.yaml'))
             config.dataset = pre_folder + config.dataset
             config.config_file = pre_folder + config_file_
             data_test(
@@ -5199,7 +5196,7 @@ def get_figures(index):
         case 'new_network_2':
             config_file_ = 'signal_N2_3'
             config_file, pre_folder = add_pre_folder(config_file_)
-            config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
+            config = NeuralGraphConfig.from_yaml(config_path(f'{config_file}.yaml'))
             config.dataset = pre_folder + config.dataset
             config.config_file = pre_folder + config_file_
             data_test(
@@ -5220,7 +5217,7 @@ def get_figures(index):
         case 'ablation_weights':
             config_file_ = 'signal_N2_3'
             config_file, pre_folder = add_pre_folder(config_file_)
-            config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
+            config = NeuralGraphConfig.from_yaml(config_path(f'{config_file}.yaml'))
             config.dataset = pre_folder + config.dataset
             config.config_file = pre_folder + config_file_
             data_test(
@@ -5266,7 +5263,7 @@ def get_figures(index):
         case 'ablation_cells':
             config_file_ = 'signal_N2_3'
             config_file, pre_folder = add_pre_folder(config_file_)
-            config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
+            config = NeuralGraphConfig.from_yaml(config_path(f'{config_file}.yaml'))
             config.dataset = pre_folder + config.dataset
             config.config_file = pre_folder + config_file_
             data_test(
@@ -5312,7 +5309,7 @@ def get_figures(index):
         case 'permutation_types':
             config_file_ = 'signal_N2_3'
             config_file, pre_folder = add_pre_folder(config_file_)
-            config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
+            config = NeuralGraphConfig.from_yaml(config_path(f'{config_file}.yaml'))
             config.dataset = pre_folder + config.dataset
             config.config_file = pre_folder + config_file_
             data_test(
@@ -5368,7 +5365,7 @@ def get_figures(index):
 
             config_file_ = 'flyvis_22_10'
             config_file, pre_folder = add_pre_folder(config_file_)
-            config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
+            config = NeuralGraphConfig.from_yaml(config_path(f'{config_file}.yaml'))
             config.dataset = pre_folder + config.dataset
             config.config_file = pre_folder + config_file_
             print('figure correction_weight...')
@@ -5463,7 +5460,7 @@ def get_figures(index):
 
             config_file_ = 'flyvis_44_6'
             config_file, pre_folder = add_pre_folder(config_file_)
-            config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
+            config = NeuralGraphConfig.from_yaml(config_path(f'{config_file}.yaml'))
             config.dataset = pre_folder + config.dataset
             config.config_file = pre_folder + config_file_
             print('figure correction_weight...')
@@ -5577,7 +5574,7 @@ if __name__ == '__main__':
     for config_file_ in config_list:
         print(' ')
         config_file, pre_folder = add_pre_folder(config_file_)
-        config = NeuralGraphConfig.from_yaml(f'./config/{config_file}.yaml')
+        config = NeuralGraphConfig.from_yaml(config_path(f'{config_file}.yaml'))
         config.dataset = pre_folder + config.dataset
         config.config_file = pre_folder + config_file_
         print(f'\033[94mconfig_file  {config.config_file}\033[0m')

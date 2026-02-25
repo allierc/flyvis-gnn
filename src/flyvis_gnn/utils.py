@@ -45,9 +45,11 @@ def get_data_root():
     global _DATA_ROOT_CACHE
     if _DATA_ROOT_CACHE is not None:
         return _DATA_ROOT_CACHE
+    _this_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
         os.path.join(os.getcwd(), 'data_paths.json'),
-        os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'data_paths.json')),
+        os.path.normpath(os.path.join(_this_dir, '..', 'data_paths.json')),       # src/data_paths.json
+        os.path.normpath(os.path.join(_this_dir, '..', '..', 'data_paths.json')), # repo root
     ]
     for json_path in candidates:
         print(f"[get_data_root] checking {json_path}  exists={os.path.isfile(json_path)}")
@@ -69,6 +71,11 @@ def graphs_data_path(*parts):
 def log_path(*parts):
     """Build path under log/: log_path('fly', 'models') -> '{data_root}/log/fly/models'"""
     return os.path.join(get_data_root(), 'log', *parts)
+
+
+def config_path(*parts):
+    """Build path under config/: config_path('fly', 'x.yaml') -> '{data_root}/config/fly/x.yaml'"""
+    return os.path.join(get_data_root(), 'config', *parts)
 
 def open_gcs_zarr(url: str):
     # Strip accidental prefixes like:  'str = "gs://.../aligned"'
