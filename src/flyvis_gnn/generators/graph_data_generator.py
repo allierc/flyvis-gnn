@@ -786,18 +786,18 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     print(f'activity rank(90%)={rank_90_act}  rank(99%)={rank_99_act}')
     print(f'visual input rank(90%)={rank_90_inp}  rank(99%)={rank_99_inp}')
 
-    print('plot kinograph ...')
-    plot_kinograph(
-        activity=activity_full.T,
-        stimulus=x_ts.stimulus[:, :sim.n_input_neurons].numpy().T,
-        output_path=graphs_data_path(config.dataset, 'kinograph.png'),
-        rank_90_act=rank_90_act,
-        rank_99_act=rank_99_act,
-        rank_90_inp=rank_90_inp,
-        rank_99_inp=rank_99_inp,
-        zoom_size=200,
-        style=fig_style,
-    )
+    # print('plot kinograph ...')
+    # plot_kinograph(
+    #     activity=activity_full.T,
+    #     stimulus=x_ts.stimulus[:, :sim.n_input_neurons].numpy().T,
+    #     output_path=graphs_data_path(config.dataset, 'kinograph.png'),
+    #     rank_90_act=rank_90_act,
+    #     rank_99_act=rank_99_act,
+    #     rank_90_inp=rank_90_inp,
+    #     rank_99_inp=rank_99_inp,
+    #     zoom_size=200,
+    #     style=fig_style,
+    # )
 
     print('plot activity traces ...')
     plot_activity_traces(
