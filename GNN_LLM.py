@@ -70,6 +70,20 @@ def detect_last_iteration(analysis_path, config_save_dir, n_parallel):
 
 CLUSTER_HOME = "/groups/saalfeld/home/allierc"
 CLUSTER_ROOT_DIR = f"{CLUSTER_HOME}/GraphCluster/flyvis-gnn"
+CLUSTER_DATA_DIR = f"{CLUSTER_HOME}/GraphData"
+
+
+def local_to_cluster(path: str, root_dir: str) -> str:
+    """Map a local workspace path to the correct cluster path.
+
+    Mounted directories (config, log, graphs_data) live under GraphData on the
+    cluster, not under GraphCluster/flyvis-gnn. Everything else maps to CLUSTER_ROOT_DIR.
+    """
+    for sub in ('config', 'log', 'graphs_data'):
+        local_sub = os.path.join(root_dir, sub)
+        if path.startswith(local_sub):
+            return os.path.join(CLUSTER_DATA_DIR, sub) + path[len(local_sub):]
+    return path.replace(root_dir, CLUSTER_ROOT_DIR)
 
 
 def submit_cluster_job(slot, config_path, analysis_log_path, config_file_field,
@@ -83,9 +97,9 @@ def submit_cluster_job(slot, config_path, analysis_log_path, config_file_field,
     cluster_script_path = f"{log_dir}/cluster_train_{slot:02d}.sh"
     error_details_path = f"{log_dir}/training_error_{slot:02d}.log"
 
-    cluster_config_path = config_path.replace(root_dir, CLUSTER_ROOT_DIR)
-    cluster_analysis_log = analysis_log_path.replace(root_dir, CLUSTER_ROOT_DIR)
-    cluster_error_log = error_details_path.replace(root_dir, CLUSTER_ROOT_DIR)
+    cluster_config_path = local_to_cluster(config_path, root_dir)
+    cluster_analysis_log = local_to_cluster(analysis_log_path, root_dir)
+    cluster_error_log = local_to_cluster(error_details_path, root_dir)
 
     cluster_train_cmd = f"python train_flyvis_subprocess.py --config '{cluster_config_path}' --device cuda"
     cluster_train_cmd += f" --log_file '{cluster_analysis_log}'"
@@ -94,7 +108,7 @@ def submit_cluster_job(slot, config_path, analysis_log_path, config_file_field,
     if erase:
         cluster_train_cmd += " --erase"
     if exploration_dir is not None and iteration is not None:
-        cluster_exploration_dir = exploration_dir.replace(root_dir, CLUSTER_ROOT_DIR)
+        cluster_exploration_dir = local_to_cluster(exploration_dir, root_dir)
         cluster_train_cmd += f" --exploration_dir '{cluster_exploration_dir}'"
         cluster_train_cmd += f" --iteration {iteration}"
         cluster_train_cmd += f" --slot {slot}"
@@ -105,8 +119,8 @@ def submit_cluster_job(slot, config_path, analysis_log_path, config_file_field,
         f.write(f"conda run -n neural-graph {cluster_train_cmd}\n")
     os.chmod(cluster_script_path, 0o755)
 
-    cluster_script = cluster_script_path.replace(root_dir, CLUSTER_ROOT_DIR)
-    cluster_log_dir = log_dir.replace(root_dir, CLUSTER_ROOT_DIR)
+    cluster_script = local_to_cluster(cluster_script_path, root_dir)
+    cluster_log_dir = local_to_cluster(log_dir, root_dir)
     cluster_stdout = f"{cluster_log_dir}/cluster_train_{slot:02d}.out"
     cluster_stderr = f"{cluster_log_dir}/cluster_train_{slot:02d}.err"
 
