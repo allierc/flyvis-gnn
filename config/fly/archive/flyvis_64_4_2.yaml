@@ -1,4 +1,4 @@
-description: 'no extra null edges, noise_model_level: 0  coeff_edge_diff: 0 coeff_edge_norm:
+description: 'no extra null edges, noise_model_level: 0  coeff_g_phi_diff: 0 coeff_g_phi_norm:
   0  training seed: 24   benchmark LSTM  training on 65 neurons 64000 frames'
 dataset: flyvis_62_1
 simulation:
@@ -30,7 +30,7 @@ graph_model:
   aggr_type: add
   embedding_dim: 2
   update_type: generic
-  lin_edge_positive: true
+  g_phi_positive: true
 plotting:
   colormap: tab20
   arrow_length: 1
@@ -120,8 +120,7 @@ training:
   learning_rate_start: 0.0005
   learning_rate_embedding_start: 0.005
   measurement_noise_level: 0
-  coeff_edge_diff: 0
-  coeff_update_u_diff: 0
-  coeff_update_msg_diff: 0
-  coeff_edge_norm: 0
+  coeff_g_phi_diff: 0
+  coeff_f_theta_msg_diff: 0
+  coeff_g_phi_norm: 0
   w_init_mode: zeros

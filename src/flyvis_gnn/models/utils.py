@@ -227,8 +227,8 @@ def get_in_features_update(rr=None, model=None, embedding = None, device=None):
 
     return in_features
 
-def get_in_features_lin_edge(x, model, model_config, xnorm, n_neurons, device):
-    """Build lin_edge input features from voltage and embeddings.
+def get_in_features_g_phi(x, model, model_config, xnorm, n_neurons, device):
+    """Build g_phi input features from voltage and embeddings.
 
     Args:
         x: NeuronState — uses x.voltage.
@@ -316,8 +316,8 @@ def set_trainable_parameters(model=[], lr_embedding=[], lr=[],  lr_update=[], lr
                 param_groups.append({'params': parameter, 'lr': lr_embedding, 'name': 'embedding'})
             elif (name=='b') or ('lin_modulation' in name):
                 param_groups.append({'params': parameter, 'lr': lr_modulation, 'name': 'modulation'})
-            elif 'lin_phi' in name:
-                param_groups.append({'params': parameter, 'lr': lr_update, 'name': 'lin_phi'})
+            elif 'f_theta' in name:
+                param_groups.append({'params': parameter, 'lr': lr_update, 'name': 'f_theta'})
             elif 'W' in name:
                 param_groups.append({'params': parameter, 'lr': lr_W, 'name': 'W'})
             elif 'NNR_f' in name:
@@ -325,7 +325,7 @@ def set_trainable_parameters(model=[], lr_embedding=[], lr=[],  lr_update=[], lr
             elif 'NNR' in name:
                 param_groups.append({'params': parameter, 'lr': learning_rate_NNR, 'name': 'NNR'})
             else:
-                param_groups.append({'params': parameter, 'lr': lr, 'name': 'lin_edge'})
+                param_groups.append({'params': parameter, 'lr': lr, 'name': 'g_phi'})
 
     # Store base_lr for alternating training phase switching
     for pg in param_groups:
@@ -413,7 +413,7 @@ def analyze_odor_responses_by_neuron(model, x_list, edges, n_runs, n_frames, tim
                                      all_neuron_list, has_missing_activity=False, model_missing_activity=None,
                                      has_neural_field=False, model_f=None, n_samples=50, run=0):
     """
-    Analyze odor responses by comparing lin_phi output with and without excitation
+    Analyze odor responses by comparing f_theta output with and without excitation
     Returns top responding neurons by name for each odor
     """
     odor_list = ['butanone', 'pentanedione', 'NaCL']
@@ -1186,7 +1186,7 @@ class LossRegularizer:
     COMPONENTS = [
         'W_L1', 'W_L2', 'W_sign',
         'edge_diff', 'edge_norm', 'edge_weight', 'phi_weight',
-        'phi_zero', 'update_diff', 'update_msg_diff', 'update_u_diff', 'update_msg_sign',
+        'phi_zero', 'update_diff', 'update_msg_diff', 'update_msg_sign',
         'missing_activity', 'model_a', 'model_b', 'modulation'
     ]
 
@@ -1238,8 +1238,8 @@ class LossRegularizer:
         if self.trainer_type == 'flyvis':
             # Flyvis: annealed coefficients
             self._coeffs['W_L1'] = tc.coeff_W_L1 * (1 - np.exp(-tc.coeff_W_L1_rate * epoch))
-            self._coeffs['edge_weight_L1'] = tc.coeff_edge_weight_L1 * (1 - np.exp(-tc.coeff_edge_weight_L1_rate ** epoch))
-            self._coeffs['phi_weight_L1'] = tc.coeff_phi_weight_L1 * (1 - np.exp(-tc.coeff_phi_weight_L1_rate * epoch))
+            self._coeffs['edge_weight_L1'] = tc.coeff_g_phi_weight_L1 * (1 - np.exp(-tc.coeff_g_phi_weight_L1_rate ** epoch))
+            self._coeffs['phi_weight_L1'] = tc.coeff_f_theta_weight_L1 * (1 - np.exp(-tc.coeff_f_theta_weight_L1_rate * epoch))
         else:
             # Signal: two-phase training if n_epochs_init > 0
             if n_epochs_init > 0 and epoch < n_epochs_init:
@@ -1248,8 +1248,8 @@ class LossRegularizer:
             else:
                 # Phase 2: use coeff_W_L1 (target L1)
                 self._coeffs['W_L1'] = tc.coeff_W_L1
-            self._coeffs['edge_weight_L1'] = tc.coeff_edge_weight_L1
-            self._coeffs['phi_weight_L1'] = tc.coeff_phi_weight_L1
+            self._coeffs['edge_weight_L1'] = tc.coeff_g_phi_weight_L1
+            self._coeffs['phi_weight_L1'] = tc.coeff_f_theta_weight_L1
 
         # Non-annealed coefficients (same for both)
         self._coeffs['W_L2'] = tc.coeff_W_L2
@@ -1258,15 +1258,14 @@ class LossRegularizer:
         if n_epochs_init > 0 and epoch >= n_epochs_init:
             self._coeffs['edge_diff'] = 0  # Phase 2: no monotonicity constraint
         else:
-            self._coeffs['edge_diff'] = tc.coeff_edge_diff
-        self._coeffs['edge_norm'] = tc.coeff_edge_norm
-        self._coeffs['edge_weight_L2'] = tc.coeff_edge_weight_L2
-        self._coeffs['phi_weight_L2'] = tc.coeff_phi_weight_L2
-        self._coeffs['phi_zero'] = tc.coeff_lin_phi_zero
-        self._coeffs['update_diff'] = tc.coeff_update_diff
-        self._coeffs['update_msg_diff'] = tc.coeff_update_msg_diff
-        self._coeffs['update_u_diff'] = tc.coeff_update_u_diff
-        self._coeffs['update_msg_sign'] = tc.coeff_update_msg_sign
+            self._coeffs['edge_diff'] = tc.coeff_g_phi_diff
+        self._coeffs['edge_norm'] = tc.coeff_g_phi_norm
+        self._coeffs['edge_weight_L2'] = tc.coeff_g_phi_weight_L2
+        self._coeffs['phi_weight_L2'] = tc.coeff_f_theta_weight_L2
+        self._coeffs['phi_zero'] = tc.coeff_f_theta_zero
+        self._coeffs['update_diff'] = tc.coeff_f_theta_diff
+        self._coeffs['update_msg_diff'] = tc.coeff_f_theta_msg_diff
+        self._coeffs['update_msg_sign'] = tc.coeff_f_theta_msg_sign
         self._coeffs['missing_activity'] = tc.coeff_missing_activity
         self._coeffs['model_a'] = tc.coeff_model_a
         self._coeffs['model_b'] = tc.coeff_model_b
@@ -1294,10 +1293,9 @@ class LossRegularizer:
         return (self.iter_count % self.plot_frequency == 0) or (self.iter_count == 1)
 
     def needs_update_regul(self) -> bool:
-        """Check if update regularization is needed (update_diff, update_msg_diff, update_u_diff, or update_msg_sign)."""
+        """Check if update regularization is needed (update_diff, update_msg_diff, or update_msg_sign)."""
         return (self._coeffs['update_diff'] > 0 or
                 self._coeffs['update_msg_diff'] > 0 or
-                self._coeffs['update_u_diff'] > 0 or
                 self._coeffs['update_msg_sign'] > 0)
 
     def _add(self, name: str, term):
@@ -1317,7 +1315,7 @@ class LossRegularizer:
         Args:
             model: The neural network model
             x: NeuronState — only voltage is used
-            in_features: Features for lin_phi (from model forward pass, can be None)
+            in_features: Features for f_theta (from model forward pass, can be None)
             ids: Sample indices for regularization
             ids_batch: Batch indices
             edges: Edge tensor
@@ -1362,13 +1360,13 @@ class LossRegularizer:
 
         # --- Edge/Phi weight regularization ---
         if (self._coeffs['edge_weight_L1'] + self._coeffs['edge_weight_L2']) > 0:
-            for param in model.lin_edge.parameters():
+            for param in model.g_phi.parameters():
                 regul_term = param.norm(1) * self._coeffs['edge_weight_L1'] + param.norm(2) * self._coeffs['edge_weight_L2']
                 total_regul = total_regul + regul_term
                 self._add('edge_weight', regul_term)
 
         if (self._coeffs['phi_weight_L1'] + self._coeffs['phi_weight_L2']) > 0:
-            for param in model.lin_phi.parameters():
+            for param in model.f_theta.parameters():
                 regul_term = param.norm(1) * self._coeffs['phi_weight_L1'] + param.norm(2) * self._coeffs['phi_weight_L2']
                 total_regul = total_regul + regul_term
                 self._add('phi_weight', regul_term)
@@ -1376,22 +1374,22 @@ class LossRegularizer:
         # --- phi_zero regularization ---
         if self._coeffs['phi_zero'] > 0:
             in_features_phi = get_in_features_update(rr=None, model=model, device=device)
-            func_phi = model.lin_phi(in_features_phi[ids].float())
+            func_phi = model.f_theta(in_features_phi[ids].float())
             regul_term = func_phi.norm(2) * self._coeffs['phi_zero']
             total_regul = total_regul + regul_term
             self._add('phi_zero', regul_term)
 
         # --- Edge diff/norm regularization ---
         if (self._coeffs['edge_diff'] > 0) | (self._coeffs['edge_norm'] > 0):
-            in_features_edge, in_features_edge_next = get_in_features_lin_edge(x, model, mc, xnorm, n_neurons, device)
+            in_features_edge, in_features_edge_next = get_in_features_g_phi(x, model, mc, xnorm, n_neurons, device)
 
             if self._coeffs['edge_diff'] > 0:
-                if mc.lin_edge_positive:
-                    msg0 = model.lin_edge(in_features_edge[ids].clone().detach()) ** 2
-                    msg1 = model.lin_edge(in_features_edge_next[ids].clone().detach()) ** 2
+                if mc.g_phi_positive:
+                    msg0 = model.g_phi(in_features_edge[ids].clone().detach()) ** 2
+                    msg1 = model.g_phi(in_features_edge_next[ids].clone().detach()) ** 2
                 else:
-                    msg0 = model.lin_edge(in_features_edge[ids].clone().detach())
-                    msg1 = model.lin_edge(in_features_edge_next[ids].clone().detach())
+                    msg0 = model.g_phi(in_features_edge[ids].clone().detach())
+                    msg1 = model.g_phi(in_features_edge_next[ids].clone().detach())
                 regul_term = torch.relu(msg0 - msg1).norm(2) * self._coeffs['edge_diff']
                 total_regul = total_regul + regul_term
                 self._add('edge_diff', regul_term)
@@ -1399,10 +1397,10 @@ class LossRegularizer:
             if self._coeffs['edge_norm'] > 0:
                 in_features_edge_norm = in_features_edge.clone()
                 in_features_edge_norm[:, 0] = 2 * xnorm
-                if mc.lin_edge_positive:
-                    msg_norm = model.lin_edge(in_features_edge_norm[ids].clone().detach()) ** 2
+                if mc.g_phi_positive:
+                    msg_norm = model.g_phi(in_features_edge_norm[ids].clone().detach()) ** 2
                 else:
-                    msg_norm = model.lin_edge(in_features_edge_norm[ids].clone().detach())
+                    msg_norm = model.g_phi(in_features_edge_norm[ids].clone().detach())
                 # Different normalization target for signal vs flyvis
                 if self.trainer_type == 'signal':
                     regul_term = (msg_norm - 1).norm(2) * self._coeffs['edge_norm']
@@ -1492,14 +1490,14 @@ class LossRegularizer:
 
         # update_diff: for 'generic' update_type only
         if (self._coeffs['update_diff'] > 0) and (model.update_type == 'generic') and (x is not None):
-            in_features_edge, in_features_edge_next = get_in_features_lin_edge(
+            in_features_edge, in_features_edge_next = get_in_features_g_phi(
                 x, model, mc, xnorm, n_neurons, device)
-            if mc.lin_edge_positive:
-                msg0 = model.lin_edge(in_features_edge[ids].clone().detach()) ** 2
-                msg1 = model.lin_edge(in_features_edge_next[ids].clone().detach()) ** 2
+            if mc.g_phi_positive:
+                msg0 = model.g_phi(in_features_edge[ids].clone().detach()) ** 2
+                msg1 = model.g_phi(in_features_edge_next[ids].clone().detach()) ** 2
             else:
-                msg0 = model.lin_edge(in_features_edge[ids].clone().detach())
-                msg1 = model.lin_edge(in_features_edge_next[ids].clone().detach())
+                msg0 = model.g_phi(in_features_edge[ids].clone().detach())
+                msg1 = model.g_phi(in_features_edge_next[ids].clone().detach())
             in_feature_update = torch.cat((torch.zeros((n_neurons, 1), device=device),
                                            model.a[:n_neurons], msg0,
                                            torch.ones((n_neurons, 1), device=device)), dim=1)
@@ -1508,7 +1506,7 @@ class LossRegularizer:
                                                 model.a[:n_neurons], msg1,
                                                 torch.ones((n_neurons, 1), device=device)), dim=1)
             in_feature_update_next = in_feature_update_next[ids]
-            regul_term = torch.relu(model.lin_phi(in_feature_update) - model.lin_phi(in_feature_update_next)).norm(2) * self._coeffs['update_diff']
+            regul_term = torch.relu(model.f_theta(in_feature_update) - model.f_theta(in_feature_update_next)).norm(2) * self._coeffs['update_diff']
             total_regul = total_regul + regul_term
             self._add('update_diff', regul_term)
 
@@ -1516,27 +1514,18 @@ class LossRegularizer:
             return total_regul
 
         if self._coeffs['update_msg_diff'] > 0:
-            pred_msg = model.lin_phi(in_features.clone().detach())
+            pred_msg = model.f_theta(in_features.clone().detach())
             in_features_msg_next = in_features.clone().detach()
             in_features_msg_next[:, embedding_dim + 1] = in_features_msg_next[:, embedding_dim + 1] * 1.05
-            pred_msg_next = model.lin_phi(in_features_msg_next)
+            pred_msg_next = model.f_theta(in_features_msg_next)
             regul_term = torch.relu(pred_msg[ids_batch] - pred_msg_next[ids_batch]).norm(2) * self._coeffs['update_msg_diff']
             total_regul = total_regul + regul_term
             self._add('update_msg_diff', regul_term)
 
-        if self._coeffs['update_u_diff'] > 0:
-            pred_u = model.lin_phi(in_features.clone().detach())
-            in_features_u_next = in_features.clone().detach()
-            in_features_u_next[:, 0] = in_features_u_next[:, 0] * 1.05
-            pred_u_next = model.lin_phi(in_features_u_next)
-            regul_term = torch.relu(pred_u_next[ids_batch] - pred_u[ids_batch]).norm(2) * self._coeffs['update_u_diff']
-            total_regul = total_regul + regul_term
-            self._add('update_u_diff', regul_term)
-
         if self._coeffs['update_msg_sign'] > 0:
             in_features_modified = in_features.clone().detach()
             in_features_modified[:, 0] = 0
-            pred_msg = model.lin_phi(in_features_modified)
+            pred_msg = model.f_theta(in_features_modified)
             msg_col = in_features[:, embedding_dim + 1].clone().detach()
             regul_term = (torch.tanh(pred_msg / 0.1) - torch.tanh(msg_col.unsqueeze(-1) / 0.1)).norm(2) * self._coeffs['update_msg_sign']
             total_regul = total_regul + regul_term

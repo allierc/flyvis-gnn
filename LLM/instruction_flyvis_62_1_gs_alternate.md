@@ -12,7 +12,7 @@ Improve **V_rest R²** via two-stage training while maintaining gold standard **
 
 **Solution**: Two-stage training within each epoch:
 - **Joint phase** (first ~40% of iterations): all components at full LR — establish connectivity
-- **V_rest focus phase** (remaining ~60%): lin_phi + embedding at full LR, W + lin_edge at reduced LR (0.1x) — dedicated V_rest optimization while maintaining connectivity
+- **V_rest focus phase** (remaining ~60%): f_theta + embedding at full LR, W + g_phi at reduced LR (0.1x) — dedicated V_rest optimization while maintaining connectivity
 
 Double training time (2 epochs) vs gold standard baseline.
 
@@ -34,7 +34,7 @@ Always set both seeds in the config YAML and log them. When reporting variance, 
 Each epoch's Niter iterations are split into two phases:
 
 1. **Joint phase** (iterations 0 to `joint_iters`): All 4 parameter groups at full LR. Standard training — establishes connectivity (conn_R2 ≈ 0.85–0.90).
-2. **V_rest focus phase** (iterations `joint_iters` to `Niter`): lin_phi and embedding at full LR, W and lin_edge at `lr * alternate_lr_ratio`. Connectivity maintained via moderate LR, V_rest has dedicated optimization time.
+2. **V_rest focus phase** (iterations `joint_iters` to `Niter`): f_theta and embedding at full LR, W and g_phi at `lr * alternate_lr_ratio`. Connectivity maintained via moderate LR, V_rest has dedicated optimization time.
 
 `joint_iters = int(Niter * alternate_joint_ratio)`
 
@@ -42,9 +42,9 @@ Each epoch's Niter iterations are split into two phases:
 
 | Parameter Group | Joint phase LR | V_rest focus phase LR |
 |----------------|---------------|----------------------|
-| lin_edge (g_phi) | `learning_rate_start` (1.2E-3) | `lr * alternate_lr_ratio` (1.2E-4) |
+| g_phi (g_phi) | `learning_rate_start` (1.2E-3) | `lr * alternate_lr_ratio` (1.2E-4) |
 | W | `learning_rate_W_start` (5E-4) | `lr_W * alternate_lr_ratio` (5E-5) |
-| lin_phi (f_theta) | `learning_rate_start` (1.2E-3) | `learning_rate_start` (1.2E-3) |
+| f_theta (f_theta) | `learning_rate_start` (1.2E-3) | `learning_rate_start` (1.2E-3) |
 | embedding | `learning_rate_embedding_start` (1.55E-3) | `learning_rate_embedding_start` (1.55E-3) |
 
 ### Config Parameters (explorable)
@@ -52,7 +52,7 @@ Each epoch's Niter iterations are split into two phases:
 | Parameter | Default | Explore Range | Description |
 |-----------|---------|---------------|-------------|
 | `alternate_joint_ratio` | 0.4 | 0.2, 0.3, 0.4, 0.5, 0.6 | Fraction of total iterations for joint phase |
-| `alternate_lr_ratio` | 0.1 | 0.01, 0.05, 0.1, 0.2, 0.3 | LR multiplier for W/lin_edge during V_rest focus |
+| `alternate_lr_ratio` | 0.1 | 0.01, 0.05, 0.1, 0.2, 0.3 | LR multiplier for W/g_phi during V_rest focus |
 | `n_epochs` | 2 | 2, 3 | Number of epochs (doubled vs standard) |
 | `data_augmentation_loop` | 20 | 20, 25, 30 | Data augmentation multiplier |
 
@@ -83,7 +83,7 @@ epoch,iteration,connectivity_r2,vrest_r2,tau_r2,phase
 All strict optima from `instruction_flyvis_62_1_gs.md` apply:
 1. **lr_W=5E-4**, **lr=1.2E-3**, **lr_emb=1.55E-3** — strictly optimal for active-phase LRs
 2. **coeff_phi_weight_L2=0.0015**, **coeff_W_L2=3.5E-6** — gold standard regularization
-3. **coeff_edge_diff=750**, **coeff_phi_weight_L1=0.5**, **coeff_edge_weight_L1=0.28-0.3**
+3. **coeff_g_phi_diff=750**, **coeff_f_theta_weight_L1=0.5**, **coeff_g_phi_weight_L1=0.28-0.3**
 4. **batch_size=2**, **hidden_dim=80**, **w_init_mode=randn_scaled**
 5. **recurrent_training=False**
 

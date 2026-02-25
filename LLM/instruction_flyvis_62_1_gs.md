@@ -58,13 +58,13 @@ tau_i * dv_i(t)/dt = -v_i(t) + V_i^rest + sum_j W_ij * ReLU(v_j(t)) + I_i(t)
 ## GNN Architecture
 
 Two MLPs learn the neural dynamics:
-- **lin_edge** (g_phi): Edge message function. Maps (v_j, a_i) -> message. If `lin_edge_positive=True`, output is squared.
-- **lin_phi** (f_theta): Node update function. Maps (v_i, a_i, aggregated_messages, I_i) -> dv_i/dt.
+- **g_phi** (g_phi): Edge message function. Maps (v_j, a_i) -> message. If `g_phi_positive=True`, output is squared.
+- **f_theta** (f_theta): Node update function. Maps (v_i, a_i, aggregated_messages, I_i) -> dv_i/dt.
 - **Embedding a_i**: 2D learned embedding per neuron, encodes neuron type.
 
 Architecture parameters (explorable) — refer to `FlyVisGNN.PARAMS_DOC` for strict dependencies:
-- `hidden_dim` / `n_layers`: lin_edge MLP dimensions (default: 80 / 3)
-- `hidden_dim_update` / `n_layers_update`: lin_phi MLP dimensions (default: 80 / 3)
+- `hidden_dim` / `n_layers`: g_phi MLP dimensions (default: 80 / 3)
+- `hidden_dim_update` / `n_layers_update`: f_theta MLP dimensions (default: 80 / 3)
 - `embedding_dim`: embedding dimension (default: 2)
 
 **CRITICAL — coupled parameters**: `input_size`, `input_size_update`, and `embedding_dim` are linked. When changing `embedding_dim`, you MUST also update:
@@ -84,13 +84,13 @@ L = ||y_hat - y||_2 + lambda_0 * ||theta||_1 + lambda_1 * ||phi||_1 + lambda_2 *
 
 | Config parameter | Math symbol | Description | Default (gs) |
 |------------------|-------------|-------------|--------------|
-| `coeff_edge_diff` | lambda_0 | L1 on lin_phi (f_theta) parameters — encourages same-type edges to share weights | 750 |
-| `coeff_phi_weight_L1` | lambda_1 | L1 on lin_edge (g_phi) parameters — promotes sparsity | 0.5 |
+| `coeff_g_phi_diff` | lambda_0 | L1 on f_theta (f_theta) parameters — encourages same-type edges to share weights | 750 |
+| `coeff_f_theta_weight_L1` | lambda_1 | L1 on g_phi (g_phi) parameters — promotes sparsity | 0.5 |
 | `coeff_W_L1` | lambda_2 | L1 on learned W — promotes sparse connectivity | 5E-5 |
-| `coeff_phi_weight_L2` | gamma_1 | L2 on lin_edge (g_phi) parameters — stabilizes learned functions | 0.001 |
-| `coeff_edge_norm` | mu_0 | Monotonicity penalty on lin_edge — enforces dg/dv > 0 | 0.9 |
-| `coeff_edge_weight_L1` | - | L1 on lin_edge weights | 0.28 |
-| `coeff_phi_weight_L1_rate` | - | Decay rate for phi L1 penalty per epoch | 0.5 |
+| `coeff_phi_weight_L2` | gamma_1 | L2 on g_phi (g_phi) parameters — stabilizes learned functions | 0.001 |
+| `coeff_g_phi_norm` | mu_0 | Monotonicity penalty on g_phi — enforces dg/dv > 0 | 0.9 |
+| `coeff_g_phi_weight_L1` | - | L1 on g_phi weights | 0.28 |
+| `coeff_f_theta_weight_L1_rate` | - | Decay rate for phi L1 penalty per epoch | 0.5 |
 | `coeff_W_L1_rate` | - | Decay rate for W L1 penalty per epoch | 0.5 |
 | `coeff_W_L2` | - | L2 on learned W | 3E-6 |
 
@@ -120,16 +120,16 @@ These principles were established on **fixed data** (flyvis_62_1). A key goal of
 1. **lr_W=6E-4** — optimal; 5E-4/7E-4/8E-4/1E-3 all worse
 2. **lr=1.2E-3** — STRICTLY optimal; 1.0E-3/1.1E-3/1.4E-3 all catastrophic
 3. **lr_emb=1.55E-3** — STRICTLY optimal; 1.4E-3/1.52E-3/1.57E-3/1.6E-3/1.8E-3 all worse
-4. **coeff_edge_diff=750** — STRICTLY optimal; 600/700/800/1000/1250 all worse
-5. **coeff_phi_weight_L1=0.5** — STRICTLY optimal; 0.25/0.4/0.45/0.55/0.6/0.75 all worse
-6. **coeff_edge_weight_L1=0.28-0.3** — optimal range; 0.2/0.26/0.32/0.35 all worse
+4. **coeff_g_phi_diff=750** — STRICTLY optimal; 600/700/800/1000/1250 all worse
+5. **coeff_f_theta_weight_L1=0.5** — STRICTLY optimal; 0.25/0.4/0.45/0.55/0.6/0.75 all worse
+6. **coeff_g_phi_weight_L1=0.28-0.3** — optimal range; 0.2/0.26/0.32/0.35 all worse
 7. **coeff_phi_weight_L2=0.001** — must stay; 0.005 destroys tau_R2
 
 ### Confirmed Harmful
 8. **recurrent_training=True** — always harmful (V_rest/conn_R2 collapse, time exceeds limit)
 9. **n_layers=4 or n_layers_update=4** — harmful (training time + V_rest collapse)
 10. **batch_size >= 3** — V_rest collapse; batch_size=2 is upper limit
-11. **coeff_edge_norm >= 10** — catastrophic; must stay near 0.9-1.0
+11. **coeff_g_phi_norm >= 10** — catastrophic; must stay near 0.9-1.0
 12. **embedding_dim=4** — no improvement over 2
 
 ### Architecture
@@ -222,7 +222,7 @@ The main failure mode is: conn_R2 peaks early (~0.95-0.98) then **decays below 0
 - **Healthy training**: conn_R2 should increase monotonically or plateau. Typical pattern: fast rise to ~0.9 in the first third, then gradual climb to 0.95+. The final value should be close to the peak.
 - **Overshoot-then-decay** (the conn_R2 decay problem): conn_R2 peaks above 0.9 early but then **decreases** below 0.9 by end of training. This indicates the model is over-fitting to the prediction loss at the expense of the connectivity structure. **Flag this prominently in the observation.**
 - **When overshoot-then-decay is observed**:
-  - Stronger regularization may help (higher `coeff_edge_diff`, `coeff_W_L1`, `coeff_edge_weight_L1`)
+  - Stronger regularization may help (higher `coeff_g_phi_diff`, `coeff_W_L1`, `coeff_g_phi_weight_L1`)
   - Lower learning rates (especially `lr_W`) slow the drift away from good connectivity
   - Note the **peak conn_R2**, the **iteration of the peak**, and the **final conn_R2** in the log entry
   - A config where conn_R2 monotonically reaches 0.93 is more reliable than one that peaks at 0.97 but ends at 0.88
@@ -253,7 +253,7 @@ Append to Full Log (`{config}_analysis.md`) and **Current Block** sections of `{
 ## Iter N: [converged/partial/failed]
 Node: id=N, parent=P
 Mode/Strategy: [exploit/explore/boundary/robustness-check]
-Config: lr_W=X, lr=Y, lr_emb=Z, coeff_edge_diff=A, coeff_W_L1=B, batch_size=C, hidden_dim=D, recurrent=[T/F]
+Config: lr_W=X, lr=Y, lr_emb=Z, coeff_g_phi_diff=A, coeff_W_L1=B, batch_size=C, hidden_dim=D, recurrent=[T/F]
 Metrics: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, test_pearson=F, training_time_min=G
 R2 trajectory: peak=X at iter Y, final=Z, trend=[rising/stable/decaying]
 Embedding: [visual observation, e.g., "65 types partially separated" or "no separation"]

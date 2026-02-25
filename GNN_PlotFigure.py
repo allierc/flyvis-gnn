@@ -59,8 +59,8 @@ from flyvis_gnn.plot import (
     _batched_mlp_eval,
     _vectorized_linear_fit,
     _plot_curves_fast,
-    _build_lin_edge_features,
-    _build_lin_phi_features,
+    _build_g_phi_features,
+    _build_f_theta_features,
 )
 from flyvis_gnn.generators.flyvis_ode import FlyVisODE
 from flyvis_gnn.config import NeuralGraphConfig
@@ -224,22 +224,22 @@ def determine_plot_limits_signal(config, log_dir, n_runs, device, n_neurons, typ
     # Collect ranges
     weight_min, weight_max = [], []
     embedding_min, embedding_max = [], []
-    lin_edge_min, lin_edge_max = [], []
-    lin_phi_min, lin_phi_max = [], []
+    g_phi_min, g_phi_max = [], []
+    f_theta_min, f_theta_max = [], []
 
     # Compute true model limits first if available
     rr = torch.linspace(-xnorm.squeeze(), xnorm.squeeze(), 100).to(device)
     if true_model is not None:
         with torch.no_grad():
             for n in range(n_neuron_types):
-                # True lin_edge (phi) limits
+                # True g_phi (phi) limits
                 true_func = true_model.func(rr, n, 'phi')
-                lin_edge_min.append(to_numpy(true_func).min())
-                lin_edge_max.append(to_numpy(true_func).max())
-                # True lin_phi (update) limits
+                g_phi_min.append(to_numpy(true_func).min())
+                g_phi_max.append(to_numpy(true_func).max())
+                # True f_theta (update) limits
                 true_func = true_model.func(rr, n, 'update')
-                lin_phi_min.append(to_numpy(true_func).min())
-                lin_phi_max.append(to_numpy(true_func).max())
+                f_theta_min.append(to_numpy(true_func).min())
+                f_theta_max.append(to_numpy(true_func).max())
 
     with torch.no_grad():
         for idx in sample_indices:
@@ -247,6 +247,7 @@ def determine_plot_limits_signal(config, log_dir, n_runs, device, n_neurons, typ
             epoch = files[file_id].split('graphs')[1][1:-3]
             net = f"{log_dir}/models/best_model_with_{n_runs-1}_graphs_{epoch}.pt"
             state_dict = torch.load(net, map_location=device)
+            state_dict['model_state_dict'] = {k.replace('lin_edge.', 'g_phi.').replace('lin_phi.', 'f_theta.'): v for k, v in state_dict['model_state_dict'].items()}
             model.load_state_dict(state_dict['model_state_dict'])
             model.eval()
 
@@ -268,11 +269,11 @@ def determine_plot_limits_signal(config, log_dir, n_runs, device, n_neurons, typ
             if model_name in ['PDE_N2', 'PDE_N3', 'PDE_N6']:
                 # Simple models: single input
                 in_features = rr[:, None]
-                func = model.lin_edge(in_features.float())
-                if config.graph_model.lin_edge_positive:
+                func = model.g_phi(in_features.float())
+                if config.graph_model.g_phi_positive:
                     func = func ** 2
-                lin_edge_min.append(to_numpy(func).min())
-                lin_edge_max.append(to_numpy(func).max())
+                g_phi_min.append(to_numpy(func).min())
+                g_phi_max.append(to_numpy(func).max())
             else:
                 # Models with embeddings (PDE_N4, PDE_N5, PDE_N7, PDE_N8, PDE_N11, etc.)
                 for n in range(min(10, n_neurons)):
@@ -285,27 +286,27 @@ def determine_plot_limits_signal(config, log_dir, n_runs, device, n_neurons, typ
                         in_features = torch.cat((rr[:, None]*0, rr[:, None], embedding_, embedding_), dim=1)
                     else:
                         in_features = torch.cat((rr[:, None], embedding_), dim=1)
-                    func = model.lin_edge(in_features.float())
-                    if config.graph_model.lin_edge_positive:
+                    func = model.g_phi(in_features.float())
+                    if config.graph_model.g_phi_positive:
                         func = func ** 2
-                    lin_edge_min.append(to_numpy(func).min())
-                    lin_edge_max.append(to_numpy(func).max())
+                    g_phi_min.append(to_numpy(func).min())
+                    g_phi_max.append(to_numpy(func).max())
 
             # Lin_phi limits
             for n in range(min(10, n_neurons)):
                 embedding_ = model.a[n, :] * torch.ones((100, config.graph_model.embedding_dim), device=device)
                 in_features = get_in_features_update(rr[:, None], model, embedding_, device)
-                func = model.lin_phi(in_features.float())
-                lin_phi_min.append(to_numpy(func).min() * to_numpy(ynorm))
-                lin_phi_max.append(to_numpy(func).max() * to_numpy(ynorm))
+                func = model.f_theta(in_features.float())
+                f_theta_min.append(to_numpy(func).min() * to_numpy(ynorm))
+                f_theta_max.append(to_numpy(func).max() * to_numpy(ynorm))
 
     # Add margins
     margin = 0.1
     limits = {
         'weight': (min(weight_min) * (1 + margin), max(weight_max) * (1 + margin)),
         'embedding': (-0.1, 1.1),
-        'lin_edge': (min(lin_edge_min) * (1 + margin) - 0.1, max(lin_edge_max) * (1 + margin) + 0.1),
-        'lin_phi': (min(lin_phi_min) * (1 + margin) - 0.5, max(lin_phi_max) * (1 + margin) + 0.5),
+        'g_phi': (min(g_phi_min) * (1 + margin) - 0.1, max(g_phi_max) * (1 + margin) + 0.1),
+        'f_theta': (min(f_theta_min) * (1 + margin) - 0.5, max(f_theta_max) * (1 + margin) + 0.5),
     }
 
     return limits
@@ -344,8 +345,8 @@ def create_signal_weight_subplot(fig, ax, model, connectivity, mc, epoch, iterat
             else:
                 in_features = rr[:, None]
             with torch.no_grad():
-                func = model.lin_edge(in_features.float())
-            if config.graph_model.lin_edge_positive:
+                func = model.g_phi(in_features.float())
+            if config.graph_model.g_phi_positive:
                 func = func ** 2
             func_list.append(func)
         func_list = torch.stack(func_list).squeeze()
@@ -427,8 +428,8 @@ def create_signal_embedding_subplot(fig, ax, model, type_list, n_neuron_types, c
     ax.tick_params(labelsize=16)
 
 
-def create_signal_lin_edge_subplot(fig, ax, model, config, n_neurons, type_list, cmap, device, xnorm, limits, mc, label_style='MLP', true_model=None, n_neuron_types=1, apply_weight_correction=False):
-    """Create lin_edge function plot for signal models.
+def create_signal_g_phi_subplot(fig, ax, model, config, n_neurons, type_list, cmap, device, xnorm, limits, mc, label_style='MLP', true_model=None, n_neuron_types=1, apply_weight_correction=False):
+    """Create g_phi function plot for signal models.
 
     Args:
         label_style: 'MLP' for MLP_0, MLP_1 labels; 'greek' for phi, f labels
@@ -470,8 +471,8 @@ def create_signal_lin_edge_subplot(fig, ax, model, config, n_neurons, type_list,
         # Simple models: single line, single input
         in_features = rr[:, None]
         with torch.no_grad():
-            func = model.lin_edge(in_features.float())
-        if config.graph_model.lin_edge_positive:
+            func = model.g_phi(in_features.float())
+        if config.graph_model.g_phi_positive:
             func = func ** 2
         ax.plot(to_numpy(rr), to_numpy(func) / norm_factor, color='w', linewidth=4)
     else:
@@ -493,8 +494,8 @@ def create_signal_lin_edge_subplot(fig, ax, model, config, n_neurons, type_list,
                 else:
                     in_features = rr[:,None]
                 with torch.no_grad():
-                    func = model.lin_edge(in_features.float())
-                if config.graph_model.lin_edge_positive:
+                    func = model.g_phi(in_features.float())
+                if config.graph_model.g_phi_positive:
                     func = func ** 2
                 func_list.append(func)
             func_list = torch.stack(func_list).squeeze()
@@ -522,10 +523,10 @@ def create_signal_lin_edge_subplot(fig, ax, model, config, n_neurons, type_list,
                 else:
                     in_features = rr[:, None]
                 with torch.no_grad():
-                    if config.graph_model.lin_edge_positive:
-                        func = model.lin_edge(in_features.float()) ** 2 * correction[n]
+                    if config.graph_model.g_phi_positive:
+                        func = model.g_phi(in_features.float()) ** 2 * correction[n]
                     else:
-                        func = model.lin_edge(in_features.float()) * correction[n]
+                        func = model.g_phi(in_features.float()) * correction[n]
                 plt.plot(to_numpy(rr), to_numpy(func), color='w', linewidth=1, alpha=0.25)
         else:
             # No correction: plot raw functions
@@ -533,8 +534,8 @@ def create_signal_lin_edge_subplot(fig, ax, model, config, n_neurons, type_list,
                 embedding_ = model.a[n, :] * torch.ones((1000, config.graph_model.embedding_dim), device=device)
                 in_features = get_in_features(rr, embedding_, model, model_name, max_radius)
                 with torch.no_grad():
-                    func = model.lin_edge(in_features.float())
-                if config.graph_model.lin_edge_positive:
+                    func = model.g_phi(in_features.float())
+                if config.graph_model.g_phi_positive:
                     func = func ** 2
                 ax.plot(to_numpy(rr), to_numpy(func),
                        color='w', linewidth=1, alpha=0.25)
@@ -558,8 +559,8 @@ def create_signal_lin_edge_subplot(fig, ax, model, config, n_neurons, type_list,
     ax.tick_params(labelsize=16)
 
 
-def create_signal_lin_phi_subplot(fig, ax, model, config, n_neurons, type_list, cmap, device, xnorm, ynorm, limits, label_style='MLP', true_model=None, n_neuron_types=1):
-    """Create lin_phi function plot for signal models.
+def create_signal_f_theta_subplot(fig, ax, model, config, n_neurons, type_list, cmap, device, xnorm, ynorm, limits, label_style='MLP', true_model=None, n_neuron_types=1):
+    """Create f_theta function plot for signal models.
 
     Args:
         label_style: 'MLP' for MLP_0, MLP_1 labels; 'greek' for phi, f labels
@@ -580,7 +581,7 @@ def create_signal_lin_phi_subplot(fig, ax, model, config, n_neurons, type_list, 
         embedding_ = model.a[n, :] * torch.ones((1000, config.graph_model.embedding_dim), device=device)
         in_features = get_in_features_update(rr[:, None], model, embedding_, device)
         with torch.no_grad():
-            func = model.lin_phi(in_features.float())
+            func = model.f_theta(in_features.float())
         func = func[:, 0]
         ax.plot(to_numpy(rr), to_numpy(func) * to_numpy(ynorm),
                color='w', linewidth=1, alpha=0.3)
@@ -627,7 +628,7 @@ def create_signal_excitation_subplot(fig, ax, model, config, n_frames, mc, devic
         excitation_field = model.NNR_f(kk[:, None])
         model_a = model.a[-1] * torch.ones((n_frames, 1), device=device)
         in_features = torch.cat([excitation_field, model_a], dim=1)
-        msg = model.lin_edge(in_features)
+        msg = model.g_phi(in_features)
 
     msg_raw = to_numpy(msg.squeeze())
     frame_ = np.arange(0, len(msg_raw)) / len(msg_raw)
@@ -738,6 +739,11 @@ def load_model_state(model, net_path, device):
         model: Model with loaded state in eval mode
     """
     state_dict = torch.load(net_path, map_location=device)
+    # Migrate old checkpoint keys: lin_edge→g_phi, lin_phi→f_theta
+    state_dict['model_state_dict'] = {
+        k.replace('lin_edge.', 'g_phi.').replace('lin_phi.', 'f_theta.'): v
+        for k, v in state_dict['model_state_dict'].items()
+    }
     model.load_state_dict(state_dict['model_state_dict'])
     model.eval()
     return model
@@ -818,8 +824,8 @@ def create_signal_movies(config, log_dir, n_runs, device, n_neurons, n_neuron_ty
     movie_configs = [
         ('weights', (8, 8), 'weight'),
         ('embedding', (8, 8), 'embedding'),
-        ('lin_edge', (8, 8), 'lin_edge'),
-        ('lin_phi', (8, 8), 'lin_phi'),
+        ('g_phi', (8, 8), 'g_phi'),
+        ('f_theta', (8, 8), 'f_theta'),
     ]
 
     r_squared_list = []
@@ -858,13 +864,13 @@ def create_signal_movies(config, log_dir, n_runs, device, n_neurons, n_neuron_ty
                             slope_list.append(slope)
                     elif plot_type == 'embedding':
                         create_signal_embedding_subplot(fig, ax, model, type_list, n_neuron_types, cmap, limits)
-                    elif plot_type == 'lin_edge':
-                        create_signal_lin_edge_subplot(fig, ax, model, config, n_neurons, type_list,
+                    elif plot_type == 'g_phi':
+                        create_signal_g_phi_subplot(fig, ax, model, config, n_neurons, type_list,
                                                        cmap, device, xnorm, limits, mc, label_style,
                                                        true_model=true_model, n_neuron_types=n_neuron_types,
                                                        apply_weight_correction=apply_weight_correction)
-                    elif plot_type == 'lin_phi':
-                        create_signal_lin_phi_subplot(fig, ax, model, config, n_neurons, type_list,
+                    elif plot_type == 'f_theta':
+                        create_signal_f_theta_subplot(fig, ax, model, config, n_neurons, type_list,
                                                       cmap, device, xnorm, ynorm, limits, label_style,
                                                       true_model=true_model, n_neuron_types=n_neuron_types)
 
@@ -912,13 +918,13 @@ def create_signal_movies(config, log_dir, n_runs, device, n_neurons, n_neuron_ty
 
                 # Lin_phi subplot (bottom-left) - MLP0
                 ax3 = fig.add_subplot(2, 2, 3)
-                create_signal_lin_phi_subplot(fig, ax3, model, config, n_neurons, type_list,
+                create_signal_f_theta_subplot(fig, ax3, model, config, n_neurons, type_list,
                                               cmap, device, xnorm, ynorm, limits, label_style,
                                               true_model=true_model, n_neuron_types=n_neuron_types)
 
                 # Lin_edge subplot (bottom-right) - MLP1
                 ax4 = fig.add_subplot(2, 2, 4)
-                create_signal_lin_edge_subplot(fig, ax4, model, config, n_neurons, type_list,
+                create_signal_g_phi_subplot(fig, ax4, model, config, n_neurons, type_list,
                                                cmap, device, xnorm, limits, mc, label_style,
                                                true_model=true_model, n_neuron_types=n_neuron_types,
                                                apply_weight_correction=apply_weight_correction)
@@ -1159,12 +1165,14 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                 net = f"{log_dir}/models/best_model_with_{tc.n_runs-1}_graphs_{epoch}.pt"
 
                 state_dict = torch.load(net, map_location=device)
+                state_dict['model_state_dict'] = {k.replace('lin_edge.', 'g_phi.').replace('lin_phi.', 'f_theta.'): v for k, v in state_dict['model_state_dict'].items()}
                 model.load_state_dict(state_dict['model_state_dict'])
                 model.eval()
 
                 if has_external_input:
                     net = f'{log_dir}/models/best_model_f_with_{tc.n_runs-1}_graphs_{epoch}.pt'
                     state_dict = torch.load(net, map_location=device)
+                    state_dict['model_state_dict'] = {k.replace('lin_edge.', 'g_phi.').replace('lin_phi.', 'f_theta.'): v for k, v in state_dict['model_state_dict'].items()}
                     model_f.load_state_dict(state_dict['model_state_dict'])
 
                 amax = torch.max(model.a, dim=0).values
@@ -1225,7 +1233,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                     embedding_ = model.a[n, :] * torch.ones((1000, config.graph_model.embedding_dim), device=device)
                     in_features = get_in_features_update(rr[:, None], model, embedding_, device)
                     with torch.no_grad():
-                        func = model.lin_phi(in_features.float())
+                        func = model.f_theta(in_features.float())
                     func = func[:, 0]
                     plt.plot(to_numpy(rr), to_numpy(func) * to_numpy(ynorm), color=cmap.color(to_numpy(type_list[n]).astype(int)), linewidth=2, alpha=0.25)
                 plt.ylim([-4, 4])
@@ -1522,6 +1530,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
             net = f'{log_dir}/models/best_model_with_{tc.n_runs-1}_graphs_{epoch}.pt'
             model, bc_pos, bc_dpos = _create_learned_model(config, device)
             state_dict = torch.load(net, map_location=device)
+            state_dict['model_state_dict'] = {k.replace('lin_edge.', 'g_phi.').replace('lin_phi.', 'f_theta.'): v for k, v in state_dict['model_state_dict'].items()}
             model.load_state_dict(state_dict['model_state_dict'])
             model.edges = edge_index
 
@@ -1533,16 +1542,17 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
             if has_external_input:
                 net = f'{log_dir}/models/best_model_f_with_{tc.n_runs - 1}_graphs_{epoch}.pt'
                 state_dict = torch.load(net, map_location=device)
+                state_dict['model_state_dict'] = {k.replace('lin_edge.', 'g_phi.').replace('lin_phi.', 'f_theta.'): v for k, v in state_dict['model_state_dict'].items()}
                 model_f.load_state_dict(state_dict['model_state_dict'])
 
             # print learnable parameters table
-            mlp0_params = sum(p.numel() for p in model.lin_phi.parameters())
-            mlp1_params = sum(p.numel() for p in model.lin_edge.parameters())
+            mlp0_params = sum(p.numel() for p in model.f_theta.parameters())
+            mlp1_params = sum(p.numel() for p in model.g_phi.parameters())
             a_params = model.a.numel()
             w_params = get_model_W(model).numel()
             print('learnable parameters:')
-            print(f'  MLP0 (lin_phi): {mlp0_params:,}')
-            print(f'  MLP1 (lin_edge): {mlp1_params:,}')
+            print(f'  MLP0 (f_theta): {mlp0_params:,}')
+            print(f'  MLP1 (g_phi): {mlp1_params:,}')
             print(f'  a (embeddings): {a_params:,}')
             print(f'  W (connectivity): {w_params:,}')
             total_params = mlp0_params + mlp1_params + a_params + w_params
@@ -1651,8 +1661,8 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                 else:
                     in_features = rr[:,None]
                 with torch.no_grad():
-                    func = model.lin_edge(in_features.float())
-                if config.graph_model.lin_edge_positive:
+                    func = model.g_phi(in_features.float())
+                if config.graph_model.g_phi_positive:
                     func = func ** 2
                 func_list.append(func)
             func_list = torch.stack(func_list).squeeze()
@@ -1682,7 +1692,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                 else:
                     in_features = rr[:, None]
                 with torch.no_grad():
-                    func = model.lin_edge(in_features.float()) ** 2 if config.graph_model.lin_edge_positive else model.lin_edge(in_features.float())
+                    func = model.g_phi(in_features.float()) ** 2 if config.graph_model.g_phi_positive else model.g_phi(in_features.float())
                 func_vals.append(func)
                 plt.plot(to_numpy(rr), to_numpy(func), color='w', linewidth=1, alpha=0.25)
             func_vals = torch.stack(func_vals)
@@ -1730,10 +1740,10 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                 else:
                     in_features = rr[:, None]
                 with torch.no_grad():
-                    if config.graph_model.lin_edge_positive:
-                        func = model.lin_edge(in_features.float()) ** 2 * correction[n]
+                    if config.graph_model.g_phi_positive:
+                        func = model.g_phi(in_features.float()) ** 2 * correction[n]
                     else:
-                        func = model.lin_edge(in_features.float()) * correction[n]
+                        func = model.g_phi(in_features.float()) * correction[n]
                 if line_color is None:
                     neuron_type = int(to_numpy(type_list[n]).item())
                     plt.plot(to_numpy(rr), to_numpy(func), color=cmap.color(neuron_type), linewidth=1, alpha=line_alpha)
@@ -1782,7 +1792,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                 embedding_ = model.a[n, :] * torch.ones((1500, config.graph_model.embedding_dim), device=device)
                 in_features = get_in_features_update(rr[:, None], model, embedding_, device)
                 with torch.no_grad():
-                    func = model.lin_phi(in_features.float())
+                    func = model.f_theta(in_features.float())
                 func = func[:, 0]
                 phi_list.append(func)
                 if line_color is None:
@@ -2333,7 +2343,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                                 m_ = model_f(t) ** 2
                                 m_ = m_[:,None]
                                 in_features= torch.cat((torch.zeros_like(m_), torch.ones_like(m_)*xnorm, m_), dim=1)
-                                m = model.lin_phi2(in_features)
+                                m = model.f_theta2(in_features)
                         else:
                             m = model_f(t) ** 2
 
@@ -2409,6 +2419,7 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
                 else:
                     net = f'{log_dir}/models/best_model_f_with_{tc.n_runs - 1}_graphs_{epoch}.pt'
                     state_dict = torch.load(net, map_location=device)
+                    state_dict['model_state_dict'] = {k.replace('lin_edge.', 'g_phi.').replace('lin_phi.', 'f_theta.'): v for k, v in state_dict['model_state_dict'].items()}
                     model_f.load_state_dict(state_dict['model_state_dict'])
                     im = imread(graphs_data_path(config.simulation.node_value_map))
 
@@ -2734,19 +2745,20 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
             net = f'{log_dir}/models/best_model_with_{tc.n_runs - 1}_graphs_{epoch}.pt'
             model = FlyVisGNN(aggr_type=model_config.aggr_type, config=config, device=device)
             state_dict = torch.load(net, map_location=device)
+            state_dict['model_state_dict'] = {k.replace('lin_edge.', 'g_phi.').replace('lin_phi.', 'f_theta.'): v for k, v in state_dict['model_state_dict'].items()}
             model.load_state_dict(state_dict['model_state_dict'])
             model.edges = edges
 
             logger.info(f'net: {net}')
 
             # print learnable parameters table
-            mlp0_params = sum(p.numel() for p in model.lin_phi.parameters())
-            mlp1_params = sum(p.numel() for p in model.lin_edge.parameters())
+            mlp0_params = sum(p.numel() for p in model.f_theta.parameters())
+            mlp1_params = sum(p.numel() for p in model.g_phi.parameters())
             a_params = model.a.numel()
             w_params = get_model_W(model).numel()
             print('learnable parameters:')
-            print(f'  MLP0 (lin_phi): {mlp0_params:,}')
-            print(f'  MLP1 (lin_edge): {mlp1_params:,}')
+            print(f'  MLP0 (f_theta): {mlp0_params:,}')
+            print(f'  MLP1 (g_phi): {mlp1_params:,}')
             print(f'  a (embeddings): {a_params:,}')
             print(f'  W (connectivity): {w_params:,}')
             total_params = mlp0_params + mlp1_params + a_params + w_params
@@ -2797,9 +2809,9 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
             n_pts = 1000
             rr_1d = torch.linspace(config.plotting.xlim[0], config.plotting.xlim[1], n_pts, device=device)
             rr_all = rr_1d.unsqueeze(0).expand(n_neurons, -1)
-            post_fn = (lambda x: x ** 2) if model_config.lin_edge_positive else None
-            build_fn = lambda rr_f, emb_f: _build_lin_edge_features(rr_f, emb_f, model_config.signal_model_name)
-            func_all = _batched_mlp_eval(model.lin_edge, model.a[:n_neurons], rr_all,
+            post_fn = (lambda x: x ** 2) if model_config.g_phi_positive else None
+            build_fn = lambda rr_f, emb_f: _build_g_phi_features(rr_f, emb_f, model_config.signal_model_name)
+            func_all = _batched_mlp_eval(model.g_phi, model.a[:n_neurons], rr_all,
                                          build_fn, device, post_fn=post_fn)
             type_np = to_numpy(type_list).astype(int).ravel()
             _plot_curves_fast(ax, to_numpy(rr_1d), to_numpy(func_all), type_np, cmap, linewidth=1, alpha=0.1)
@@ -2814,7 +2826,7 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
             plt.close()
 
 
-            # lin_edge domain range: evaluate + slope extraction (vectorized)
+            # g_phi domain range: evaluate + slope extraction (vectorized)
             mu = to_numpy(mu_activity).astype(np.float32)
             sigma = to_numpy(sigma_activity).astype(np.float32)
 
@@ -2835,11 +2847,11 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
             starts_edge[~valid_edge] = 0.0
             ends_edge[~valid_edge] = 1.0
             rr_domain_edge = _vectorized_linspace(starts_edge, ends_edge, n_pts, device)
-            func_domain_edge = _batched_mlp_eval(model.lin_edge, model.a[:n_neurons], rr_domain_edge,
+            func_domain_edge = _batched_mlp_eval(model.g_phi, model.a[:n_neurons], rr_domain_edge,
                                                  build_fn, device, post_fn=post_fn)
             slopes_edge, _ = _vectorized_linear_fit(rr_domain_edge, func_domain_edge)
             slopes_edge[~valid_edge] = 1.0
-            slopes_lin_edge_list = slopes_edge  # (N,) numpy array
+            slopes_g_phi_list = slopes_edge  # (N,) numpy array
 
             fig = plt.figure(figsize=(10, 9))
             ax = plt.gca()
@@ -2863,8 +2875,8 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
             ax = plt.gca()
             for spine in ax.spines.values():
                 spine.set_alpha(0.75)
-            slopes_lin_edge_array = np.array(slopes_lin_edge_list)
-            plt.scatter(np.arange(n_neurons), slopes_lin_edge_array,
+            slopes_g_phi_array = np.array(slopes_g_phi_list)
+            plt.scatter(np.arange(n_neurons), slopes_g_phi_array,
                         c=cmap.color(to_numpy(type_list).astype(int)), s=2, alpha=0.5)
             plt.xlabel('neuron index', fontsize=48)
             plt.ylabel(r'$r_j$', fontsize=48)
@@ -2881,8 +2893,8 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
             ax = plt.gca()
             rr_phi_1d = torch.linspace(config.plotting.xlim[0], config.plotting.xlim[1], n_pts, device=device)
             rr_phi_all = rr_phi_1d.unsqueeze(0).expand(n_neurons, -1)
-            func_phi_all = _batched_mlp_eval(model.lin_phi, model.a[:n_neurons], rr_phi_all,
-                                             lambda rr_f, emb_f: _build_lin_phi_features(rr_f, emb_f), device)
+            func_phi_all = _batched_mlp_eval(model.f_theta, model.a[:n_neurons], rr_phi_all,
+                                             lambda rr_f, emb_f: _build_f_theta_features(rr_f, emb_f), device)
             _plot_curves_fast(ax, to_numpy(rr_phi_1d), to_numpy(func_phi_all), type_np, cmap, linewidth=1, alpha=0.1)
             plt.xlim([-2.5,2.5])
             plt.ylim([-100,100])
@@ -2894,14 +2906,14 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
             plt.savefig(f"{log_dir}/results/MLP0_{config_indices}.png", dpi=300)
             plt.close()
 
-            # lin_phi domain range: evaluate + slope extraction (vectorized)
+            # f_theta domain range: evaluate + slope extraction (vectorized)
             starts_phi = mu - 2 * sigma
             ends_phi = mu + 2 * sigma
             rr_domain_phi = _vectorized_linspace(starts_phi, ends_phi, n_pts, device)
-            func_domain_phi = _batched_mlp_eval(model.lin_phi, model.a[:n_neurons], rr_domain_phi,
-                                                lambda rr_f, emb_f: _build_lin_phi_features(rr_f, emb_f), device)
+            func_domain_phi = _batched_mlp_eval(model.f_theta, model.a[:n_neurons], rr_domain_phi,
+                                                lambda rr_f, emb_f: _build_f_theta_features(rr_f, emb_f), device)
             slopes_phi, offsets_phi = _vectorized_linear_fit(rr_domain_phi, func_domain_phi)
-            slopes_lin_phi_list = slopes_phi  # (N,) numpy array
+            slopes_f_theta_list = slopes_phi  # (N,) numpy array
             offsets_list = offsets_phi
 
             fig = plt.figure(figsize=(10, 9))
@@ -2918,10 +2930,10 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
             plt.savefig(f"{log_dir}/results/MLP0_{config_indices}_domain.png", dpi=300)
             plt.close()
 
-            slopes_lin_phi_array = np.array(slopes_lin_phi_list)
+            slopes_f_theta_array = np.array(slopes_f_theta_list)
             offsets_array = np.array(offsets_list)
             gt_taus = to_numpy(gt_taus[:n_neurons])
-            learned_tau = np.where(slopes_lin_phi_array != 0, 1.0 / -slopes_lin_phi_array, 1)
+            learned_tau = np.where(slopes_f_theta_array != 0, 1.0 / -slopes_f_theta_array, 1)
             learned_tau = learned_tau[:n_neurons]
             learned_tau = np.clip(learned_tau, 0, 1)
 
@@ -2946,7 +2958,7 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
 
 
             # V_rest comparison (reconstructed vs ground truth)
-            learned_V_rest = np.where(slopes_lin_phi_array != 0, -offsets_array / slopes_lin_phi_array, 1)
+            learned_V_rest = np.where(slopes_f_theta_array != 0, -offsets_array / slopes_f_theta_array, 1)
             learned_V_rest = learned_V_rest[:n_neurons]
             gt_V_rest = to_numpy(gt_V_Rest[:n_neurons])
             fig = plt.figure(figsize=(10, 9))
@@ -3083,7 +3095,7 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
                     batch_state = NeuronState.from_numpy(batch.x)
                     pred, in_features, msg = model(batch_state, batch.edge_index, data_id=data_id, mask=mask_batch, return_all=True)
 
-            # Extract features and compute gradient of lin_phi w.r.t. msg
+            # Extract features and compute gradient of f_theta w.r.t. msg
             ed = model_config.embedding_dim
             v = in_features[:, 0:1].clone().detach()
             embedding = in_features[:, 1:1+ed].clone().detach()
@@ -3097,8 +3109,8 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
             msg.requires_grad_(True)
             # Concatenate input features for the final layer
             in_features_grad = torch.cat([v, embedding, msg, excitation], dim=1)
-            # Run lin_phi outside no_grad context to build computation graph
-            out = model.lin_phi(in_features_grad)
+            # Run f_theta outside no_grad context to build computation graph
+            out = model.f_theta(in_features_grad)
 
             grad_msg = torch.autograd.grad(
                 outputs=out,
@@ -3145,16 +3157,16 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
             grad_msg_per_edge = grad_msg_flat[target_neuron_ids]
             grad_msg_per_edge = grad_msg_per_edge.unsqueeze(1)  # [434112, 1]
 
-            slopes_lin_phi_array = torch.tensor(slopes_lin_phi_array, dtype=torch.float32, device=device)
-            slopes_lin_phi_per_edge = slopes_lin_phi_array[target_neuron_ids]
+            slopes_f_theta_array = torch.tensor(slopes_f_theta_array, dtype=torch.float32, device=device)
+            slopes_f_theta_per_edge = slopes_f_theta_array[target_neuron_ids]
 
-            slopes_lin_edge_array = np.array(slopes_lin_edge_list)
-            slopes_lin_edge_array = torch.tensor(slopes_lin_edge_array, dtype=torch.float32, device=device)
+            slopes_g_phi_array = np.array(slopes_g_phi_list)
+            slopes_g_phi_array = torch.tensor(slopes_g_phi_array, dtype=torch.float32, device=device)
             prior_neuron_ids = edges[0, :] % (model.n_edges + model.n_extra_null_edges)  # j
-            slopes_lin_edge_per_edge = slopes_lin_edge_array[prior_neuron_ids]
+            slopes_g_phi_per_edge = slopes_g_phi_array[prior_neuron_ids]
 
-            corrected_W_ = -get_model_W(model) / slopes_lin_phi_per_edge[:, None] * grad_msg_per_edge
-            corrected_W = -get_model_W(model) / slopes_lin_phi_per_edge[:, None] * grad_msg_per_edge * slopes_lin_edge_per_edge.unsqueeze(1)
+            corrected_W_ = -get_model_W(model) / slopes_f_theta_per_edge[:, None] * grad_msg_per_edge
+            corrected_W = -get_model_W(model) / slopes_f_theta_per_edge[:, None] * grad_msg_per_edge * slopes_g_phi_per_edge.unsqueeze(1)
             torch.save(corrected_W, f'{log_dir}/results/corrected_W.pt')
 
             learned_weights = to_numpy(corrected_W.squeeze())

@@ -30,13 +30,13 @@ tau_i * dv_i(t)/dt = -v_i(t) + V_i^rest + sum_j W_ij * ReLU(v_j(t)) + I_i(t)
 ## GNN Architecture
 
 Two MLPs learn the neural dynamics:
-- **lin_edge** (g_phi): Edge message function. Maps (v_j, a_i) -> message. If `lin_edge_positive=True`, output is squared.
-- **lin_phi** (f_theta): Node update function. Maps (v_i, a_i, aggregated_messages, I_i) -> dv_i/dt.
+- **g_phi** (g_phi): Edge message function. Maps (v_j, a_i) -> message. If `g_phi_positive=True`, output is squared.
+- **f_theta** (f_theta): Node update function. Maps (v_i, a_i, aggregated_messages, I_i) -> dv_i/dt.
 - **Embedding a_i**: 2D learned embedding per neuron, encodes neuron type.
 
 Architecture parameters (explorable) — refer to `Signal_Propagation_FlyVis.PARAMS_DOC` for strict dependencies:
-- `hidden_dim` / `n_layers`: lin_edge MLP dimensions (default: 64 / 3)
-- `hidden_dim_update` / `n_layers_update`: lin_phi MLP dimensions (default: 64 / 3)
+- `hidden_dim` / `n_layers`: g_phi MLP dimensions (default: 64 / 3)
+- `hidden_dim_update` / `n_layers_update`: f_theta MLP dimensions (default: 64 / 3)
 - `embedding_dim`: embedding dimension (default: 2)
 
 **CRITICAL — coupled parameters**: `input_size`, `input_size_update`, and `embedding_dim` are linked. When changing `embedding_dim`, you MUST also update:
@@ -56,13 +56,13 @@ L = ||y_hat - y||_2 + lambda_0 * ||theta||_1 + lambda_1 * ||phi||_1 + lambda_2 *
 
 | Config parameter | Math symbol | Description | Default |
 |------------------|-------------|-------------|---------|
-| `coeff_edge_diff` | lambda_0 | L1 on lin_phi (f_theta) parameters — encourages same-type edges to share weights | 500 |
-| `coeff_phi_weight_L1` | lambda_1 | L1 on lin_edge (g_phi) parameters — promotes sparsity | 1 |
+| `coeff_g_phi_diff` | lambda_0 | L1 on f_theta (f_theta) parameters — encourages same-type edges to share weights | 500 |
+| `coeff_f_theta_weight_L1` | lambda_1 | L1 on g_phi (g_phi) parameters — promotes sparsity | 1 |
 | `coeff_W_L1` | lambda_2 | L1 on learned W — promotes sparse connectivity | 5E-5 |
-| `coeff_phi_weight_L2` | gamma_1 | L2 on lin_edge (g_phi) parameters — stabilizes learned functions | 0.001 |
-| `coeff_edge_norm` | mu_0 | Monotonicity penalty on lin_edge — enforces dg/dv > 0 | 1000 |
-| `coeff_edge_weight_L1` | - | L1 on lin_edge weights | 1 |
-| `coeff_phi_weight_L1_rate` | - | Decay rate for phi L1 penalty per epoch | 0.5 |
+| `coeff_phi_weight_L2` | gamma_1 | L2 on g_phi (g_phi) parameters — stabilizes learned functions | 0.001 |
+| `coeff_g_phi_norm` | mu_0 | Monotonicity penalty on g_phi — enforces dg/dv > 0 | 1000 |
+| `coeff_g_phi_weight_L1` | - | L1 on g_phi weights | 1 |
+| `coeff_f_theta_weight_L1_rate` | - | Decay rate for phi L1 penalty per epoch | 0.5 |
 | `coeff_W_L1_rate` | - | Decay rate for W L1 penalty per epoch | 0.5 |
 | `coeff_W_L2` | - | L2 on learned W (not in base config, add if needed) | 0 |
 
@@ -154,7 +154,7 @@ Append to Full Log (`{config}_analysis.md`) and **Current Block** sections of `{
 ## Iter N: [converged/partial/failed]
 Node: id=N, parent=P
 Mode/Strategy: [exploit/explore/boundary]
-Config: lr_W=X, lr=Y, lr_emb=Z, coeff_edge_diff=A, coeff_W_L1=B, batch_size=C, hidden_dim=D, recurrent=[T/F]
+Config: lr_W=X, lr=Y, lr_emb=Z, coeff_g_phi_diff=A, coeff_W_L1=B, batch_size=C, hidden_dim=D, recurrent=[T/F]
 Metrics: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, test_pearson=F, training_time_min=G
 Embedding: [visual observation, e.g., "65 types partially separated" or "no separation"]
 Mutation: [param]: [old] -> [new]
@@ -179,7 +179,7 @@ Edit the config file with one or two parameter changes. Test one hypothesis at a
 | Block | Focus | Parameters to explore |
 |-------|-------|----------------------|
 | 1 | Learning rates | lr_W, lr, lr_emb |
-| 2 | Regularization | coeff_edge_diff, coeff_edge_norm, coeff_edge_weight_L1, coeff_phi_weight_L1, coeff_phi_weight_L2, coeff_W_L1 |
+| 2 | Regularization | coeff_g_phi_diff, coeff_g_phi_norm, coeff_g_phi_weight_L1, coeff_f_theta_weight_L1, coeff_phi_weight_L2, coeff_W_L1 |
 | 3 | Architecture | hidden_dim, n_layers, hidden_dim_update, n_layers_update, embedding_dim |
 | 4 | Batch & augmentation | batch_size, data_augmentation_loop |
 | 5 | Recurrent training | recurrent_training, time_step, coeff_W_L2 |

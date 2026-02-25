@@ -1,4 +1,4 @@
-description: 'small MLP, no extra null edges, time_window:5, coeff_edge_diff: 0 coeff_edge_norm:0 noise_model_level: 0.01'
+description: 'small MLP, no extra null edges, time_window:5, coeff_g_phi_diff: 0 coeff_g_phi_norm:0 noise_model_level: 0.01'
 dataset: 'flyvis_44_1'
 
 simulation:
@@ -32,7 +32,7 @@ graph_model:
     embedding_dim: 2
 
     update_type: 'generic'
-    lin_edge_positive: True
+    g_phi_positive: True
 
 
 plotting:
@@ -57,9 +57,8 @@ training:
     learning_rate_embedding_start: 5.0E-3
 
     measurement_noise_level: 0
-    coeff_edge_diff: 0
-    coeff_update_u_diff: 0
-    coeff_update_msg_diff: 0
-    coeff_edge_norm: 0
+    coeff_g_phi_diff: 0
+    coeff_f_theta_msg_diff: 0
+    coeff_g_phi_norm: 0
 
     time_window: 5

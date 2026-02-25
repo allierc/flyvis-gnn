@@ -222,6 +222,11 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         net = f"{log_dir}/models/best_model_with_{tc.n_runs - 1}_graphs_{best_model}.pt"
         print(f'loading state_dict from {net} ...')
         state_dict = torch.load(net, map_location=device)
+        # Migrate old checkpoint keys: lin_edge→g_phi, lin_phi→f_theta
+        state_dict['model_state_dict'] = {
+            k.replace('lin_edge.', 'g_phi.').replace('lin_phi.', 'f_theta.'): v
+            for k, v in state_dict['model_state_dict'].items()
+        }
         model.load_state_dict(state_dict['model_state_dict'])
         start_epoch = int(best_model.split('_')[0])
         print(f'state_dict loaded: best_model={best_model}, start_epoch={start_epoch}')
@@ -229,6 +234,11 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         net = tc.pretrained_model
         print(f'loading pretrained state_dict from {net} ...')
         state_dict = torch.load(net, map_location=device)
+        # Migrate old checkpoint keys: lin_edge→g_phi, lin_phi→f_theta
+        state_dict['model_state_dict'] = {
+            k.replace('lin_edge.', 'g_phi.').replace('lin_phi.', 'f_theta.'): v
+            for k, v in state_dict['model_state_dict'].items()
+        }
         model.load_state_dict(state_dict['model_state_dict'])
         print('pretrained state_dict loaded')
         logger.info(f'pretrained: {net}')
@@ -274,8 +284,8 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
             mask = edges[1] == i
             index_weight.append(edges[0][mask])
 
-    logger.info(f'coeff_W_L1: {tc.coeff_W_L1} coeff_edge_diff: {tc.coeff_edge_diff} coeff_update_diff: {tc.coeff_update_diff}')
-    print(f'coeff_W_L1: {tc.coeff_W_L1} coeff_edge_diff: {tc.coeff_edge_diff} coeff_update_diff: {tc.coeff_update_diff}')
+    logger.info(f'coeff_W_L1: {tc.coeff_W_L1} coeff_g_phi_diff: {tc.coeff_g_phi_diff} coeff_f_theta_diff: {tc.coeff_f_theta_diff}')
+    print(f'coeff_W_L1: {tc.coeff_W_L1} coeff_g_phi_diff: {tc.coeff_g_phi_diff} coeff_f_theta_diff: {tc.coeff_f_theta_diff}')
      # proximal L1 info
     coeff_proximal = getattr(tc, 'coeff_W_L1_proximal', 0.0)
     if coeff_proximal > 0:
@@ -831,7 +841,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                     lr_embedding = 1.0E-10
                     embedding_frozen = True
 
-                # rebuild optimizer to reset momentum and relearn lin_phi/lin_edge
+                # rebuild optimizer to reset momentum and relearn f_theta/g_phi
                 optimizer, n_total_params = set_trainable_parameters(
                     model=model, lr_embedding=lr_embedding, lr=lr,
                     lr_update=lr_update, lr_W=lr_W,
@@ -856,11 +866,11 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         log_file.write(f"learning_rate_W: {tc.learning_rate_W_start}\n")
         log_file.write(f"learning_rate: {tc.learning_rate_start}\n")
         log_file.write(f"learning_rate_embedding: {tc.learning_rate_embedding_start}\n")
-        log_file.write(f"coeff_edge_diff: {tc.coeff_edge_diff}\n")
-        log_file.write(f"coeff_edge_norm: {tc.coeff_edge_norm}\n")
-        log_file.write(f"coeff_edge_weight_L1: {tc.coeff_edge_weight_L1}\n")
-        log_file.write(f"coeff_phi_weight_L1: {tc.coeff_phi_weight_L1}\n")
-        log_file.write(f"coeff_phi_weight_L2: {tc.coeff_phi_weight_L2}\n")
+        log_file.write(f"coeff_g_phi_diff: {tc.coeff_g_phi_diff}\n")
+        log_file.write(f"coeff_g_phi_norm: {tc.coeff_g_phi_norm}\n")
+        log_file.write(f"coeff_g_phi_weight_L1: {tc.coeff_g_phi_weight_L1}\n")
+        log_file.write(f"coeff_f_theta_weight_L1: {tc.coeff_f_theta_weight_L1}\n")
+        log_file.write(f"coeff_f_theta_weight_L2: {tc.coeff_f_theta_weight_L2}\n")
         log_file.write(f"coeff_W_L1: {tc.coeff_W_L1}\n")
         if field_R2 is not None:
             log_file.write(f"field_R2: {field_R2:.4f}\n")
@@ -1614,6 +1624,11 @@ def data_test_flyvis(config, best_model=None, device=None, log_file=None, test_c
     netname = f"{log_dir}/models/best_model_with_{tc.n_runs - 1}_graphs_{best_model}.pt"
     print(f'loading {netname} ...')
     state_dict = torch.load(netname, map_location=device)
+    # Migrate old checkpoint keys: lin_edge→g_phi, lin_phi→f_theta
+    state_dict['model_state_dict'] = {
+        k.replace('lin_edge.', 'g_phi.').replace('lin_phi.', 'f_theta.'): v
+        for k, v in state_dict['model_state_dict'].items()
+    }
     model.load_state_dict(state_dict['model_state_dict'])
 
     # Load INR model if visual field is learned
@@ -2088,6 +2103,11 @@ def data_test_flyvis_special(
     netname = f"{log_dir}/models/best_model_with_0_graphs_{best_model}.pt"
     print(f'load {netname} ...')
     state_dict = torch.load(netname, map_location=device)
+    # Migrate old checkpoint keys: lin_edge→g_phi, lin_phi→f_theta
+    state_dict['model_state_dict'] = {
+        k.replace('lin_edge.', 'g_phi.').replace('lin_phi.', 'f_theta.'): v
+        for k, v in state_dict['model_state_dict'].items()
+    }
     model.load_state_dict(state_dict['model_state_dict'])
 
     x_coords, y_coords, u_coords, v_coords = get_photoreceptor_positions_from_net(net)

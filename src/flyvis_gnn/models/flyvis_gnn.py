@@ -16,9 +16,9 @@ class FlyVisGNN(nn.Module):
     """GNN for FlyVis neural signal dynamics with per-edge W.
 
     Equations:
-        msg_j = W[edge] * lin_edge(v_j, a_j)^2   (flyvis_A, lin_edge_positive=True)
-        msg_j = W[edge] * lin_edge(v_i, v_j, a_i, a_j)^2   (flyvis_B)
-        du/dt = lin_phi(v, a, sum(msg), excitation)
+        msg_j = W[edge] * g_phi(v_j, a_j)^2   (flyvis_A, g_phi_positive=True)
+        msg_j = W[edge] * g_phi(v_i, v_j, a_i, a_j)^2   (flyvis_B)
+        du/dt = f_theta(v, a, sum(msg), excitation)
 
     Uses explicit scatter_add for message passing (no PyG dependency).
     """
@@ -26,21 +26,21 @@ class FlyVisGNN(nn.Module):
     PARAMS_DOC = {
         "model_name": "FlyVisGNN",
         "description": "GNN for FlyVis neural signal dynamics with per-edge W: "
-                       "du/dt = lin_phi(v, a, sum(msg), excitation), msg_j = W[edge] * lin_edge(v_j, a_j)",
+                       "du/dt = f_theta(v, a, sum(msg), excitation), msg_j = W[edge] * g_phi(v_j, a_j)",
         "key_differences_from_SignalPropagation": {
             "W_shape": "1D per-edge vector W[n_edges + n_extra_null_edges, 1] instead of dense N×N matrix",
             "visual_input": "Supports visual field input (DAVIS/calcium) via excitation channel",
             "calcium": "Can use calcium concentration instead of voltage as observable",
-            "lin_edge_positive": "When True, lin_edge output is squared to enforce positive edge messages",
+            "g_phi_positive": "When True, g_phi output is squared to enforce positive edge messages",
         },
         "equations": {
-            "message_flyvis_A": "msg_j = W[edge_idx] * lin_edge(v_j, a_j)^2   (lin_edge_positive=True)",
-            "message_flyvis_B": "msg_j = W[edge_idx] * lin_edge(v_i, v_j, a_i, a_j)^2",
-            "update": "du/dt = lin_phi(v, a, sum(msg), excitation)",
+            "message_flyvis_A": "msg_j = W[edge_idx] * g_phi(v_j, a_j)^2   (g_phi_positive=True)",
+            "message_flyvis_B": "msg_j = W[edge_idx] * g_phi(v_i, v_j, a_i, a_j)^2",
+            "update": "du/dt = f_theta(v, a, sum(msg), excitation)",
         },
         "graph_model_config": {
             "description": "Parameters in the graph_model: section of the YAML config.",
-            "lin_edge (MLP0)": {
+            "g_phi (MLP0)": {
                 "description": "Edge message function — computes per-edge features, multiplied by W[edge]",
                 "input_size": {
                     "flyvis_A": "input_size = 1 + embedding_dim  (v_j, a_j)",
@@ -50,7 +50,7 @@ class FlyVisGNN(nn.Module):
                 "hidden_dim": {"description": "Hidden layer width", "typical_range": [32, 128], "default": 64},
                 "n_layers": {"description": "Number of MLP layers", "typical_range": [2, 5], "default": 3},
             },
-            "lin_phi (MLP1)": {
+            "f_theta (MLP1)": {
                 "description": "Node update function — computes du/dt from voltage + embedding + messages + excitation",
                 "input_size_update": "1 + embedding_dim + output_size + 1  (v, a, msg, excitation)",
                 "output_size": "1 (du/dt scalar)",
@@ -60,7 +60,7 @@ class FlyVisGNN(nn.Module):
             "embedding": {
                 "embedding_dim": {"description": "Dimension of learnable node embedding a_i", "typical_range": [1, 8], "default": 2},
             },
-            "lin_edge_positive": {"description": "If True, square lin_edge output to enforce positive messages", "default": True},
+            "g_phi_positive": {"description": "If True, square g_phi output to enforce positive messages", "default": True},
             "field_type": {"description": "Visual field type — determines visual input reconstruction model (e.g. 'visual_NNR')"},
             "MLP_activation": {"description": "Activation function for MLPs", "default": "tanh"},
         },
@@ -83,11 +83,11 @@ class FlyVisGNN(nn.Module):
                 {"name": "learning_rate_start", "description": "Learning rate for MLPs", "typical_range": [1e-4, 5e-3]},
                 {"name": "learning_rate_embedding_start", "description": "Learning rate for embeddings a", "typical_range": [1e-4, 5e-3]},
                 {"name": "coeff_W_L1", "description": "L1 sparsity penalty on W", "typical_range": [1e-6, 1e-3]},
-                {"name": "coeff_edge_diff", "description": "Regularizer: lin_edge output variance penalty", "typical_range": [0, 500]},
-                {"name": "coeff_edge_norm", "description": "Regularizer: edge weight norm penalty", "typical_range": [0, 10]},
-                {"name": "coeff_edge_weight_L1", "description": "L1 penalty on lin_edge weights", "typical_range": [0, 10]},
-                {"name": "coeff_phi_weight_L1", "description": "L1 penalty on lin_phi weights", "typical_range": [0, 10]},
-                {"name": "coeff_phi_weight_L2", "description": "L2 penalty on lin_phi weights", "typical_range": [0, 0.01]},
+                {"name": "coeff_g_phi_diff", "description": "Regularizer: g_phi output variance penalty", "typical_range": [0, 500]},
+                {"name": "coeff_g_phi_norm", "description": "Regularizer: edge weight norm penalty", "typical_range": [0, 10]},
+                {"name": "coeff_g_phi_weight_L1", "description": "L1 penalty on g_phi weights", "typical_range": [0, 10]},
+                {"name": "coeff_f_theta_weight_L1", "description": "L1 penalty on f_theta weights", "typical_range": [0, 10]},
+                {"name": "coeff_f_theta_weight_L2", "description": "L2 penalty on f_theta weights", "typical_range": [0, 0.01]},
                 {"name": "batch_size", "description": "Number of time frames per batch", "typical_range": [1, 4]},
                 {"name": "data_augmentation_loop", "description": "Number of augmentation iterations per epoch", "typical_range": [10, 50]},
                 {"name": "w_init_mode", "description": "W initialization: 'zeros' (default), 'randn', or 'randn_scaled'"},
@@ -130,12 +130,12 @@ class FlyVisGNN(nn.Module):
 
         self.n_edges = simulation_config.n_edges
         self.n_extra_null_edges = simulation_config.n_extra_null_edges
-        self.lin_edge_positive = model_config.lin_edge_positive
+        self.g_phi_positive = model_config.g_phi_positive
 
         self.batch_size = config.training.batch_size
         self.update_type = model_config.update_type
 
-        self.lin_edge = MLP(
+        self.g_phi = MLP(
             input_size=self.input_size,
             output_size=self.output_size,
             nlayers=self.n_layers,
@@ -144,7 +144,7 @@ class FlyVisGNN(nn.Module):
             device=self.device,
         )
 
-        self.lin_phi = MLP(
+        self.f_theta = MLP(
             input_size=self.input_size_update,
             output_size=self.output_size,
             nlayers=self.n_layers_update,
@@ -228,12 +228,12 @@ class FlyVisGNN(nn.Module):
             in_features = torch.cat([v[src], embedding[src]], dim=1)
 
         # edge function
-        lin_edge_out = self.lin_edge(in_features)
-        if self.lin_edge_positive:
-            lin_edge_out = lin_edge_out ** 2
+        g_phi_out = self.g_phi(in_features)
+        if self.g_phi_positive:
+            g_phi_out = g_phi_out ** 2
 
         # weight by per-edge W
-        edge_msg = self.W[edge_W_idx] * lin_edge_out  # (E, 1)
+        edge_msg = self.W[edge_W_idx] * g_phi_out  # (E, 1)
 
         # aggregate: scatter_add messages to destination nodes
         msg = torch.zeros(v.shape[0], edge_msg.shape[1], device=self.device, dtype=v.dtype)
@@ -264,7 +264,7 @@ class FlyVisGNN(nn.Module):
         msg = self._compute_messages(v, embedding, edge_index)
 
         in_features = torch.cat([v, embedding, msg, excitation], dim=1)
-        pred = self.lin_phi(in_features)
+        pred = self.f_theta(in_features)
 
         if return_all:
             return pred, in_features, msg

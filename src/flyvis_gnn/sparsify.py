@@ -649,20 +649,20 @@ def umap_cluster_reassign(model, config, x_ts, edges, n_neurons, type_list, devi
 
     Builds augmented feature vector from model parameters, reduces with UMAP,
     clusters in UMAP space, reassigns embeddings to cluster medians, and
-    normalizes to [0, 1].  Optionally relearns lin_edge/lin_phi to match
+    normalizes to [0, 1].  Optionally relearns g_phi/f_theta to match
     cluster-median function shapes (like ParticleGraph replace_embedding_function).
 
     Returns dict with cluster info (n_clusters, accuracy, labels).
     """
     import umap
     import warnings
-    from flyvis_gnn.plot import extract_lin_phi_slopes, compute_activity_stats
+    from flyvis_gnn.plot import extract_f_theta_slopes, compute_activity_stats
 
     tc = config.training
 
-    # 1. Extract tau and V_rest from lin_phi slopes
+    # 1. Extract tau and V_rest from f_theta slopes
     mu, sigma = compute_activity_stats(x_ts, device)
-    slopes, offsets = extract_lin_phi_slopes(model, config, n_neurons, mu, sigma, device)
+    slopes, offsets = extract_f_theta_slopes(model, config, n_neurons, mu, sigma, device)
     learned_V_rest = np.where(slopes != 0, -offsets / slopes, 1.0)[:n_neurons]
     learned_tau = np.where(slopes != 0, 1.0 / -slopes, 1.0)[:n_neurons]
     learned_tau = np.clip(learned_tau, 0, 1)
@@ -700,17 +700,17 @@ def umap_cluster_reassign(model, config, x_ts, edges, n_neurons, type_list, devi
 
     n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
 
-    # 5b. Evaluate lin_edge and lin_phi before reassigning embeddings (for relearning targets)
+    # 5b. Evaluate g_phi and f_theta before reassigning embeddings (for relearning targets)
     func_list_edge = None
     func_list_phi = None
     if relearn_epochs > 0 and n_clusters > 0:
         n_pts = 1000
         rr = torch.linspace(config.plotting.xlim[0], config.plotting.xlim[1], n_pts, device=device)
         model_name = config.graph_model.signal_model_name
-        lin_edge_positive = config.graph_model.lin_edge_positive
+        g_phi_positive = config.graph_model.g_phi_positive
 
         with torch.no_grad():
-            # lin_edge: input = [v_j, a_j] for flyvis_A
+            # g_phi: input = [v_j, a_j] for flyvis_A
             func_list_edge = torch.zeros(n_neurons, n_pts, device=device)
             func_list_phi = torch.zeros(n_neurons, n_pts, device=device)
             batch_size = 500
@@ -722,20 +722,20 @@ def umap_cluster_reassign(model, config, x_ts, edges, n_neurons, type_list, devi
                 emb = model.a[start:end]  # (B, emb_dim)
                 emb_flat = emb.unsqueeze(1).expand(-1, n_pts, -1).reshape(-1, emb.shape[1])
 
-                # lin_edge
+                # g_phi
                 if 'flyvis_B' in model_name:
                     edge_in = torch.cat([rr_flat * 0, rr_flat, emb_flat, emb_flat], dim=1)
                 else:
                     edge_in = torch.cat([rr_flat, emb_flat], dim=1)
-                edge_out = model.lin_edge(edge_in.float())
-                if lin_edge_positive:
+                edge_out = model.g_phi(edge_in.float())
+                if g_phi_positive:
                     edge_out = edge_out ** 2
                 func_list_edge[start:end] = edge_out[:, 0].reshape(n_batch, n_pts)
 
-                # lin_phi: input = [v, a, msg=0, exc=0]
+                # f_theta: input = [v, a, msg=0, exc=0]
                 zeros_flat = torch.zeros_like(rr_flat)
                 phi_in = torch.cat([rr_flat, emb_flat, zeros_flat, zeros_flat], dim=1)
-                phi_out = model.lin_phi(phi_in.float())
+                phi_out = model.f_theta(phi_in.float())
                 func_list_phi[start:end] = phi_out[:, 0].reshape(n_batch, n_pts)
 
         # Compute target functions: median per cluster
@@ -769,25 +769,25 @@ def umap_cluster_reassign(model, config, x_ts, edges, n_neurons, type_list, devi
         a_max = model.a.max(dim=0).values
         model.a.data = (model.a.data - a_min) / (a_max - a_min + 1e-10)
 
-    # 8. Optionally reinitialize lin_phi and lin_edge
+    # 8. Optionally reinitialize f_theta and g_phi
     if reinit_mlps:
-        reinit_mlp_weights(model.lin_phi)
-        reinit_mlp_weights(model.lin_edge)
-        msg = "Reinitialized lin_phi and lin_edge weights"
+        reinit_mlp_weights(model.f_theta)
+        reinit_mlp_weights(model.g_phi)
+        msg = "Reinitialized f_theta and g_phi weights"
         print(msg)
         if logger:
             logger.info(msg)
 
-    # 9. Relearn lin_edge and lin_phi to match cluster-median function shapes
+    # 9. Relearn g_phi and f_theta to match cluster-median function shapes
     if relearn_epochs > 0 and func_list_edge is not None:
         from tqdm import trange
         n_pts = 1000
         rr = torch.linspace(config.plotting.xlim[0], config.plotting.xlim[1], n_pts, device=device)
         model_name = config.graph_model.signal_model_name
-        lin_edge_positive = config.graph_model.lin_edge_positive
+        g_phi_positive = config.graph_model.g_phi_positive
 
-        # Temporary optimizer: freeze embedding, train only lin_edge and lin_phi
-        relearn_params = list(model.lin_edge.parameters()) + list(model.lin_phi.parameters())
+        # Temporary optimizer: freeze embedding, train only g_phi and f_theta
+        relearn_params = list(model.g_phi.parameters()) + list(model.f_theta.parameters())
         relearn_optimizer = torch.optim.Adam(relearn_params, lr=tc.learning_rate_start)
 
         for sub_epoch in trange(relearn_epochs, ncols=100, desc='relearn MLP'):
@@ -804,21 +804,21 @@ def umap_cluster_reassign(model, config, x_ts, edges, n_neurons, type_list, devi
                 emb = model.a[start:end].detach()
                 emb_flat = emb.unsqueeze(1).expand(-1, n_pts, -1).reshape(-1, emb.shape[1])
 
-                # lin_edge forward
+                # g_phi forward
                 if 'flyvis_B' in model_name:
                     edge_in = torch.cat([rr_flat * 0, rr_flat, emb_flat, emb_flat], dim=1)
                 else:
                     edge_in = torch.cat([rr_flat, emb_flat], dim=1)
-                edge_out = model.lin_edge(edge_in.float())
-                if lin_edge_positive:
+                edge_out = model.g_phi(edge_in.float())
+                if g_phi_positive:
                     edge_out = edge_out ** 2
                 pred_edge = edge_out[:, 0].reshape(n_batch, n_pts)
                 loss_edge = loss_edge + (pred_edge - y_func_edge[start:end].detach()).norm(2)
 
-                # lin_phi forward
+                # f_theta forward
                 zeros_flat = torch.zeros_like(rr_flat)
                 phi_in = torch.cat([rr_flat, emb_flat, zeros_flat, zeros_flat], dim=1)
-                phi_out = model.lin_phi(phi_in.float())
+                phi_out = model.f_theta(phi_in.float())
                 pred_phi = phi_out[:, 0].reshape(n_batch, n_pts)
                 loss_phi = loss_phi + (pred_phi - y_func_phi[start:end].detach()).norm(2)
 

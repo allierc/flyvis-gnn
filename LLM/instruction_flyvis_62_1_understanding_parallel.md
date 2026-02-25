@@ -81,7 +81,7 @@ Same as base instructions, with the `Model:` field identifying which flyvis mode
 Node: id=N, parent=P
 Model: [049/011/041/003]
 Mode/Strategy: [exploit/explore/hypothesis-test]
-Config: lr_W=X, lr=Y, lr_emb=Z, coeff_edge_diff=A, coeff_W_L1=B, batch_size=C, hidden_dim=D, recurrent=[T/F]
+Config: lr_W=X, lr=Y, lr_emb=Z, coeff_g_phi_diff=A, coeff_W_L1=B, batch_size=C, hidden_dim=D, recurrent=[T/F]
 Metrics: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, test_pearson=F, training_time_min=G
 Embedding: [visual observation]
 Mutation: [param]: [old] -> [new]

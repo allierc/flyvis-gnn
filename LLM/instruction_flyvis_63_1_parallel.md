@@ -69,7 +69,7 @@ Same as base instructions, but you write 4 entries per batch:
 ## Iter N: [converged/partial/failed]
 Node: id=N, parent=P
 Mode/Strategy: [strategy]
-Config: lr_W=X, lr=Y, lr_emb=Z, lr_siren=S, coeff_edge_diff=A, coeff_W_L1=B, batch_size=C, hidden_dim=D, hidden_dim_nnr_f=E, omega_f=F, recurrent=[T/F]
+Config: lr_W=X, lr=Y, lr_emb=Z, lr_siren=S, coeff_g_phi_diff=A, coeff_W_L1=B, batch_size=C, hidden_dim=D, hidden_dim_nnr_f=E, omega_f=F, recurrent=[T/F]
 Metrics: connectivity_R2=A, field_R2=B, tau_R2=C, V_rest_R2=D, cluster_accuracy=E, test_R2=F, test_pearson=G, training_time_min=H
 Embedding: [visual observation, e.g., "65 types partially separated"]
 Mutation: [param]: [old] -> [new]

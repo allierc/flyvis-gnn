@@ -1,5 +1,5 @@
 
-description: 'with 20 neuron types per function,     noise_model_level: 5E-1    smaller MLP    n_extra_null_edges: 10000  coeff_edge_weight_L2:10'
+description: 'with 20 neuron types per function,     noise_model_level: 5E-1    smaller MLP    n_extra_null_edges: 10000  coeff_g_phi_weight_L2:10'
 dataset: 'flyvis_19_2'
 
 simulation:
@@ -35,7 +35,7 @@ graph_model:
     embedding_dim: 2
 
     update_type: 'generic'
-    lin_edge_positive: True
+    g_phi_positive: True
 
 
 plotting:
@@ -60,8 +60,7 @@ training:
     learning_rate_embedding_start: 5.0E-3
 
     measurement_noise_level: 0
-    coeff_edge_diff: 500
-    coeff_update_u_diff: 0
-    coeff_update_msg_diff: 0
-    coeff_edge_norm: 1.0
-    coeff_edge_weight_L2: 10.0
+    coeff_g_phi_diff: 500
+    coeff_f_theta_msg_diff: 0
+    coeff_g_phi_norm: 1.0
+    coeff_g_phi_weight_L2: 10.0

@@ -94,13 +94,13 @@ tau_i * dv_i(t)/dt = -v_i(t) + V_i^rest + sum_j W_ij * ReLU(v_j(t)) + I_i(t)
 ## GNN Architecture
 
 Two MLPs learn the neural dynamics:
-- **lin_edge** (g_phi): Edge message function. Maps (v_j, a_i) -> message. If `lin_edge_positive=True`, output is squared.
-- **lin_phi** (f_theta): Node update function. Maps (v_i, a_i, aggregated_messages, I_i) -> dv_i/dt.
+- **g_phi** (g_phi): Edge message function. Maps (v_j, a_i) -> message. If `g_phi_positive=True`, output is squared.
+- **f_theta** (f_theta): Node update function. Maps (v_i, a_i, aggregated_messages, I_i) -> dv_i/dt.
 - **Embedding a_i**: 2D learned embedding per neuron, encodes neuron type.
 
 Architecture parameters (explorable) — refer to `Signal_Propagation_FlyVis.PARAMS_DOC` for strict dependencies:
-- `hidden_dim` / `n_layers`: lin_edge MLP dimensions (default: 64 / 3)
-- `hidden_dim_update` / `n_layers_update`: lin_phi MLP dimensions (default: 64 / 3)
+- `hidden_dim` / `n_layers`: g_phi MLP dimensions (default: 64 / 3)
+- `hidden_dim_update` / `n_layers_update`: f_theta MLP dimensions (default: 64 / 3)
 - `embedding_dim`: embedding dimension (default: 2)
 
 **CRITICAL — coupled parameters**: `input_size`, `input_size_update`, and `embedding_dim` are linked. When changing `embedding_dim`, you MUST also update:
@@ -119,12 +119,12 @@ L = ||y_hat - y||_2 + lambda_0 * ||theta||_1 + lambda_1 * ||phi||_1 + lambda_2 *
 
 | Config parameter | Description | Baseline (Node 79) |
 |------------------|-------------|---------------------|
-| `coeff_edge_diff` | L1 on lin_phi — same-type edge sharing | 750 |
-| `coeff_phi_weight_L1` | L1 on lin_edge — sparsity | 0.5 |
+| `coeff_g_phi_diff` | L1 on f_theta — same-type edge sharing | 750 |
+| `coeff_f_theta_weight_L1` | L1 on g_phi — sparsity | 0.5 |
 | `coeff_W_L1` | L1 on learned W — sparse connectivity | 5E-5 |
-| `coeff_phi_weight_L2` | L2 on lin_edge — stabilization | 0.001 |
-| `coeff_edge_norm` | Monotonicity penalty on lin_edge | 1.0 |
-| `coeff_edge_weight_L1` | L1 on lin_edge weights | 0.3 |
+| `coeff_phi_weight_L2` | L2 on g_phi — stabilization | 0.001 |
+| `coeff_g_phi_norm` | Monotonicity penalty on g_phi | 1.0 |
+| `coeff_g_phi_weight_L1` | L1 on g_phi weights | 0.3 |
 
 ## Training Parameters
 
@@ -136,8 +136,8 @@ L = ||y_hat - y||_2 + lambda_0 * ||theta||_1 + lambda_1 * ||phi||_1 + lambda_2 *
 | `n_epochs` | 1 | Training epochs |
 | `batch_size` | 2 | Batch size |
 | `data_augmentation_loop` | 20 | Data augmentation multiplier |
-| `hidden_dim` | 80 | lin_edge MLP hidden dim |
-| `hidden_dim_update` | 80 | lin_phi MLP hidden dim |
+| `hidden_dim` | 80 | g_phi MLP hidden dim |
+| `hidden_dim_update` | 80 | f_theta MLP hidden dim |
 
 ## Starting Point
 
@@ -192,7 +192,7 @@ Append to Full Log (`{config}_analysis.md`) and Iterations section of `{config}_
 Node: id=N, parent=P
 Model: [049/011/041/003]
 Mode/Strategy: [exploit/explore/hypothesis-test]
-Config: lr_W=X, lr=Y, lr_emb=Z, coeff_edge_diff=A, coeff_W_L1=B, batch_size=C, hidden_dim=D, recurrent=[T/F]
+Config: lr_W=X, lr=Y, lr_emb=Z, coeff_g_phi_diff=A, coeff_W_L1=B, batch_size=C, hidden_dim=D, recurrent=[T/F]
 Metrics: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, test_pearson=F, training_time_min=G
 Embedding: [visual observation]
 Mutation: [param]: [old] -> [new]
@@ -272,10 +272,10 @@ Trained model per slot (`log/fly/flyvis_62_1_understand_Claude_{SLOT:02d}/`):
 |-----|-------|-------------|
 | `a` | `[13741, 2]` | Learned neuron embeddings (2D) |
 | `W` | `[434112, 1]` | Learned connectivity weights |
-| `lin_edge.layers.{0,1,2}.weight` | varies | Edge MLP (g_phi) weights |
-| `lin_edge.layers.{0,1,2}.bias` | varies | Edge MLP biases |
-| `lin_phi.layers.{0,1,2}.weight` | varies | Node update MLP (f_theta) weights |
-| `lin_phi.layers.{0,1,2}.bias` | varies | Node update MLP biases |
+| `g_phi.layers.{0,1,2}.weight` | varies | Edge MLP (g_phi) weights |
+| `g_phi.layers.{0,1,2}.bias` | varies | Edge MLP biases |
+| `f_theta.layers.{0,1,2}.weight` | varies | Node update MLP (f_theta) weights |
+| `f_theta.layers.{0,1,2}.bias` | varies | Node update MLP biases |
 
 **Slot → Model mapping**:
 | Slot | Model ID | Dataset dir | Log dir |

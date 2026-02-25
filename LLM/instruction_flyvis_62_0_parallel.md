@@ -64,7 +64,7 @@ Same as base instructions, but you write 4 entries per batch:
 ## Iter N: [converged/partial/failed]
 Node: id=N, parent=P
 Mode/Strategy: [strategy]
-Config: lr_W=X, lr=Y, lr_emb=Z, coeff_edge_diff=A, coeff_W_L1=B, batch_size=C, hidden_dim=D, recurrent=[T/F]
+Config: lr_W=X, lr=Y, lr_emb=Z, coeff_g_phi_diff=A, coeff_W_L1=B, batch_size=C, hidden_dim=D, recurrent=[T/F]
 Metrics: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, test_pearson=F, training_time_min=G
 Embedding: [visual observation, e.g., "65 types partially separated"]
 Mutation: [param]: [old] -> [new]
@@ -73,7 +73,7 @@ Observation: [one line]
 Next: parent=P
 ```
 
-**CRITICAL**: The `Mutation:` line is parsed by the UCB tree builder. Always include the exact parameter change (e.g., `Mutation: lr_W: 1E-3 -> 2E-3`). For principle-test slots, append the principle being tested (e.g., `Mutation: coeff_edge_diff: 500 -> 1000. Testing principle: "higher monotonicity penalty improves tau recovery"`).
+**CRITICAL**: The `Mutation:` line is parsed by the UCB tree builder. Always include the exact parameter change (e.g., `Mutation: lr_W: 1E-3 -> 2E-3`). For principle-test slots, append the principle being tested (e.g., `Mutation: coeff_g_phi_diff: 500 -> 1000. Testing principle: "higher monotonicity penalty improves tau recovery"`).
 
 **CRITICAL**: The `Next: parent=P` line selects the parent for the **next batch's** mutations. `P` must refer to a node from a **previous** batch or the current batch — but NEVER set `Next: parent=P` where P is `id+1` (the next slot in the same batch). This would make a node its own parent and create a circular reference.
 

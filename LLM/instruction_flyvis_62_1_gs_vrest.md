@@ -34,7 +34,7 @@ The MLP `lin_update` learns `f(v) = -(v - V_rest) / tau`, which is a linear func
 - **intercept** = V_rest/tau (poorly constrained: requires extrapolation)
 
 Two problems:
-1. **Single-step optimization**: We optimize x(t)->x(t+1). The slow decay term `-(v - V_rest)/tau` produces small per-step changes relative to the fast message passing `W * lin_edge`. Gradients are dominated by msg.
+1. **Single-step optimization**: We optimize x(t)->x(t+1). The slow decay term `-(v - V_rest)/tau` produces small per-step changes relative to the fast message passing `W * g_phi`. Gradients are dominated by msg.
 2. **Lever arm problem**: During simulation, v stays in a narrow range driven by inputs and network activity, well above V_rest. The MLP never sees v near V_rest. Small slope errors trade off against large intercept shifts — V_rest is identified only through extrapolation.
 
 ### Why tau IS Recovered
@@ -53,11 +53,11 @@ This exploration focuses on **training scheme** changes that could help V_rest. 
 - **Risk**: Previously marked "always harmful" in 62_1 exploration — but that exploration optimized for conn_R2, not V_rest. May help V_rest even if conn_R2 drops.
 - **Constraint**: Keep training time < 60 min. time_step=2 doubles compute; time_step=5 may exceed budget.
 
-### 2. Learning Rate Balance (lin_update vs lin_edge)
+### 2. Learning Rate Balance (lin_update vs g_phi)
 - `learning_rate_update_start`: Separate LR for lin_update MLP (0 = use lr)
-- `learning_rate_start` (lr): LR for lin_edge MLP
+- `learning_rate_start` (lr): LR for g_phi MLP
 - `learning_rate_W_start` (lr_W): LR for W matrix
-- **Hypothesis**: Higher LR for lin_update relative to lin_edge gives the slow-component MLP more gradient signal. Current lr=1.2E-3 is shared — maybe lin_update needs its own higher rate.
+- **Hypothesis**: Higher LR for lin_update relative to g_phi gives the slow-component MLP more gradient signal. Current lr=1.2E-3 is shared — maybe lin_update needs its own higher rate.
 - **Search range**: lr_update from 1.2E-3 to 3E-3 while keeping lr=1.2E-3 fixed.
 
 ### 3. W_L2 Regularization Strength
@@ -86,11 +86,11 @@ These are confirmed strictly optimal from 56+ iterations on gs data. Changing th
 | lr_W | 6E-4 | STRICTLY optimal |
 | lr | 1.2E-3 | STRICTLY optimal |
 | lr_emb | 1.55E-3 | STRICTLY optimal |
-| coeff_edge_diff | 750 | STRICTLY optimal |
-| coeff_phi_weight_L1 | 0.5 | STRICTLY optimal |
-| coeff_phi_weight_L1_rate | 0.4 | STRICTLY optimal |
-| coeff_edge_weight_L1 | 0.29 | STRICTLY optimal |
-| coeff_edge_norm | 0.9 | STRICTLY optimal |
+| coeff_g_phi_diff | 750 | STRICTLY optimal |
+| coeff_f_theta_weight_L1 | 0.5 | STRICTLY optimal |
+| coeff_f_theta_weight_L1_rate | 0.4 | STRICTLY optimal |
+| coeff_g_phi_weight_L1 | 0.29 | STRICTLY optimal |
+| coeff_g_phi_norm | 0.9 | STRICTLY optimal |
 | coeff_phi_weight_L2 | 0.001 | Must stay |
 | coeff_W_L1 | 3.5E-5 | Optimal |
 | coeff_W_L1_rate | 0.5 | Optimal |
@@ -126,7 +126,7 @@ tau_i * dv_i(t)/dt = -v_i(t) + V_i^rest + sum_j W_ij * ReLU(v_j(t)) + I_i(t)
 
 ## GNN Architecture
 
-- **lin_edge** (g_phi): Edge message function — learns W_ij * ReLU(v_j) component
+- **g_phi** (g_phi): Edge message function — learns W_ij * ReLU(v_j) component
 - **lin_update** (f_theta): Node update function — learns -(v - V_rest)/tau component
 - **Embedding a_i**: 2D learned embedding per neuron
 

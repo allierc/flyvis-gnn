@@ -37,7 +37,7 @@ graph_model:
   embedding_dim: 2
 
   update_type: "generic"
-  lin_edge_positive: true
+  g_phi_positive: true
 
 plotting:
   colormap: "tab20"
@@ -62,17 +62,16 @@ training:
   learning_rate_start: 5.0E-4
   learning_rate_embedding_start: 1.0E-3
 
-  coeff_edge_diff: 500
-  coeff_update_u_diff: 0
-  coeff_update_msg_diff: 0
-  coeff_edge_norm: 1
+  coeff_g_phi_diff: 500
+  coeff_f_theta_msg_diff: 0
+  coeff_g_phi_norm: 1
 
-  coeff_edge_weight_L1: 1
-  coeff_phi_weight_L1: 1
-  coeff_phi_weight_L1_rate: 0.5
+  coeff_g_phi_weight_L1: 1
+  coeff_f_theta_weight_L1: 1
+  coeff_f_theta_weight_L1_rate: 0.5
 
-  coeff_edge_weight_L2: 0
-  coeff_phi_weight_L2: 0.001
+  coeff_g_phi_weight_L2: 0
+  coeff_f_theta_weight_L2: 0.001
 
   coeff_W_L1: 5.0E-5
   coeff_W_L1_rate: 0.5

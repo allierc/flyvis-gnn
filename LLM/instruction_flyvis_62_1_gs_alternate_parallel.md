@@ -77,7 +77,7 @@ These parameters are unique to two-stage training and should be explored in addi
 | Parameter | Default | Explore Range | Description |
 |-----------|---------|---------------|-------------|
 | `alternate_joint_ratio` | 0.4 | 0.2, 0.3, 0.4, 0.5, 0.6 | Fraction of total iterations for joint phase |
-| `alternate_lr_ratio` | 0.1 | 0.01, 0.05, 0.1, 0.2, 0.3 | LR multiplier for W/lin_edge during V_rest focus phase |
+| `alternate_lr_ratio` | 0.1 | 0.01, 0.05, 0.1, 0.2, 0.3 | LR multiplier for W/g_phi during V_rest focus phase |
 | `n_epochs` | 2 | 2, 3 | Number of epochs (doubled vs standard) |
 | `data_augmentation_loop` | 20 | 20, 25, 30 | Data augmentation multiplier |
 
@@ -103,7 +103,7 @@ For each slot, report:
 - **conn_R2 stability during V_rest focus**: Does conn_R2 hold steady or drop?
 
 **Healthy pattern**: conn_R2 rises during joint phase to ≈ 0.85–0.90, holds steady during V_rest focus. vrest_R2 and tau_R2 increase during V_rest focus phase. Final conn_R2 ≈ peak conn_R2.
-**Unhealthy pattern**: conn_R2 drops significantly during V_rest focus → alternate_lr_ratio too low (W/lin_edge drift too much). vrest_R2 flat during V_rest focus → alternate_lr_ratio too high (fast components still dominate gradients).
+**Unhealthy pattern**: conn_R2 drops significantly during V_rest focus → alternate_lr_ratio too low (W/g_phi drift too much). vrest_R2 flat during V_rest focus → alternate_lr_ratio too high (fast components still dominate gradients).
 
 ## Seed Strategy
 
@@ -182,6 +182,6 @@ Always keep the standard training baseline in mind:
 - **Secondary**: tau_R2 should remain stable (~0.97)
 
 If two-stage training consistently underperforms standard training on conn_R2, consider:
-1. The alternate_lr_ratio may be too low (W/lin_edge drift during V_rest focus)
+1. The alternate_lr_ratio may be too low (W/g_phi drift during V_rest focus)
 2. The joint phase may be too short (connectivity not established before V_rest focus)
 3. More epochs may be needed to recover connectivity after V_rest focus

@@ -35,8 +35,8 @@ tau_i * dv_i(t)/dt = -v_i(t) + V_i^rest + sum_j W_ij * ReLU(v_j(t)) + I_i(t)
 ## GNN Architecture
 
 Two MLPs learn the neural dynamics:
-- **lin_edge** (g_phi): Edge message function. Maps (v_j, a_i) -> message. If `lin_edge_positive=True`, output is squared.
-- **lin_phi** (f_theta): Node update function. Maps (v_i, a_i, aggregated_messages, I_i) -> dv_i/dt.
+- **g_phi** (g_phi): Edge message function. Maps (v_j, a_i) -> message. If `g_phi_positive=True`, output is squared.
+- **f_theta** (f_theta): Node update function. Maps (v_i, a_i, aggregated_messages, I_i) -> dv_i/dt.
 - **Embedding a_i**: 2D learned embedding per neuron, encodes neuron type.
 
 ### Siren Network (NNR_f) — External Input Reconstruction
@@ -57,8 +57,8 @@ Siren parameters (explorable):
 - `outermost_linear_nnr_f`: Linear output layer (default: True)
 
 Architecture parameters (GNN, explorable) — refer to `Signal_Propagation_FlyVis.PARAMS_DOC` for strict dependencies:
-- `hidden_dim` / `n_layers`: lin_edge MLP dimensions (default: 64 / 3)
-- `hidden_dim_update` / `n_layers_update`: lin_phi MLP dimensions (default: 64 / 3)
+- `hidden_dim` / `n_layers`: g_phi MLP dimensions (default: 64 / 3)
+- `hidden_dim_update` / `n_layers_update`: f_theta MLP dimensions (default: 64 / 3)
 - `embedding_dim`: embedding dimension (default: 2)
 
 **CRITICAL — coupled parameters**: `input_size`, `input_size_update`, and `embedding_dim` are linked. When changing `embedding_dim`, you MUST also update:
@@ -78,13 +78,13 @@ L = ||y_hat - y||_2 + lambda_0 * ||theta||_1 + lambda_1 * ||phi||_1 + lambda_2 *
 
 | Config parameter | Math symbol | Description | Default |
 |------------------|-------------|-------------|---------|
-| `coeff_edge_diff` | lambda_0 | L1 on lin_phi (f_theta) parameters — encourages same-type edges to share weights | 500 |
-| `coeff_phi_weight_L1` | lambda_1 | L1 on lin_edge (g_phi) parameters — promotes sparsity | 1 |
+| `coeff_g_phi_diff` | lambda_0 | L1 on f_theta (f_theta) parameters — encourages same-type edges to share weights | 500 |
+| `coeff_f_theta_weight_L1` | lambda_1 | L1 on g_phi (g_phi) parameters — promotes sparsity | 1 |
 | `coeff_W_L1` | lambda_2 | L1 on learned W — promotes sparse connectivity | 5E-5 |
-| `coeff_phi_weight_L2` | gamma_1 | L2 on lin_edge (g_phi) parameters — stabilizes learned functions | 0.001 |
-| `coeff_edge_norm` | mu_0 | Monotonicity penalty on lin_edge — enforces dg/dv > 0 | 1.0 |
-| `coeff_edge_weight_L1` | - | L1 on lin_edge weights | 1 |
-| `coeff_phi_weight_L1_rate` | - | Decay rate for phi L1 penalty per epoch | 0.5 |
+| `coeff_phi_weight_L2` | gamma_1 | L2 on g_phi (g_phi) parameters — stabilizes learned functions | 0.001 |
+| `coeff_g_phi_norm` | mu_0 | Monotonicity penalty on g_phi — enforces dg/dv > 0 | 1.0 |
+| `coeff_g_phi_weight_L1` | - | L1 on g_phi weights | 1 |
+| `coeff_f_theta_weight_L1_rate` | - | Decay rate for phi L1 penalty per epoch | 0.5 |
 | `coeff_W_L1_rate` | - | Decay rate for W L1 penalty per epoch | 0.5 |
 | `coeff_W_L2` | - | L2 on learned W (not in base config, add if needed) | 0 |
 
@@ -102,9 +102,9 @@ L = ||y_hat - y||_2 + lambda_0 * ||theta||_1 + lambda_1 * ||phi||_1 + lambda_2 *
 | `recurrent_training` | False | Enable recurrent (multi-step) training |
 | `time_step` | 1 | Number of recurrent steps (if recurrent_training=True) |
 | `w_init_mode` | zeros | W initialization: "zeros" or "randn_scaled" (NOT "randn") |
-| `coeff_edge_diff` | 750 | L1 on lin_phi — same-type edge weight sharing |
-| `coeff_edge_weight_L1` | 0.5 | L1 on lin_edge weights |
-| `coeff_phi_weight_L1` | 0.5 | L1 on lin_edge parameters |
+| `coeff_g_phi_diff` | 750 | L1 on f_theta — same-type edge weight sharing |
+| `coeff_g_phi_weight_L1` | 0.5 | L1 on g_phi weights |
+| `coeff_f_theta_weight_L1` | 0.5 | L1 on g_phi parameters |
 
 ## Training Time Constraint
 
@@ -182,7 +182,7 @@ Append to Full Log (`{config}_analysis.md`) and **Current Block** sections of `{
 ## Iter N: [converged/partial/failed]
 Node: id=N, parent=P
 Mode/Strategy: [exploit/explore/boundary]
-Config: lr_W=X, lr=Y, lr_emb=Z, lr_siren=S, coeff_edge_diff=A, coeff_W_L1=B, batch_size=C, hidden_dim=D, hidden_dim_nnr_f=E, omega_f=F, recurrent=[T/F]
+Config: lr_W=X, lr=Y, lr_emb=Z, lr_siren=S, coeff_g_phi_diff=A, coeff_W_L1=B, batch_size=C, hidden_dim=D, hidden_dim_nnr_f=E, omega_f=F, recurrent=[T/F]
 Metrics: connectivity_R2=A, field_R2=B, tau_R2=C, V_rest_R2=D, cluster_accuracy=E, test_R2=F, test_pearson=G, training_time_min=H
 Embedding: [visual observation, e.g., "65 types partially separated" or "no separation"]
 Mutation: [param]: [old] -> [new]
@@ -332,9 +332,9 @@ These findings are from MPM (material point method) physics — the FlyVis conte
 1. **lr_W=5E-4 to 7E-4** with lr=1.2E-3 and lr_emb=1.5E-3 is optimal
 2. **lr_emb=1.5E-3 is critical** for low lr_W — lower values cause connectivity collapse
 3. **lr_emb >= 1.8E-3 destroys V_rest recovery**
-4. **coeff_edge_norm >= 10 is catastrophic** — keep at 1.0
-5. **coeff_phi_weight_L1=0.5 + coeff_edge_weight_L1=0.5** improves both connectivity and V_rest
-6. **coeff_edge_diff=750-1000** optimal; 1250+ is harmful
+4. **coeff_g_phi_norm >= 10 is catastrophic** — keep at 1.0
+5. **coeff_f_theta_weight_L1=0.5 + coeff_g_phi_weight_L1=0.5** improves both connectivity and V_rest
+6. **coeff_g_phi_diff=750-1000** optimal; 1250+ is harmful
 7. **coeff_phi_weight_L2 must stay at 0.001** — 0.005 destroys tau and V_rest
 8. **coeff_W_L1=5E-5** is optimal for V_rest; 1E-4 boosts conn but hurts V_rest
 

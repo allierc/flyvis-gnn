@@ -127,7 +127,7 @@ class WInitMode(StrEnum):
     RANDN_SCALED = "randn_scaled"
     ZEROS = "zeros"
 
-class LinEdgeMode(StrEnum):
+class GPhiMode(StrEnum):
     MLP = "mlp"
     TANH = "tanh"
     IDENTITY = "identity"
@@ -302,7 +302,7 @@ class GraphModelConfig(BaseModel):
     hidden_dim_encoder: int = 1
     n_layers_encoder: int = 1
 
-    lin_edge_positive: bool = False
+    g_phi_positive: bool = False
 
     update_type: UpdateType = UpdateType.NONE
 
@@ -521,53 +521,50 @@ class TrainingConfig(BaseModel):
     coeff_omega_f_L2: float = 0.0
     training_NNR_start_epoch: int = 0
 
-    learning_rate_encoder: float = 0.0001
-    learning_rate_latent_update: float = 0.0001
-    learning_rate_decoder: float = 0.0001
-
     coeff_W_L1: float = 0.0
     coeff_W_L1_rate: float = 0.5
-    coeff_W_L1_ghost: float = 0
     coeff_W_L2: float = 0.0
     coeff_W_sign: float = 0
     W_sign_temperature: float = 10.0
 
-    coeff_lin_phi_zero: float = 0
-    coeff_entropy_loss: float = 0
-    coeff_edge_diff: float = 0
-    lin_edge_mode: LinEdgeMode = LinEdgeMode.MLP  # mlp=learned MLP, tanh=fixed tanh(u_j), identity=fixed u_j
+    # Regularization coefficients
+    # -- f_theta (MLP0, neuron update) regularizers --
+    coeff_f_theta_zero: float = 0  # Penalize f_theta(0) != 0 (enforce zero-input zero-output)
+    coeff_f_theta_diff: float = 0  # Monotonicity of f_theta w.r.t. voltage (generic update_type only)
+    coeff_f_theta_msg_diff: float = 0  # Monotonicity of f_theta w.r.t. aggregated message input
+    coeff_f_theta_msg_sign: float = 0  # Sign consistency: f_theta output should match message sign
+    coeff_func_f_theta: float = 0.0  # Penalize f_theta output at zero input
+    coeff_f_theta_weight_L1: float = 0  # L1 penalty on f_theta MLP weights
+    coeff_f_theta_weight_L1_rate: float = 0.5  # Exponential ramp-up rate for f_theta L1
+    coeff_f_theta_weight_L2: float = 0  # L2 penalty on f_theta MLP weights
+
+    # -- g_phi (MLP1, edge message) regularizers --
+    coeff_g_phi_diff: float = 0  # Variance penalty on g_phi output across edges
+    coeff_g_phi_norm: float = 0  # Norm penalty on g_phi edge messages
+    coeff_func_g_phi: float = 0.0  # Penalize g_phi output at zero input
+    coeff_g_phi_weight_L1: float = 0  # L1 penalty on g_phi MLP weights
+    coeff_g_phi_weight_L1_rate: float = 0.5  # Exponential ramp-up rate for g_phi L1
+    coeff_g_phi_weight_L2: float = 0  # L2 penalty on g_phi MLP weights
+
+    # -- W (connectivity) regularizers --
+    # coeff_W_L1, coeff_W_L2, coeff_W_sign defined above
+
+    # -- Other regularizers --
+    coeff_entropy_loss: float = 0  # Entropy penalty on predictions
+    coeff_permutation: float = 100  # Permutation invariance penalty
+    coeff_TV_norm: float = 0  # Total variation norm on predictions
+    coeff_missing_activity: float = 0  # Penalty for missing activity patterns
+    coeff_model_a: float = 0  # Regularizer on embedding a
+    coeff_model_b: float = 0  # Regularizer on bias b
+    coeff_lin_modulation: float = 0  # Regularizer on modulation network
+
+    g_phi_mode: GPhiMode = GPhiMode.MLP  # mlp=learned MLP, tanh=fixed tanh(u_j), identity=fixed u_j
     w_optimizer_type: WOptimizerType = WOptimizerType.ADAM  # adam (default) or sgd (SGD with momentum)
 
     # Simple training parameters (matching ParticleGraph conceptually)
     first_coeff_L1: float = 0.0  # Phase 1 weak L1 regularization
     coeff_L1: float = 0.0  # Phase 2 target L1 regularization
     coeff_diff: float = 0.0  # Monotonicity constraint on edge function
-    coeff_func_phi: float = 0.0  # Penalize phi output at zero
-    coeff_func_edge: float = 0.0  # Penalize edge output at zero
-    coeff_update_diff: float = 0
-    coeff_update_msg_diff: float = 0
-    coeff_update_msg_sign: float = 0
-    coeff_update_u_diff: float = 0
-    coeff_NNR_f: float = 0
-
-    coeff_permutation: float = 100
-
-    coeff_TV_norm: float = 0
-    coeff_missing_activity: float = 0
-    coeff_edge_norm: float = 0
-
-    coeff_edge_weight_L1: float = 0
-    coeff_edge_weight_L1_rate: float = 0.5
-    coeff_phi_weight_L1: float = 0
-    coeff_phi_weight_L1_rate: float = 0.5
-
-    coeff_edge_weight_L2: float = 0
-    coeff_phi_weight_L2: float = 0
-
-    coeff_model_a: float = 0
-    coeff_model_b: float = 0
-    coeff_lin_modulation: float = 0
-    coeff_continuous: float = 0
 
     noise_level: float = 0
     measurement_noise_level: float = 0
@@ -601,7 +598,7 @@ class TrainingConfig(BaseModel):
 
     alternate_training: bool = False  # two-stage training: joint warmup then V_rest focus
     alternate_joint_ratio: float = 0.4  # fraction of total iterations for joint phase (all components at full LR)
-    alternate_lr_ratio: float = 0.1  # LR multiplier for W/lin_edge during V_rest focus phase
+    alternate_lr_ratio: float = 0.1  # LR multiplier for W/g_phi during V_rest focus phase
 
     time_step: int = 1
     recurrent_sequence: str = ""

@@ -129,7 +129,7 @@ def _batched_mlp_eval(mlp, model_a, rr, build_features_fn,
     stack all neurons into (N*1000, D) and run one pass per chunk.
 
     Args:
-        mlp: nn.Module — the MLP to evaluate (model.lin_edge or model.lin_phi).
+        mlp: nn.Module — the MLP to evaluate (model.g_phi or model.f_theta).
         model_a: (N, emb_dim) embedding tensor.
         rr: (N, n_pts) tensor of input values per neuron.
         build_features_fn: callable(rr_flat, emb_flat) -> (chunk*n_pts, D)
@@ -242,16 +242,16 @@ def _plot_curves_fast(ax, rr, func, type_list, cmap, linewidth=1, alpha=0.1):
 #  Feature-building helpers for the two MLPs
 # ------------------------------------------------------------------ #
 
-def _build_lin_edge_features(rr_flat, emb_flat, signal_model_name):
-    """Build input features for lin_edge MLP."""
+def _build_g_phi_features(rr_flat, emb_flat, signal_model_name):
+    """Build input features for g_phi MLP."""
     if 'flyvis_B' in signal_model_name:
         return torch.cat([rr_flat * 0, rr_flat, emb_flat, emb_flat], dim=1)
     else:
         return torch.cat([rr_flat, emb_flat], dim=1)
 
 
-def _build_lin_phi_features(rr_flat, emb_flat):
-    """Build input features for lin_phi MLP: (v, embedding, msg=0, exc=0)."""
+def _build_f_theta_features(rr_flat, emb_flat):
+    """Build input features for f_theta MLP: (v, embedding, msg=0, exc=0)."""
     zeros = torch.zeros_like(rr_flat)
     return torch.cat([rr_flat, emb_flat, zeros, zeros], dim=1)
 
@@ -283,17 +283,17 @@ def compute_activity_stats(x_ts, device=None):
 #  Slope extraction
 # ------------------------------------------------------------------ #
 
-def extract_lin_edge_slopes(model, config, n_neurons, mu_activity, sigma_activity, device):
-    """Extract linear slope of lin_edge for each neuron j (vectorized).
+def extract_g_phi_slopes(model, config, n_neurons, mu_activity, sigma_activity, device):
+    """Extract linear slope of g_phi for each neuron j (vectorized).
 
-    Evaluates lin_edge(a_j, v) over each neuron's activity range [mu-2σ, mu+2σ]
+    Evaluates g_phi(a_j, v) over each neuron's activity range [mu-2σ, mu+2σ]
     in one batched forward pass, then fits all slopes with vectorized regression.
 
     Returns:
-        slopes: (n_neurons,) numpy array of lin_edge slopes.
+        slopes: (n_neurons,) numpy array of g_phi slopes.
     """
     signal_model_name = config.graph_model.signal_model_name
-    lin_edge_positive = config.graph_model.lin_edge_positive
+    g_phi_positive = config.graph_model.g_phi_positive
     n_pts = 1000
 
     mu = to_numpy(mu_activity).astype(np.float32) if torch.is_tensor(mu_activity) else np.asarray(mu_activity, dtype=np.float32)
@@ -310,10 +310,10 @@ def extract_lin_edge_slopes(model, config, n_neurons, mu_activity, sigma_activit
 
     rr = _vectorized_linspace(starts, ends, n_pts, device)  # (N, n_pts)
 
-    post_fn = (lambda x: x ** 2) if lin_edge_positive else None
-    build_fn = lambda rr_f, emb_f: _build_lin_edge_features(rr_f, emb_f, signal_model_name)
+    post_fn = (lambda x: x ** 2) if g_phi_positive else None
+    build_fn = lambda rr_f, emb_f: _build_g_phi_features(rr_f, emb_f, signal_model_name)
 
-    func = _batched_mlp_eval(model.lin_edge, model.a[:n_neurons], rr,
+    func = _batched_mlp_eval(model.g_phi, model.a[:n_neurons], rr,
                              build_fn, device, post_fn=post_fn)  # (N, n_pts)
 
     slopes, _ = _vectorized_linear_fit(rr, func)
@@ -324,10 +324,10 @@ def extract_lin_edge_slopes(model, config, n_neurons, mu_activity, sigma_activit
     return slopes
 
 
-def extract_lin_phi_slopes(model, config, n_neurons, mu_activity, sigma_activity, device):
-    """Extract linear slope and offset of lin_phi for each neuron i (vectorized).
+def extract_f_theta_slopes(model, config, n_neurons, mu_activity, sigma_activity, device):
+    """Extract linear slope and offset of f_theta for each neuron i (vectorized).
 
-    Evaluates lin_phi(a_i, v_i, msg=0, exc=0) over each neuron's activity range
+    Evaluates f_theta(a_i, v_i, msg=0, exc=0) over each neuron's activity range
     in one batched forward pass, then fits all slopes/offsets with vectorized regression.
 
     Returns:
@@ -343,8 +343,8 @@ def extract_lin_phi_slopes(model, config, n_neurons, mu_activity, sigma_activity
 
     rr = _vectorized_linspace(starts, ends, n_pts, device)  # (N, n_pts)
 
-    func = _batched_mlp_eval(model.lin_phi, model.a[:n_neurons], rr,
-                             lambda rr_f, emb_f: _build_lin_phi_features(rr_f, emb_f),
+    func = _batched_mlp_eval(model.f_theta, model.a[:n_neurons], rr,
+                             lambda rr_f, emb_f: _build_f_theta_features(rr_f, emb_f),
                              device)  # (N, n_pts)
 
     slopes, offsets = _vectorized_linear_fit(rr, func)
@@ -355,7 +355,7 @@ def extract_lin_phi_slopes(model, config, n_neurons, mu_activity, sigma_activity
 def compute_dynamics_r2(model, x_ts, config, device, n_neurons):
     """Compute V_rest R² and tau R² during training (lightweight, no plots).
 
-    Extracts learned V_rest and tau from lin_phi slopes/offsets and compares
+    Extracts learned V_rest and tau from f_theta slopes/offsets and compares
     against ground truth V_i_rest.pt and taus.pt.
 
     Returns:
@@ -371,9 +371,9 @@ def compute_dynamics_r2(model, x_ts, config, device, n_neurons):
     gt_tau = to_numpy(gt_tau_tensor[:n_neurons])
 
     mu, sigma = compute_activity_stats(x_ts, device)
-    slopes, offsets = extract_lin_phi_slopes(model, config, n_neurons, mu, sigma, device)
+    slopes, offsets = extract_f_theta_slopes(model, config, n_neurons, mu, sigma, device)
 
-    # V_rest = -offset / slope (x-intercept of linearized lin_phi)
+    # V_rest = -offset / slope (x-intercept of linearized f_theta)
     learned_V_rest = np.where(slopes != 0, -offsets / slopes, 1.0)[:n_neurons]
     # tau = 1 / (-slope)
     learned_tau = np.where(slopes != 0, 1.0 / -slopes, 1.0)[:n_neurons]
@@ -392,11 +392,11 @@ def compute_dynamics_r2(model, x_ts, config, device, n_neurons):
 
 
 # ------------------------------------------------------------------ #
-#  Gradient of lin_phi w.r.t. msg
+#  Gradient of f_theta w.r.t. msg
 # ------------------------------------------------------------------ #
 
 def compute_grad_msg(model, in_features, config):
-    """Compute d(lin_phi)/d(msg) for each neuron from a forward-pass in_features.
+    """Compute d(f_theta)/d(msg) for each neuron from a forward-pass in_features.
 
     Args:
         model: FlyVisGNN model.
@@ -415,7 +415,7 @@ def compute_grad_msg(model, in_features, config):
 
     msg.requires_grad_(True)
     in_features_grad = torch.cat([v, embedding, msg, excitation], dim=1)
-    out = model.lin_phi(in_features_grad)
+    out = model.f_theta(in_features_grad)
 
     grad = torch.autograd.grad(
         outputs=out,
@@ -432,7 +432,7 @@ def compute_grad_msg(model, in_features, config):
 #  Corrected weights
 # ------------------------------------------------------------------ #
 
-def compute_corrected_weights(model, edges, slopes_lin_phi, slopes_lin_edge, grad_msg):
+def compute_corrected_weights(model, edges, slopes_f_theta, slopes_g_phi, grad_msg):
     """Compute corrected W_ij from raw W, slopes, and grad_msg.
 
     Formula:
@@ -441,9 +441,9 @@ def compute_corrected_weights(model, edges, slopes_lin_phi, slopes_lin_edge, gra
     Args:
         model: model with .W, .n_edges, .n_extra_null_edges attributes.
         edges: (2, E) edge index tensor.
-        slopes_lin_phi: (N,) array/tensor of lin_phi slopes per neuron.
-        slopes_lin_edge: (N,) array/tensor of lin_edge slopes per neuron.
-        grad_msg: (N,) tensor of d(lin_phi)/d(msg) per neuron.
+        slopes_f_theta: (N,) array/tensor of f_theta slopes per neuron.
+        slopes_g_phi: (N,) array/tensor of g_phi slopes per neuron.
+        grad_msg: (N,) tensor of d(f_theta)/d(msg) per neuron.
 
     Returns:
         corrected_W: (E, 1) tensor of corrected weights.
@@ -451,10 +451,10 @@ def compute_corrected_weights(model, edges, slopes_lin_phi, slopes_lin_edge, gra
     device = get_model_W(model).device
 
     # Convert to tensors if needed
-    if not isinstance(slopes_lin_phi, torch.Tensor):
-        slopes_lin_phi = torch.tensor(slopes_lin_phi, dtype=torch.float32, device=device)
-    if not isinstance(slopes_lin_edge, torch.Tensor):
-        slopes_lin_edge = torch.tensor(slopes_lin_edge, dtype=torch.float32, device=device)
+    if not isinstance(slopes_f_theta, torch.Tensor):
+        slopes_f_theta = torch.tensor(slopes_f_theta, dtype=torch.float32, device=device)
+    if not isinstance(slopes_g_phi, torch.Tensor):
+        slopes_g_phi = torch.tensor(slopes_g_phi, dtype=torch.float32, device=device)
 
     n_w = model.n_edges + model.n_extra_null_edges
 
@@ -462,8 +462,8 @@ def compute_corrected_weights(model, edges, slopes_lin_phi, slopes_lin_edge, gra
     target_neuron_ids = edges[1, :] % n_w   # i — post-synaptic
     prior_neuron_ids = edges[0, :] % n_w    # j — pre-synaptic
 
-    slopes_phi_per_edge = slopes_lin_phi[target_neuron_ids]     # (E,)
-    slopes_edge_per_edge = slopes_lin_edge[prior_neuron_ids]    # (E,)
+    slopes_phi_per_edge = slopes_f_theta[target_neuron_ids]     # (E,)
+    slopes_edge_per_edge = slopes_g_phi[prior_neuron_ids]    # (E,)
     grad_msg_per_edge = grad_msg[target_neuron_ids]             # (E,)
 
     W = get_model_W(model)  # (E, 1)
@@ -479,7 +479,7 @@ def compute_corrected_weights(model, edges, slopes_lin_phi, slopes_lin_edge, gra
 def compute_all_corrected_weights(model, config, edges, x_ts, device, n_grad_frames=8):
     """High-level: compute corrected W from model state and training data.
 
-    Extracts slopes from lin_edge and lin_phi, computes grad_msg averaged
+    Extracts slopes from g_phi and f_theta, computes grad_msg averaged
     over multiple frames, and applies the correction formula.
 
     Args:
@@ -492,9 +492,9 @@ def compute_all_corrected_weights(model, config, edges, x_ts, device, n_grad_fra
 
     Returns:
         corrected_W: (E, 1) tensor of corrected weights.
-        slopes_lin_phi: (N,) numpy array.
-        slopes_lin_edge: (N,) numpy array.
-        offsets_lin_phi: (N,) numpy array.
+        slopes_f_theta: (N,) numpy array.
+        slopes_g_phi: (N,) numpy array.
+        offsets_f_theta: (N,) numpy array.
     """
     n_neurons = model.a.shape[0]
 
@@ -502,9 +502,9 @@ def compute_all_corrected_weights(model, config, edges, x_ts, device, n_grad_fra
     mu_activity, sigma_activity = compute_activity_stats(x_ts, device)
 
     # 2. Slope extraction
-    slopes_lin_edge = extract_lin_edge_slopes(
+    slopes_g_phi = extract_g_phi_slopes(
         model, config, n_neurons, mu_activity, sigma_activity, device)
-    slopes_lin_phi, offsets_lin_phi = extract_lin_phi_slopes(
+    slopes_f_theta, offsets_f_theta = extract_f_theta_slopes(
         model, config, n_neurons, mu_activity, sigma_activity, device)
 
     # 3. Compute grad_msg over multiple frames and take median
@@ -530,9 +530,9 @@ def compute_all_corrected_weights(model, config, edges, x_ts, device, n_grad_fra
 
     # 4. Corrected weights
     corrected_W = compute_corrected_weights(
-        model, edges, slopes_lin_phi, slopes_lin_edge, grad_msg)
+        model, edges, slopes_f_theta, slopes_g_phi, grad_msg)
 
-    return corrected_W, slopes_lin_phi, slopes_lin_edge, offsets_lin_phi
+    return corrected_W, slopes_f_theta, slopes_g_phi, offsets_f_theta
 
 
 # ------------------------------------------------------------------ #
@@ -565,8 +565,8 @@ def plot_embedding(ax, model, type_list, n_types, cmap):
     ax.yaxis.set_major_formatter(FormatStrFormatter('%.1f'))
 
 
-def plot_lin_phi(ax, model, config, n_neurons, type_list, cmap, device, step=20):
-    """Plot lin_phi function curves colored by neuron type (vectorized).
+def plot_f_theta(ax, model, config, n_neurons, type_list, cmap, device, step=20):
+    """Plot f_theta function curves colored by neuron type (vectorized).
 
     Evaluates all selected neurons in one batched MLP pass and draws
     all curves with a single LineCollection.
@@ -584,8 +584,8 @@ def plot_lin_phi(ax, model, config, n_neurons, type_list, cmap, device, step=20)
 
     # Batched MLP evaluation
     func = _batched_mlp_eval(
-        model.lin_phi, model.a[neuron_ids], rr,
-        lambda rr_f, emb_f: _build_lin_phi_features(rr_f, emb_f),
+        model.f_theta, model.a[neuron_ids], rr,
+        lambda rr_f, emb_f: _build_f_theta_features(rr_f, emb_f),
         device)
 
     # Fast plot with LineCollection
@@ -600,8 +600,8 @@ def plot_lin_phi(ax, model, config, n_neurons, type_list, cmap, device, step=20)
     ax.tick_params(axis='both', which='major', labelsize=24)
 
 
-def plot_lin_edge(ax, model, config, n_neurons, type_list, cmap, device, step=20):
-    """Plot lin_edge function curves colored by neuron type (vectorized).
+def plot_g_phi(ax, model, config, n_neurons, type_list, cmap, device, step=20):
+    """Plot g_phi function curves colored by neuron type (vectorized).
 
     Evaluates all selected neurons in one batched MLP pass and draws
     all curves with a single LineCollection.
@@ -615,11 +615,11 @@ def plot_lin_edge(ax, model, config, n_neurons, type_list, cmap, device, step=20
     rr_1d = torch.linspace(config.plotting.xlim[0], config.plotting.xlim[1], n_pts, device=device)
     rr = rr_1d.unsqueeze(0).expand(n_sel, -1)
 
-    post_fn = (lambda x: x ** 2) if model_config.lin_edge_positive else None
-    build_fn = lambda rr_f, emb_f: _build_lin_edge_features(rr_f, emb_f, model_config.signal_model_name)
+    post_fn = (lambda x: x ** 2) if model_config.g_phi_positive else None
+    build_fn = lambda rr_f, emb_f: _build_g_phi_features(rr_f, emb_f, model_config.signal_model_name)
 
     func = _batched_mlp_eval(
-        model.lin_edge, model.a[neuron_ids], rr,
+        model.g_phi, model.a[neuron_ids], rr,
         build_fn, device, post_fn=post_fn)
 
     type_np = to_numpy(type_list).astype(int)
@@ -680,17 +680,17 @@ def plot_weight_scatter(ax, gt_weights, learned_weights, corrected=False,
     return r_squared, slope
 
 
-def plot_tau(ax, slopes_lin_phi, gt_taus, n_neurons, mc=None):
+def plot_tau(ax, slopes_f_theta, gt_taus, n_neurons, mc=None):
     """Plot learned tau vs ground truth tau.
 
     Args:
         ax: matplotlib Axes.
-        slopes_lin_phi: (N,) numpy array of lin_phi slopes.
+        slopes_f_theta: (N,) numpy array of f_theta slopes.
         gt_taus: (N,) tensor/array of ground truth taus.
         n_neurons: number of neurons.
         mc: color for scatter points.
     """
-    learned_tau = np.where(slopes_lin_phi != 0, 1.0 / -slopes_lin_phi, 1.0)
+    learned_tau = np.where(slopes_f_theta != 0, 1.0 / -slopes_f_theta, 1.0)
     learned_tau = learned_tau[:n_neurons]
     learned_tau = np.clip(learned_tau, 0, 1)
     gt_taus_np = to_numpy(gt_taus[:n_neurons]) if torch.is_tensor(gt_taus) else np.asarray(gt_taus[:n_neurons])
@@ -710,18 +710,18 @@ def plot_tau(ax, slopes_lin_phi, gt_taus, n_neurons, mc=None):
     return r_squared
 
 
-def plot_vrest(ax, slopes_lin_phi, offsets_lin_phi, gt_V_rest, n_neurons, mc=None):
+def plot_vrest(ax, slopes_f_theta, offsets_f_theta, gt_V_rest, n_neurons, mc=None):
     """Plot learned V_rest vs ground truth V_rest.
 
     Args:
         ax: matplotlib Axes.
-        slopes_lin_phi: (N,) numpy array of lin_phi slopes.
-        offsets_lin_phi: (N,) numpy array of lin_phi offsets.
+        slopes_f_theta: (N,) numpy array of f_theta slopes.
+        offsets_f_theta: (N,) numpy array of f_theta offsets.
         gt_V_rest: (N,) tensor/array of ground truth V_rest.
         n_neurons: number of neurons.
         mc: color for scatter points.
     """
-    learned_V_rest = np.where(slopes_lin_phi != 0, -offsets_lin_phi / slopes_lin_phi, 1.0)
+    learned_V_rest = np.where(slopes_f_theta != 0, -offsets_f_theta / slopes_f_theta, 1.0)
     gt_vr_np = to_numpy(gt_V_rest[:n_neurons]) if torch.is_tensor(gt_V_rest) else np.asarray(gt_V_rest[:n_neurons])
 
     r_squared, slope = compute_r_squared(gt_vr_np, learned_V_rest)
@@ -1625,7 +1625,7 @@ def plot_signal_loss(loss_dict, log_dir, epoch=None, Niter=None, debug=False,
 def plot_training_flyvis(x_ts, model, config, epoch, N, log_dir, device, type_list,
                          gt_weights, edges, n_neurons=None, n_neuron_types=None):
     from flyvis_gnn.plot import (
-        plot_embedding, plot_lin_edge, plot_lin_phi, plot_weight_scatter,
+        plot_embedding, plot_g_phi, plot_f_theta, plot_weight_scatter,
         compute_all_corrected_weights, get_model_W,
     )
     from flyvis_gnn.utils import CustomColorMap
@@ -1677,16 +1677,16 @@ def plot_training_flyvis(x_ts, model, config, epoch, N, log_dir, device, type_li
                 dpi=87, bbox_inches='tight', pad_inches=0)
     plt.close()
 
-    # Plot 4: Edge function visualization (lin_edge / MLP1)
+    # Plot 4: Edge function visualization (g_phi / MLP1)
     fig, ax = plt.subplots(figsize=(8, 8))
-    plot_lin_edge(ax, model, config, n_neurons, type_list, cmap, device)
+    plot_g_phi(ax, model, config, n_neurons, type_list, cmap, device)
     plt.tight_layout()
     plt.savefig(f"{log_dir}/tmp_training/function/MLP1/func_{epoch}_{N}.png", dpi=87)
     plt.close()
 
-    # Plot 5: Phi function visualization (lin_phi / MLP0)
+    # Plot 5: Phi function visualization (f_theta / MLP0)
     fig, ax = plt.subplots(figsize=(8, 8))
-    plot_lin_phi(ax, model, config, n_neurons, type_list, cmap, device)
+    plot_f_theta(ax, model, config, n_neurons, type_list, cmap, device)
     plt.tight_layout()
     plt.savefig(f"{log_dir}/tmp_training/function/MLP0/func_{epoch}_{N}.png", dpi=87)
     plt.close()
@@ -1776,7 +1776,7 @@ def analyze_mlp_edge_lines(model, neuron_list, all_neuron_list, adjacency_matrix
     Plots mean and standard deviation across all connections
 
     Args:
-        model: The trained model with embeddings and lin_edge
+        model: The trained model with embeddings and g_phi
         neuron_list: List of neuron names of interest (1-5 neurons)
         all_neuron_list: Complete list of all 300 neuron names
         adjacency_matrix: 2D array (300x300) where adjacency_matrix[i,j] = 1 if i->j connection exists
@@ -1861,11 +1861,11 @@ def analyze_mlp_edge_lines(model, neuron_list, all_neuron_list, adjacency_matrix
             line_features = torch.stack(line_inputs, dim=0)  # (len(u_diff_line), 6)
 
             with torch.no_grad():
-                lin_edge = model.lin_edge(line_features)
-                if model.lin_edge_positive:
-                    lin_edge = lin_edge ** 2
+                g_phi = model.g_phi(line_features)
+                if model.g_phi_positive:
+                    g_phi = g_phi ** 2
 
-            connection_outputs[conn_idx] = lin_edge.squeeze(-1)
+            connection_outputs[conn_idx] = g_phi.squeeze(-1)
 
         # Compute mean and std across all connections to this receiver
         mean_output = torch.mean(connection_outputs, dim=0).cpu().numpy()
@@ -1926,7 +1926,7 @@ def analyze_mlp_edge_lines_weighted_with_max(model, neuron_name, all_neuron_list
     Returns the connection with maximum response in signal difference range [8, 10]
 
     Args:
-        model: The trained model with embeddings and lin_edge
+        model: The trained model with embeddings and g_phi
         neuron_name: Single neuron name of interest
         all_neuron_list: Complete list of all 300 neuron names
         adjacency_matrix: 2D array (300x300) where adjacency_matrix[i,j] = 1 if i->j connection exists
@@ -2011,12 +2011,12 @@ def analyze_mlp_edge_lines_weighted_with_max(model, neuron_name, all_neuron_list
         line_features = torch.stack(line_inputs, dim=0)  # (len(u_diff_line), 6)
 
         with torch.no_grad():
-            lin_edge = model.lin_edge(line_features)
-            if model.lin_edge_positive:
-                lin_edge = lin_edge ** 2
+            g_phi = model.g_phi(line_features)
+            if model.g_phi_positive:
+                g_phi = g_phi ** 2
 
         # Apply weight scaling
-        edge_output = lin_edge.squeeze(-1).cpu().numpy()
+        edge_output = g_phi.squeeze(-1).cpu().numpy()
         weighted_output = edge_output * connection_weight
 
         # Find maximum response in target range [8, 10]
@@ -2113,7 +2113,7 @@ def find_top_responding_pairs(model, all_neuron_list, adjacency_matrix, weight_m
     by analyzing all neurons as receivers
 
     Args:
-        model: The trained model with embeddings and lin_edge
+        model: The trained model with embeddings and g_phi
         all_neuron_list: Complete list of all 300 neuron names
         adjacency_matrix: 2D array (300x300) where adjacency_matrix[i,j] = 1 if i->j connection exists
         weight_matrix: 2D array (300x300) with connection weights
@@ -2258,7 +2258,7 @@ def analyze_mlp_phi_synaptic(model, n_neurons=300, signal_range=(0, 10), resolut
 
         # Forward pass through MLP
         with torch.no_grad():
-            phi_output = model.lin_phi(batch_features)
+            phi_output = model.f_theta(batch_features)
 
         # Reshape back to batch format
         phi_output = phi_output.reshape(batch_size_actual, resolution, -1).squeeze(-1)
@@ -2365,7 +2365,7 @@ def analyze_mlp_phi_embedding(model, n_neurons=300, signal_range=(0, 10), resolu
         batch_features = batch_features.reshape(-1, batch_features.shape[-1])
 
         with torch.no_grad():
-            phi_output = model.lin_phi(batch_features)
+            phi_output = model.f_theta(batch_features)
 
         phi_output = phi_output.reshape(batch_size_actual, resolution, -1).squeeze(-1)
 
@@ -2398,7 +2398,7 @@ def analyze_mlp_phi_embedding(model, n_neurons=300, signal_range=(0, 10), resolu
         in_features = torch.cat([u_batch, neuron_embedding, msg, field, excitation], dim=1)
 
         with torch.no_grad():
-            phi_output = model.lin_phi(in_features)
+            phi_output = model.f_theta(in_features)
 
         output_grid[i, :] = phi_output.squeeze()
 

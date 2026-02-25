@@ -346,7 +346,7 @@ Several analysis functions iterate over all neurons individually (N = 13,741) wi
 - **`_vectorized_linear_fit(x, y)`** — closed-form least squares on `(N,)` vectors
 - **`_plot_curves_fast(ax, rr, func, type_list, cmap)`** — single `LineCollection` instead of N `plt.plot()` calls
 
-Applied in `extract_lin_edge_slopes()`, `extract_lin_phi_slopes()`, `plot_lin_edge()`, `plot_lin_phi()` in `plot.py`, and four inline loops in `GNN_PlotFigure.py`. Expected speedup: ~100s → ~2–4s.
+Applied in `extract_g_phi_slopes()`, `extract_f_theta_slopes()`, `plot_g_phi()`, `plot_f_theta()` in `plot.py`, and four inline loops in `GNN_PlotFigure.py`. Expected speedup: ~100s → ~2–4s.
 
 ### Validation
 
@@ -443,7 +443,7 @@ Three short section aliases (`sim`, `tc`, `model_config`) then direct access: `s
 - `graph_trainer.py`: `data_train_flyvis`, `data_test`, `data_plot`, `data_plot_flyvis`
 - `graph_data_generator.py`: `data_generate_fly_voltage`
 - `generators/utils.py`: `init_neurons`, `init_mesh`
-- `plot.py`: `plot_lin_edge`
+- `plot.py`: `plot_g_phi`
 - `GNN_PlotFigure.py`: `_create_true_model`, `create_signal_excitation_subplot`, `plot_signal`, `plot_synaptic_flyvis`, `create_signal_movies`
 
 ### Validation
@@ -515,18 +515,18 @@ A class-level dictionary that documents the model equations, config parameters, 
 class FlyVisGNN(nn.Module):
     PARAMS_DOC = {
         "model_name": "FlyVisGNN",
-        "description": "du/dt = lin_phi(v, a, sum(msg), excitation), msg = W * lin_edge(v, a)",
+        "description": "du/dt = f_theta(v, a, sum(msg), excitation), msg = W * g_phi(v, a)",
         "equations": {
-            "message": "msg_j = W[edge] * lin_edge(v_j, a_j)^2",
-            "update": "du/dt = lin_phi(v, a, sum(msg), excitation)",
+            "message": "msg_j = W[edge] * g_phi(v_j, a_j)^2",
+            "update": "du/dt = f_theta(v, a, sum(msg), excitation)",
         },
         "graph_model_config": {
-            "lin_edge (MLP0)": {
+            "g_phi (MLP0)": {
                 "input_size": "DERIVED — 1 + embedding_dim",
                 "hidden_dim": {"typical_range": [32, 128], "default": 64},
                 "n_layers": {"typical_range": [2, 5], "default": 3},
             },
-            "lin_phi (MLP1)": {
+            "f_theta (MLP1)": {
                 "input_size_update": "DERIVED — 1 + embedding_dim + output_size + 1",
                 "hidden_dim_update": {"typical_range": [32, 128], "default": 64},
             },
@@ -672,7 +672,7 @@ The alternating trainer adds a `phase` column (`joint`/`V_rest`) to distinguish 
 
 A new function `compute_dynamics_r2()` in `plot.py` computes V_rest R² and tau R² during training by:
 1. Loading ground truth `V_i_rest.pt` and `tau_i.pt`
-2. Extracting linearized slopes/offsets from `lin_phi` via `extract_lin_phi_slopes()`
+2. Extracting linearized slopes/offsets from `f_theta` via `extract_f_theta_slopes()`
 3. Computing `learned_V_rest = -offset / slope` and `learned_tau = 1 / (-slope)`
 4. Returning `(vrest_r2, tau_r2)` via `compute_r_squared()`
 
@@ -709,8 +709,8 @@ Several targeted improvements to the training loop in `data_train_flyvis()`:
 ### The problem
 
 The flyvis GNN has two component groups that converge at different speeds:
-- **Fast components**: `lin_edge` (g_phi) and `W` — learn connectivity structure (conn_R²)
-- **Slow components**: `lin_phi` (f_theta) and embedding `a` — learn V_rest, tau dynamics
+- **Fast components**: `g_phi` (g_phi) and `W` — learn connectivity structure (conn_R²)
+- **Slow components**: `f_theta` (f_theta) and embedding `a` — learn V_rest, tau dynamics
 
 The original cyclic alternation approach (68 iterations) failed: V_rest R² ≈ 0 (worse than standard training's 0.19–0.73), conn_R² maxed at 0.88 (vs 0.944 gold standard). Root cause: alternation starts before connectivity is established, so V_rest gradients are meaningless in early training.
 
@@ -719,7 +719,7 @@ The original cyclic alternation approach (68 iterations) failed: V_rest R² ≈ 
 A revised `data_train_flyvis_alternate()` in `graph_trainer.py` uses a two-stage approach with doubled training time (2 epochs):
 
 1. **Joint phase** (first 40% of iterations): All components train at full learning rate. Establishes good connectivity structure first.
-2. **V_rest focus phase** (remaining 60%): `lin_phi` + `embedding` at full LR, `W` + `lin_edge` at reduced LR (`lr × alternate_lr_ratio`). Maintains connectivity while allowing V_rest/tau to converge.
+2. **V_rest focus phase** (remaining 60%): `f_theta` + `embedding` at full LR, `W` + `g_phi` at reduced LR (`lr × alternate_lr_ratio`). Maintains connectivity while allowing V_rest/tau to converge.
 
 Three config parameters in `TrainingConfig` (`config.py`):
 
@@ -727,7 +727,7 @@ Three config parameters in `TrainingConfig` (`config.py`):
 |-----------|---------|-------------|
 | `alternate_training` | `false` | Enable two-stage training |
 | `alternate_joint_ratio` | `0.4` | Fraction of total iterations for joint phase |
-| `alternate_lr_ratio` | `0.1` | LR multiplier for W/lin_edge during V_rest focus phase |
+| `alternate_lr_ratio` | `0.1` | LR multiplier for W/g_phi during V_rest focus phase |
 
 Dispatch in `data_train()` routes to the two-stage trainer when `config.training.alternate_training` is true. Parameter groups in `set_trainable_parameters()` (`models/utils.py`) have `name` and `base_lr` fields so the phase-switching code can identify and scale learning rates.
 
@@ -774,8 +774,8 @@ python GNN_LLM_parallel_flyvis.py -o generate_train_test_plot_Claude_cluster fly
 
 | Function | File | Hardcoded sizes |
 |----------|------|-----------------|
-| `plot_lin_phi` | `plot.py` | 32, 24 |
-| `plot_lin_edge` | `plot.py` | 32, 24 |
+| `plot_f_theta` | `plot.py` | 32, 24 |
+| `plot_g_phi` | `plot.py` | 32, 24 |
 | `plot_weight_scatter` | `plot.py` | 32, 24 |
 | `plot_tau` | `plot.py` | 32, 24 |
 | `plot_vrest` | `plot.py` | 32, 24 |
@@ -903,7 +903,7 @@ Renamed `bSave` → `save` in `graph_data_generator.py` and all 5 callers.
 | `ClusterConnectivity` | `cluster_connectivity` | TrainingConfig |
 | `OdeMethod` | `ode_method` | TrainingConfig |
 | `WInitMode` | `w_init_mode` | TrainingConfig |
-| `LinEdgeMode` | `lin_edge_mode` | TrainingConfig |
+| `GPhiMode` | `g_phi_mode` | TrainingConfig |
 | `WOptimizerType` | `w_optimizer_type` | TrainingConfig |
 | `LabelStyle` | `label_style` | PlottingConfig |
 
@@ -931,12 +931,12 @@ The existing `replace_embedding` sparsity mode clusters neurons using DBSCAN on 
 
 Added UMAP-based clustering that runs between epochs in `data_train_flyvis`. The routine:
 
-1. **Builds augmented features** from model parameters: embedding (`model.a`), tau and V_rest (derived from `lin_phi` slopes/offsets), and per-neuron W statistics (in/out mean/std)
+1. **Builds augmented features** from model parameters: embedding (`model.a`), tau and V_rest (derived from `f_theta` slopes/offsets), and per-neuron W statistics (in/out mean/std)
 2. **UMAP reduces** the augmented vector to 2D
 3. **Clusters** in UMAP space using DBSCAN or GMM (configurable)
 4. **Reassigns embeddings** to the median of each cluster (not mean)
 5. **Normalizes** embeddings to [0, 1]
-6. **Rebuilds the optimizer** to reset momentum, allowing `lin_phi` and `lin_edge` to adapt to the new embedding values
+6. **Rebuilds the optimizer** to reset momentum, allowing `f_theta` and `g_phi` to adapt to the new embedding values
 
 ### Config parameters added (`TrainingConfig`)
 
