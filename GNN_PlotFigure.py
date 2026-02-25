@@ -1039,8 +1039,14 @@ def plot_signal(config, epoch_list, log_dir, logger, cc, style, extended, device
     else:
         has_external_input = False
 
-    x_ts = load_simulation_data(graphs_data_path(config.dataset, 'x_list_0'))
-    y_data = load_raw_array(graphs_data_path(config.dataset, 'y_list_0'))
+    x_path = graphs_data_path(config.dataset, 'x_list_0')
+    if not os.path.exists(x_path):
+        x_path = graphs_data_path(config.dataset, 'x_list_train')
+    x_ts = load_simulation_data(x_path)
+    y_path = graphs_data_path(config.dataset, 'y_list_0')
+    if not os.path.exists(y_path):
+        y_path = graphs_data_path(config.dataset, 'y_list_train')
+    y_data = load_raw_array(y_path)
     if os.path.exists(graphs_data_path(config.dataset, 'raw_x_list_0.npy')):
         from flyvis_gnn.neuron_state import NeuronTimeSeries
         raw_x_ts = NeuronTimeSeries.from_numpy(np.load(graphs_data_path(config.dataset, 'raw_x_list_0.npy')))
@@ -2592,9 +2598,15 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
 
     time.sleep(0.5)
     print('load simulation data...')
-    x_ts = load_simulation_data(graphs_data_path(config.dataset, 'x_list_0'),
+    x_path = graphs_data_path(config.dataset, 'x_list_0')
+    if not os.path.exists(x_path):
+        x_path = graphs_data_path(config.dataset, 'x_list_train')
+    x_ts = load_simulation_data(x_path,
                                 fields=['index', 'voltage', 'stimulus', 'neuron_type', 'group_type'])
-    y_data = load_raw_array(graphs_data_path(config.dataset, 'y_list_0'))
+    y_path = graphs_data_path(config.dataset, 'y_list_0')
+    if not os.path.exists(y_path):
+        y_path = graphs_data_path(config.dataset, 'y_list_train')
+    y_data = load_raw_array(y_path)
 
     ynorm = torch.load(os.path.join(log_dir, 'ynorm.pt'), map_location=device)
     if os.path.exists(os.path.join(log_dir, 'xnorm.pt')):
