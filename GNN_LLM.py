@@ -106,7 +106,7 @@ def check_cluster_repo():
         for line in diff_output.splitlines():
             print(f"  \033[91m{line}\033[0m")
         return False
-    print(f"\033[92mCluster repo clean (no uncommitted source changes)\033[0m")
+    print(f"\033[92mCluster repo: git diff clean (no uncommitted source changes)\033[0m")
     return True
 
 
