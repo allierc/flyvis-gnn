@@ -272,6 +272,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--resume", action="store_true", help="auto-resume from last completed batch"
     )
+    parser.add_argument(
+        "--cluster", action="store_true", help="submit training to LSF cluster (default: run locally)"
+    )
 
     print()
     device = []
@@ -347,7 +350,8 @@ if __name__ == "__main__":
     training_time_target_min = claude_cfg.get('training_time_target_min', 60)
     n_iter_block = claude_n_iter_block
 
-    print(f"\033[94mCluster node: gpu_{claude_node_name}, n_parallel: {N_PARALLEL}, generate_data: {generate_data}, training_time_target_min: {training_time_target_min}\033[0m")
+    mode = "cluster" if cluster_enabled else "local (sequential)"
+    print(f"\033[94mMode: {mode}, node: gpu_{claude_node_name}, n_parallel: {N_PARALLEL}, generate_data: {generate_data}, training_time_target_min: {training_time_target_min}\033[0m")
 
     # Slot config paths and analysis log paths
     config_paths = {}
@@ -422,7 +426,7 @@ if __name__ == "__main__":
     log_dir = exploration_dir
     os.makedirs(exploration_dir, exist_ok=True)
 
-    cluster_enabled = 'cluster' in task
+    cluster_enabled = args.cluster
 
     # Check instruction file exists
     if not os.path.exists(instruction_path):
@@ -1037,6 +1041,7 @@ IMPORTANT: Do NOT change the 'dataset' field in any config — it must stay as-i
 IMPORTANT: Data is PRE-GENERATED — do NOT change simulation parameters (n_neurons, n_frames, etc.).
 IMPORTANT: Training time target is {training_time_target_min} min per iteration. Check training_time_min in the metrics and flag any slot that exceeds this limit.
 IMPORTANT: Read user_input.md — if there are pending instructions, acknowledge them by appending to the "Acknowledged" section with a timestamp and moving them out of "Pending Instructions".
+"""
 
         print("\033[93mClaude analysis...\033[0m")
         output_text = run_claude_cli(claude_prompt, root_dir)
