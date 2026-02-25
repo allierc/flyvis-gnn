@@ -569,6 +569,7 @@ Write the planned mutations to the working memory file."""
         for slot_idx, iteration in enumerate(iterations):
             slot = slot_idx
             config = NeuralGraphConfig.from_yaml(config_paths[slot])
+            config.training.n_epochs = 1
             config.dataset = pre_folder + config.dataset
             config.config_file = pre_folder + slot_names[slot]
             configs[slot] = config
