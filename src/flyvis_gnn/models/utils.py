@@ -1219,6 +1219,9 @@ class LossRegularizer:
         self._iter_total = 0.0
         self._iter_tracker = {}
 
+        # Epoch boundary tracking (cumulative iter_count at each epoch start)
+        self.epoch_boundaries = []
+
         # History for plotting
         self._history = {comp: [] for comp in self.COMPONENTS}
         self._history['regul_total'] = []
@@ -1281,8 +1284,8 @@ class LossRegularizer:
             self.plot_frequency = plot_frequency
         if Niter is not None:
             self.Niter = Niter
-        # Reset iteration counter at epoch start
-        self.iter_count = 0
+        if epoch > 0:
+            self.epoch_boundaries.append(self.iter_count)
 
     def reset_iteration(self):
         """Reset per-iteration accumulator (called once per batch, NOT per N iteration)."""
@@ -1464,7 +1467,7 @@ class LossRegularizer:
         """Append current iteration values to history."""
         n = self.n_neurons
         self._history['regul_total'].append(self._iter_total / n)
-        self._history['iteration'].append(self.epoch * self.Niter + self.iter_count)
+        self._history['iteration'].append(self.iter_count)
         for comp in self.COMPONENTS:
             self._history[comp].append(self._iter_tracker.get(comp, 0) / n)
 

@@ -65,16 +65,13 @@ def plot_training_summary_panels(fig, log_dir, Niter=None):
             with open(metrics_log_path) as f:
                 for line in f:
                     line = line.strip()
-                    if not line or line.startswith('epoch'):
+                    if not line or line.startswith(('epoch', 'iteration')):
                         continue
                     parts = line.split(',')
-                    ep = int(parts[0])
-                    it = int(parts[1])
-                    global_iter = ep * (Niter if Niter else 0) + it
-                    r2_iters.append(global_iter)
-                    conn_vals.append(float(parts[2]))
-                    vrest_vals.append(float(parts[3]) if len(parts) > 3 else 0.0)
-                    tau_vals.append(float(parts[4]) if len(parts) > 4 else 0.0)
+                    r2_iters.append(int(parts[0]))
+                    conn_vals.append(float(parts[1]))
+                    vrest_vals.append(float(parts[2]) if len(parts) > 2 else 0.0)
+                    tau_vals.append(float(parts[3]) if len(parts) > 3 else 0.0)
         except Exception:
             pass
         if conn_vals:
@@ -1451,8 +1448,8 @@ def plot_low_rank_connectivity(connectivity, U, V, output_path, dpi=300):
     plt.close()
 
 
-def plot_signal_loss(loss_dict, log_dir, epoch=None, Niter=None, debug=False,
-                     current_loss=None, current_regul=None, total_loss=None,
+def plot_signal_loss(loss_dict, log_dir, epoch=None, Niter=None, epoch_boundaries=None,
+                     debug=False, current_loss=None, current_regul=None, total_loss=None,
                      total_loss_regul=None):
     """
     Plot stratified loss components over training iterations.
@@ -1566,9 +1563,8 @@ def plot_signal_loss(loss_dict, log_dir, epoch=None, Niter=None, debug=False,
     ax2.legend(fontsize=legend_fs, loc='best', ncol=2)
 
     # Epoch boundary lines on all three panels
-    if epoch is not None and Niter and epoch > 0:
-        for k in range(1, epoch + 1):
-            xb = k * Niter
+    if epoch_boundaries:
+        for xb in epoch_boundaries:
             for ax in (ax1, ax2, ax3):
                 ax.axvline(x=xb, color='gray', linestyle='--', linewidth=0.8, alpha=0.6)
 
@@ -1580,16 +1576,13 @@ def plot_signal_loss(loss_dict, log_dir, epoch=None, Niter=None, debug=False,
             with open(metrics_log_path) as f:
                 for line in f:
                     line = line.strip()
-                    if not line or line.startswith('epoch'):
+                    if not line or line.startswith(('epoch', 'iteration')):
                         continue
                     parts = line.split(',')
-                    ep = int(parts[0])
-                    it = int(parts[1])
-                    global_iter = ep * (Niter if Niter else 0) + it
-                    r2_iters.append(global_iter)
-                    conn_vals.append(float(parts[2]))
-                    vrest_vals.append(float(parts[3]) if len(parts) > 3 else 0.0)
-                    tau_vals.append(float(parts[4]) if len(parts) > 4 else 0.0)
+                    r2_iters.append(int(parts[0]))
+                    conn_vals.append(float(parts[1]))
+                    vrest_vals.append(float(parts[2]) if len(parts) > 2 else 0.0)
+                    tau_vals.append(float(parts[3]) if len(parts) > 3 else 0.0)
         except Exception:
             pass
         if conn_vals:

@@ -316,7 +316,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     # Metrics log: tracks R2 evolution over training iterations
     metrics_log_path = os.path.join(log_dir, 'tmp_training', 'metrics.log')
     with open(metrics_log_path, 'w') as f:
-        f.write('epoch,iteration,connectivity_r2,vrest_r2,tau_r2\n')
+        f.write('iteration,connectivity_r2,vrest_r2,tau_r2\n')
 
     embedding_frozen = False
     unfreeze_at_iteration = -1
@@ -575,7 +575,8 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                     plot_dict = {**regularizer.get_history(), 'loss': loss_components['loss']}
 
                     # pass per-neuron normalized values to debug (to match dictionary values)
-                    plot_signal_loss(plot_dict, log_dir, epoch=epoch, Niter=Niter, debug=False,
+                    plot_signal_loss(plot_dict, log_dir, epoch=epoch, Niter=Niter,
+                                   epoch_boundaries=regularizer.epoch_boundaries, debug=False,
                                    current_loss=current_loss / n_neurons, current_regul=regul_total_this_iter / n_neurons,
                                    total_loss=total_loss, total_loss_regul=total_loss_regul)
 
@@ -591,7 +592,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                     last_connectivity_r2 = plot_training_flyvis(x_ts, model, config, epoch, N, log_dir, device, type_list, gt_weights, edges, n_neurons=n_neurons, n_neuron_types=sim.n_neuron_types)
                     last_vrest_r2, last_tau_r2 = compute_dynamics_r2(model, x_ts, config, device, n_neurons)
                     with open(metrics_log_path, 'a') as f:
-                        f.write(f'{epoch},{N},{last_connectivity_r2:.6f},{last_vrest_r2:.6f},{last_tau_r2:.6f}\n')
+                        f.write(f'{regularizer.iter_count},{last_connectivity_r2:.6f},{last_vrest_r2:.6f},{last_tau_r2:.6f}\n')
 
                 if last_connectivity_r2 is not None:
                     c_conn, c_vr, c_tau = r2_color(last_connectivity_r2), r2_color(last_vrest_r2), r2_color(last_tau_r2)
