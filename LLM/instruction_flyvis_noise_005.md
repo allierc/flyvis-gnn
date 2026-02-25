@@ -32,10 +32,16 @@ This exploration follows a strict **hypothesize → test → validate/falsify** 
 
 ## CRITICAL: Data is RE-GENERATED per slot
 
-Each slot re-generates its data with a **different random seed** (`iteration * 1000 + slot`).
-This means simulation parameters (n_neurons, n_frames, etc.) stay fixed, but the seed varies.
-**DO NOT change simulation parameters** (n_neurons, n_frames, n_edges, n_input_neurons, n_neuron_types, delta_t, noise_model_level, visual_input_type).
-**The seed will be set automatically** by the training pipeline — do not manually set `simulation.seed` in configs.
+Each slot re-generates its data with a **different random seed**.
+Both `simulation.seed` and `training.seed` are **forced by the pipeline** — DO NOT modify them in config files.
+
+Seed formula (set automatically by GNN_LLM.py):
+- `simulation.seed = iteration * 1000 + slot` (controls data generation)
+- `training.seed = iteration * 1000 + slot + 500` (controls weight init & training randomness)
+
+The actual seed values are provided in the prompt for each slot — **log them in your iteration entries**.
+
+Simulation parameters (n_neurons, n_frames, etc.) stay fixed — **DO NOT change them**.
 
 ## FlyVis Model
 
@@ -236,10 +242,10 @@ You maintain **THREE** files:
 Node: id=N, parent=P
 Hypothesis tested: "[quoted hypothesis being tested]"
 Config (same for all slots): lr_W=X, lr=Y, lr_emb=Z, coeff_g_phi_diff=A, coeff_W_L1=B, batch_size=C, hidden_dim=D
-Slot 0: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, seed=S0
-Slot 1: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, seed=S1
-Slot 2: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, seed=S2
-Slot 3: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, seed=S3
+Slot 0: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, sim_seed=S, train_seed=T
+Slot 1: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, sim_seed=S, train_seed=T
+Slot 2: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, sim_seed=S, train_seed=T
+Slot 3: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, sim_seed=S, train_seed=T
 Seed stats: mean_conn_R2=X, std=Y, CV=Z%
 Mutation: [param]: [old] -> [new]
 Verdict: [supported/falsified/inconclusive] — [one line explanation]

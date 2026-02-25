@@ -32,6 +32,8 @@ This exploration follows a strict **hypothesize → test → validate/falsify** 
 
 **DO NOT change any simulation parameters** (n_neurons, n_frames, n_edges, n_input_neurons, n_neuron_types, delta_t, noise_model_level, visual_input_type). The data lives in `graphs_data/fly/flyvis_noise_free/` and is fixed.
 
+**Seeds are forced by the pipeline** — DO NOT modify `simulation.seed` or `training.seed` in config files. The actual seed values are provided in the prompt for each slot — log them in your iteration entries.
+
 ## FlyVis Model
 
 Non-spiking compartment model of the Drosophila optic lobe:

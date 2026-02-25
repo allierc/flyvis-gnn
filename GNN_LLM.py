@@ -510,9 +510,9 @@ if __name__ == "__main__":
             for s in range(N_PARALLEL)
         )
 
-        # Build seed suggestions for first batch
-        seed_suggestions = "\n".join(
-            f"  Slot {s} (iter {start_iteration + s}): simulation.seed={start_iteration + s}, training.seed={(start_iteration + s) * 4 + s}"
+        # Build seed info for first batch (formula: iteration * 1000 + slot)
+        first_batch_seed_info = "\n".join(
+            f"  Slot {s}: simulation_seed={(start_iteration + s) * 1000 + s}, training_seed={(start_iteration + s) * 1000 + s + 500}"
             for s in range(N_PARALLEL)
         )
 
@@ -526,9 +526,9 @@ User input (read and acknowledge any pending instructions): {user_input_path}
 Config files to edit (all {N_PARALLEL}):
 {slot_list}
 
-Suggested seeds for this batch (set simulation.seed and training.seed in each config YAML):
-{seed_suggestions}
-You may override these — e.g. use the same simulation.seed across slots with different training.seed to test training robustness. Log your seed choices and rationale.
+Seeds (forced by pipeline — DO NOT modify simulation.seed or training.seed in configs):
+{first_batch_seed_info}
+Log these seed values in your iteration entries.
 
 Read the instructions and the base config, then create {N_PARALLEL} diverse initial training
 parameter variations. Each config already has a unique dataset name — do NOT change the
@@ -593,16 +593,39 @@ Write the planned mutations to the working memory file."""
             print(f"\n\033[93mPHASE 1: Loading configs for {n_slots} slots (data is pre-generated)\033[0m")
 
         configs = {}
+        slot_seeds = {}
         for slot_idx, iteration in enumerate(iterations):
             slot = slot_idx
             config = NeuralGraphConfig.from_yaml(config_paths[slot])
             config.training.n_epochs = 1
             config.dataset = pre_folder + config.dataset
             config.config_file = pre_folder + slot_names[slot]
+
+            # Force seeds (pipeline-controlled — LLM cannot override)
+            sim_seed = iteration * 1000 + slot
+            train_seed = iteration * 1000 + slot + 500
+            config.simulation.seed = sim_seed
+            config.training.seed = train_seed
+            slot_seeds[slot] = {'simulation': sim_seed, 'training': train_seed}
+
+            # Write forced seeds back to YAML (cluster reads from file)
+            with open(config_paths[slot], 'r') as f:
+                yaml_data = yaml.safe_load(f)
+            yaml_data['simulation']['seed'] = sim_seed
+            yaml_data['training']['seed'] = train_seed
+            with open(config_paths[slot], 'w') as f:
+                yaml.dump(yaml_data, f, default_flow_style=False, sort_keys=False)
+
             configs[slot] = config
 
             if device == []:
                 device = set_device(config.training.device)
+
+        seed_info = "\n".join(
+            f"  Slot {s}: simulation_seed={slot_seeds[s]['simulation']}, training_seed={slot_seeds[s]['training']}"
+            for s in range(n_slots)
+        )
+        print(f"\033[90mSeeds (forced by pipeline):\n{seed_info}\033[0m")
 
         # -------------------------------------------------------------------
         # PHASE 2: Submit 4 training jobs to cluster (or run locally)
@@ -620,9 +643,7 @@ Write the planned mutations to the working memory file."""
                     for slot_idx, iteration in enumerate(iterations):
                         slot = slot_idx
                         config = configs[slot]
-                        slot_seed = iteration * 1000 + slot
-                        config.simulation.seed = slot_seed
-                        print(f"\033[90m  slot {slot} (iter {iteration}): generating data with seed={slot_seed}\033[0m")
+                        print(f"\033[90m  slot {slot} (iter {iteration}): generating data with seed={slot_seeds[slot]['simulation']}\033[0m")
                         data_generate(
                             config=config,
                             device=device,
@@ -837,9 +858,7 @@ Fix the bug. Do NOT make other changes."""
                         # Generate data if requested
                         if generate_data:
                             from flyvis_gnn.generators.graph_data_generator import data_generate
-                            slot_seed = iteration * 1000 + slot
-                            config.simulation.seed = slot_seed
-                            print(f"\033[90m  slot {slot}: generating data with seed={slot_seed}\033[0m")
+                            print(f"\033[90m  slot {slot}: generating data with seed={slot_seeds[slot]['simulation']}\033[0m")
                             data_generate(
                                 config=config,
                                 device=device,
@@ -1030,6 +1049,7 @@ Fix the bug. Do NOT make other changes."""
             act_path = activity_paths.get(slot, "N/A")
             slot_info_lines.append(
                 f"Slot {slot} (iteration {iteration}) [{status}]:\n"
+                f"  Seeds: simulation={slot_seeds[slot]['simulation']}, training={slot_seeds[slot]['training']}\n"
                 f"  Metrics: {analysis_log_paths[slot]}\n"
                 f"  Activity: {act_path}\n"
                 f"  Config: {config_paths[slot]}"
@@ -1037,13 +1057,6 @@ Fix the bug. Do NOT make other changes."""
         slot_info = "\n\n".join(slot_info_lines)
 
         block_end_marker = "\n>>> BLOCK END <<<" if is_block_end else ""
-
-        # Build seed suggestions for next batch
-        next_batch_start = batch_start + N_PARALLEL
-        next_seed_suggestions = "\n".join(
-            f"  Slot {s} (iter {next_batch_start + s}): simulation.seed={next_batch_start + s}, training.seed={(next_batch_start + s) * 4 + s}"
-            for s in range(N_PARALLEL)
-        )
 
         claude_prompt = f"""Batch iterations {batch_first}-{batch_last} / {n_iterations}
 Block info: block {block_number}, iterations {iter_in_block_first}-{iter_in_block_last}/{n_iter_block} within block{block_end_marker}
@@ -1058,9 +1071,8 @@ User input (read and acknowledge any pending instructions): {user_input_path}
 
 {slot_info}
 
-Suggested seeds for next batch (set simulation.seed and training.seed in each config YAML):
-{next_seed_suggestions}
-You may override these — e.g. use the same simulation.seed across slots with different training.seed to test training robustness. Log your seed choices and rationale.
+Seeds are forced by pipeline (DO NOT modify simulation.seed or training.seed in configs).
+The seed values for this batch are shown in each slot above. Log them in your iteration entries.
 
 Analyze all {n_slots} results. For each successful slot, write a separate iteration entry
 (## Iter N: ...) to the full log and memory file. Then edit all {N_PARALLEL} config files
