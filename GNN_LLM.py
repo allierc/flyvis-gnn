@@ -806,45 +806,41 @@ Fix the bug. Do NOT make other changes."""
                     config = configs[slot]
                     print(f"\033[90m  slot {slot} (iter {iteration}): testing and plotting locally...\033[0m")
                     log_file = open(analysis_log_paths[slot], 'a')
-                    try:
-                        # Test
-                        config.simulation.noise_model_level = 0.0
-                        data_test(
-                            config=config,
-                            visualize=False,
-                            style="color name continuous_slice",
-                            verbose=False,
-                            best_model='best',
-                            run=0,
-                            test_mode="",
-                            sample_embedding=False,
-                            step=10,
-                            n_rollout_frames=1000,
-                            device=device,
-                            particle_of_interest=0,
-                            new_params=None,
-                            log_file=log_file,
-                        )
-                        # Plot
-                        slot_config_file = pre_folder + slot_names[slot]
-                        folder_name = log_path(pre_folder, 'tmp_results') + '/'
-                        os.makedirs(folder_name, exist_ok=True)
-                        data_plot(
-                            config=config,
-                            config_file=slot_config_file,
-                            epoch_list=['best'],
-                            style='color',
-                            extended='plots',
-                            device=device,
-                            log_file=log_file,
-                        )
-                    except Exception as e:
-                        import traceback
-                        print(f"\033[91m  slot {slot}: test/plot failed: {e}\033[0m")
-                        traceback.print_exc()
-                        job_results[slot] = False
-                    finally:
-                        log_file.close()
+                    print(f"  [DEBUG] log_file opened: {log_file.name}, closed={log_file.closed}")
+                    # Test
+                    config.simulation.noise_model_level = 0.0
+                    data_test(
+                        config=config,
+                        visualize=False,
+                        style="color name continuous_slice",
+                        verbose=False,
+                        best_model='best',
+                        run=0,
+                        test_mode="",
+                        sample_embedding=False,
+                        step=10,
+                        n_rollout_frames=1000,
+                        device=device,
+                        particle_of_interest=0,
+                        new_params=None,
+                        log_file=log_file,
+                    )
+                    # Plot
+                    print(f"  [DEBUG] before data_plot: log_file.name={log_file.name}, closed={log_file.closed}")
+                    slot_config_file = pre_folder + slot_names[slot]
+                    folder_name = log_path(pre_folder, 'tmp_results') + '/'
+                    os.makedirs(folder_name, exist_ok=True)
+                    data_plot(
+                        config=config,
+                        config_file=slot_config_file,
+                        epoch_list=['best'],
+                        style='color',
+                        extended='plots',
+                        device=device,
+                        log_file=log_file,
+                    )
+                    print(f"  [DEBUG] after data_plot: log_file.closed={log_file.closed}")
+                    log_file.close()
 
             else:
                 # Local execution (no cluster) — run sequentially
@@ -859,86 +855,79 @@ Fix the bug. Do NOT make other changes."""
                     config.training.save_all_checkpoints = False
 
                     log_file = open(analysis_log_paths[slot], 'w')
-                    try:
-                        # Generate data if requested
-                        if generate_data:
-                            from flyvis_gnn.generators.graph_data_generator import data_generate
-                            print(f"\033[90m  slot {slot}: generating data with seed={slot_seeds[slot]['simulation']}\033[0m")
-                            data_generate(
-                                config=config,
-                                device=device,
-                                visualize=False,
-                                run_vizualized=0,
-                                style="color",
-                                alpha=1,
-                                erase=True,
-                                save=True,
-                                step=100,
-                            )
-
-                        # Train
-                        data_train(
+                    # Generate data if requested
+                    if generate_data:
+                        from flyvis_gnn.generators.graph_data_generator import data_generate
+                        print(f"\033[90m  slot {slot}: generating data with seed={slot_seeds[slot]['simulation']}\033[0m")
+                        data_generate(
                             config=config,
-                            erase=True,
-                            best_model=best_model,
-                            style='color',
                             device=device,
-                            log_file=log_file
-                        )
-
-                        # Test
-                        config.simulation.noise_model_level = 0.0
-                        data_test(
-                            config=config,
                             visualize=False,
-                            style="color name continuous_slice",
-                            verbose=False,
-                            best_model='best',
-                            run=0,
-                            test_mode="",
-                            sample_embedding=False,
-                            step=10,
-                            n_rollout_frames=1000,
-                            device=device,
-                            particle_of_interest=0,
-                            new_params=None,
-                            log_file=log_file,
+                            run_vizualized=0,
+                            style="color",
+                            alpha=1,
+                            erase=True,
+                            save=True,
+                            step=100,
                         )
 
-                        # Plot
-                        slot_config_file = pre_folder + slot_names[slot]
-                        folder_name = log_path(pre_folder, 'tmp_results') + '/'
-                        os.makedirs(folder_name, exist_ok=True)
-                        data_plot(
-                            config=config,
-                            config_file=slot_config_file,
-                            epoch_list=['best'],
-                            style='color',
-                            extended='plots',
-                            device=device,
-                            log_file=log_file
-                        )
+                    # Train
+                    data_train(
+                        config=config,
+                        erase=True,
+                        best_model=best_model,
+                        style='color',
+                        device=device,
+                        log_file=log_file
+                    )
 
-                        # Copy models to exploration dir
-                        slot_log_dir = os.path.join('log', config.config_file)
-                        src_models = glob.glob(os.path.join(slot_log_dir, 'models', '*.pt'))
-                        if src_models:
-                            models_save_dir = os.path.join(exploration_dir, 'models')
-                            os.makedirs(models_save_dir, exist_ok=True)
-                            for src in src_models:
-                                fname = os.path.basename(src)
-                                dst = os.path.join(models_save_dir, f'iter_{iteration:03d}_slot_{slot:02d}_{fname}')
-                                shutil.copy2(src, dst)
-                                print(f"\033[92m  copied model: {dst}\033[0m")
+                    # Test
+                    config.simulation.noise_model_level = 0.0
+                    data_test(
+                        config=config,
+                        visualize=False,
+                        style="color name continuous_slice",
+                        verbose=False,
+                        best_model='best',
+                        run=0,
+                        test_mode="",
+                        sample_embedding=False,
+                        step=10,
+                        n_rollout_frames=1000,
+                        device=device,
+                        particle_of_interest=0,
+                        new_params=None,
+                        log_file=log_file,
+                    )
 
-                        job_results[slot] = True
-                    except Exception as e:
-                        import traceback
-                        print(f"\033[91m  slot {slot}: training failed: {e}\033[0m")
-                        traceback.print_exc()
-                        job_results[slot] = False
-                    finally:
-                        log_file.close()
+                    # Plot
+                    slot_config_file = pre_folder + slot_names[slot]
+                    folder_name = log_path(pre_folder, 'tmp_results') + '/'
+                    os.makedirs(folder_name, exist_ok=True)
+                    data_plot(
+                        config=config,
+                        config_file=slot_config_file,
+                        epoch_list=['best'],
+                        style='color',
+                        extended='plots',
+                        device=device,
+                        log_file=log_file
+                    )
+
+                    # Copy models to exploration dir
+                    slot_log_dir = os.path.join('log', config.config_file)
+                    src_models = glob.glob(os.path.join(slot_log_dir, 'models', '*.pt'))
+                    if src_models:
+                        models_save_dir = os.path.join(exploration_dir, 'models')
+                        os.makedirs(models_save_dir, exist_ok=True)
+                        for src in src_models:
+                            fname = os.path.basename(src)
+                            dst = os.path.join(models_save_dir, f'iter_{iteration:03d}_slot_{slot:02d}_{fname}')
+                            shutil.copy2(src, dst)
+                            print(f"\033[92m  copied model: {dst}\033[0m")
+
+                    job_results[slot] = True
+                    log_file.close()
 
         else:
             for slot in range(n_slots):

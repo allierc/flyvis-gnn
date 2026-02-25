@@ -3247,6 +3247,7 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
 
             # Write to analysis log file for Claude
             if log_file:
+                print(f"  [DEBUG] plot_synaptic_flyvis: writing R2 metrics, log_file={type(log_file).__name__}, closed={log_file.closed}")
                 log_file.write(f"connectivity_R2: {r_squared:.4f}\n")
                 log_file.write(f"tau_R2: {r_squared_tau:.4f}\n")
                 log_file.write(f"V_rest_R2: {r_squared_V_rest:.4f}\n")
@@ -3541,6 +3542,7 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
 
             # Write cluster accuracy to analysis log file for Claude
             if log_file:
+                print(f"  [DEBUG] plot_synaptic_flyvis: writing cluster_accuracy, log_file closed={log_file.closed}")
                 log_file.write(f"cluster_accuracy: {best_acc:.4f}\n")
 
             reducer = umap.UMAP(n_components=2, random_state=42, n_neighbors=15, min_dist=0.1)
@@ -4668,6 +4670,7 @@ def plot_loss_curves(log_dir, ylim=None):
 
 def data_plot(config, config_file, epoch_list, style, extended, device, apply_weight_correction=False, log_file=None):
 
+    print(f"  [DEBUG] data_plot: log_file={type(log_file).__name__}, config_file={config_file}")
 
     if 'black' in style:
         plt.style.use('dark_background')

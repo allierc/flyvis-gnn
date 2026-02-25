@@ -1734,13 +1734,12 @@ def data_test_flyvis(config, best_model=None, device=None, log_file=None, test_c
     print(f'results saved to {results_path}')
 
     if log_file:
-        with open(log_file, 'a') as f:
-            f.write(f'\n--- Pre-generated test results ---\n')
-            f.write(f'test_dataset: {test_ds}\n')
-            f.write(f'RMSE: {np.mean(rmse):.4f} +/- {np.std(rmse):.4f}\n')
-            f.write(f'Pearson r: {np.nanmean(pearson):.3f} +/- {np.nanstd(pearson):.3f}\n')
-            f.write(f'R2: {np.nanmean(r2):.3f} +/- {np.nanstd(r2):.3f}\n')
-            f.write(f'FEVE: {np.mean(feve):.3f} +/- {np.std(feve):.3f}\n')
+        log_file.write(f'\n--- Pre-generated test results ---\n')
+        log_file.write(f'test_dataset: {test_ds}\n')
+        log_file.write(f'RMSE: {np.mean(rmse):.4f} +/- {np.std(rmse):.4f}\n')
+        log_file.write(f'Pearson r: {np.nanmean(pearson):.3f} +/- {np.nanstd(pearson):.3f}\n')
+        log_file.write(f'R2: {np.nanmean(r2):.3f} +/- {np.nanstd(r2):.3f}\n')
+        log_file.write(f'FEVE: {np.mean(feve):.3f} +/- {np.std(feve):.3f}\n')
 
     # --- Rollout evaluation ---
     # Start from initial voltages at t=0, predict autoregressively
@@ -1853,12 +1852,11 @@ def data_test_flyvis(config, best_model=None, device=None, log_file=None, test_c
     print(f'rollout metrics saved to {rollout_log_path}')
 
     if log_file:
-        with open(log_file, 'a') as f:
-            f.write(f'\n--- Rollout results ---\n')
-            f.write(f'RMSE: {np.mean(rmse_ro):.4f} +/- {np.std(rmse_ro):.4f}\n')
-            f.write(f'Pearson r: {np.nanmean(pearson_ro):.3f} +/- {np.nanstd(pearson_ro):.3f}\n')
-            f.write(f'R2: {np.nanmean(r2_ro):.3f} +/- {np.nanstd(r2_ro):.3f}\n')
-            f.write(f'FEVE: {np.mean(feve_ro):.3f} +/- {np.std(feve_ro):.3f}\n')
+        log_file.write(f'\n--- Rollout results ---\n')
+        log_file.write(f'RMSE: {np.mean(rmse_ro):.4f} +/- {np.std(rmse_ro):.4f}\n')
+        log_file.write(f'Pearson r: {np.nanmean(pearson_ro):.3f} +/- {np.nanstd(pearson_ro):.3f}\n')
+        log_file.write(f'R2: {np.nanmean(r2_ro):.3f} +/- {np.nanstd(r2_ro):.3f}\n')
+        log_file.write(f'FEVE: {np.mean(feve_ro):.3f} +/- {np.std(feve_ro):.3f}\n')
 
     # --- Rollout trace plots ---
     neuron_types = to_numpy(type_list).astype(int).squeeze()
