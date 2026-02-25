@@ -154,7 +154,7 @@ def submit_cluster_job(slot, config_path, analysis_log_path, config_file_field,
         f"-o '{cluster_stdout}' -e '{cluster_stderr}' "
         f"'bash {cluster_script}'\""
     )
-    print(f"\033[96m  slot {slot}: submitting via SSH\033[0m")
+    print(f"\033[96m  slot {slot}: submitting via SSH\033[0m", flush=True)
     result = subprocess.run(ssh_cmd, shell=True, capture_output=True, text=True)
 
     match = re.search(r'Job <(\d+)>', result.stdout)
