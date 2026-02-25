@@ -76,6 +76,7 @@ def plot_training_summary_panels(fig, log_dir, Niter=None):
             pass
         if conn_vals:
             ax6 = fig.add_subplot(2, 3, 6)
+            ax6.set_box_aspect(1)
             ax6.plot(r2_iters, conn_vals, color='#d62728', linewidth=style.line_width, label='conn')
             ax6.plot(r2_iters, vrest_vals, color='#1f77b4', linewidth=style.line_width, label=r'$V_{rest}$')
             ax6.plot(r2_iters, tau_vals, color='#2ca02c', linewidth=style.line_width, label=r'$\tau$')

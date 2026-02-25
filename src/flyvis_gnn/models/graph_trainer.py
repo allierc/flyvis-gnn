@@ -764,6 +764,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
         # Plot 1: Loss
         ax1 = fig.add_subplot(2, 3, 1)
+        ax1.set_box_aspect(1)
         ax1.plot(list_loss, color=default_style.foreground, linewidth=default_style.line_width)
         ax1.set_xlim([0, tc.n_epochs])
         default_style.ylabel(ax1, 'loss')

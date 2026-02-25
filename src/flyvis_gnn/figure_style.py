@@ -99,8 +99,12 @@ class FigureStyle:
     # ---------------------------------------------------------------------- #
 
     def _label(self, text: str) -> str:
-        """Apply lowercase rule."""
-        return text.lower() if self.lowercase else text
+        """Apply lowercase rule, preserving content inside $...$ math."""
+        if not self.lowercase:
+            return text
+        import re
+        parts = re.split(r'(\$[^$]*\$)', text)
+        return ''.join(p if p.startswith('$') else p.lower() for p in parts)
 
     # ---------------------------------------------------------------------- #
     #  Public API

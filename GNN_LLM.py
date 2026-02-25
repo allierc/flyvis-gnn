@@ -839,7 +839,9 @@ Fix the bug. Do NOT make other changes."""
                             log_file=log_file,
                         )
                     except Exception as e:
+                        import traceback
                         print(f"\033[91m  slot {slot}: test/plot failed: {e}\033[0m")
+                        traceback.print_exc()
                         job_results[slot] = False
                     finally:
                         log_file.close()
@@ -931,7 +933,9 @@ Fix the bug. Do NOT make other changes."""
 
                         job_results[slot] = True
                     except Exception as e:
+                        import traceback
                         print(f"\033[91m  slot {slot}: training failed: {e}\033[0m")
+                        traceback.print_exc()
                         job_results[slot] = False
                     finally:
                         log_file.close()
