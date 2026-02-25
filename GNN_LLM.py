@@ -695,6 +695,56 @@ Fix the bug. Do NOT make other changes."""
                                     except Exception:
                                         pass
 
+                # ------------------------------------------------------------------
+                # PHASE 3.5: Run test and plot locally (cluster only did training)
+                # ------------------------------------------------------------------
+                print(f"\n\033[93mPHASE 3.5: Running test and plot locally for {n_slots} slots\033[0m")
+                for slot_idx, iteration in enumerate(iterations):
+                    slot = slot_idx
+                    if not job_results.get(slot, False):
+                        print(f"\033[90m  slot {slot}: skipping test+plot (training failed)\033[0m")
+                        continue
+                    config = configs[slot]
+                    print(f"\033[90m  slot {slot} (iter {iteration}): testing and plotting locally...\033[0m")
+                    log_file = open(analysis_log_paths[slot], 'a')
+                    try:
+                        # Test
+                        config.simulation.noise_model_level = 0.0
+                        data_test(
+                            config=config,
+                            visualize=False,
+                            style="color name continuous_slice",
+                            verbose=False,
+                            best_model='best',
+                            run=0,
+                            test_mode="",
+                            sample_embedding=False,
+                            step=10,
+                            n_rollout_frames=1000,
+                            device=device,
+                            particle_of_interest=0,
+                            new_params=None,
+                            log_file=log_file,
+                        )
+                        # Plot
+                        slot_config_file = pre_folder + slot_names[slot]
+                        folder_name = log_path(pre_folder, 'tmp_results') + '/'
+                        os.makedirs(folder_name, exist_ok=True)
+                        data_plot(
+                            config=config,
+                            config_file=slot_config_file,
+                            epoch_list=['best'],
+                            style='color',
+                            extended='plots',
+                            device=device,
+                            log_file=log_file,
+                        )
+                    except Exception as e:
+                        print(f"\033[91m  slot {slot}: test/plot failed: {e}\033[0m")
+                        job_results[slot] = False
+                    finally:
+                        log_file.close()
+
             else:
                 # Local execution (no cluster) — run sequentially
                 print(f"\n\033[93mPHASE 2: Training {n_slots} flyvis models locally (sequential)\033[0m")

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Standalone flyvis training+test+plot script for subprocess execution.
+Standalone flyvis training script for cluster subprocess execution.
 
-This script is called by GNN_LLM_parallel_flyvis.py as a subprocess to ensure that any code
-modifications to graph_trainer.py and GNN_PlotFigure.py are reloaded for each iteration.
+This script is called by GNN_LLM.py as a cluster job. It runs ONLY the training phase.
+Test and plot run locally in GNN_LLM.py after all cluster jobs complete.
 
 Usage:
     python train_flyvis_subprocess.py --config CONFIG_PATH --device DEVICE [--erase] [--log_file LOG_PATH]
@@ -23,9 +23,8 @@ import traceback
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
 
 from flyvis_gnn.config import NeuralGraphConfig
-from flyvis_gnn.models.graph_trainer import data_train, data_test
+from flyvis_gnn.models.graph_trainer import data_train
 from flyvis_gnn.utils import set_device, log_path
-from GNN_PlotFigure import data_plot
 
 
 def main():
@@ -108,40 +107,7 @@ def main():
                 log_file=log_file
             )
 
-            # Phase 2: Test (with no noise for evaluation)
-            config.simulation.noise_model_level = 0.0
-            data_test(
-                config=config,
-                visualize=False,
-                style="color name continuous_slice",
-                verbose=False,
-                best_model='best',
-                run=0,
-                test_mode="",
-                sample_embedding=False,
-                step=10,
-                n_rollout_frames=1000,
-                device=device,
-                particle_of_interest=0,
-                new_params=None,
-                log_file=log_file,
-            )
-
-            # Phase 3: Plot
-            config_file = args.config_file if args.config_file else config.dataset
-            folder_name = log_path(os.path.dirname(config_file), 'tmp_results') + '/'
-            os.makedirs(folder_name, exist_ok=True)
-            data_plot(
-                config=config,
-                config_file=config_file,
-                epoch_list=['best'],
-                style='color',
-                extended='plots',
-                device=device,
-                log_file=log_file
-            )
-
-            # Phase 4: Copy models to exploration dir
+            # Phase 2: Copy models to exploration dir
             if args.exploration_dir is not None and args.iteration is not None and args.slot is not None:
                 log_dir = log_path(config.config_file)
                 src_models = glob.glob(os.path.join(log_dir, 'models', '*.pt'))
