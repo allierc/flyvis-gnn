@@ -19,8 +19,8 @@ from flyvis_gnn.utils import to_numpy, graphs_data_path
 #  Helpers
 # ------------------------------------------------------------------ #
 
-def plot_training_summary_panels(fig, log_dir):
-    """Add embedding, weight comparison, edge function, and phi function panels to a summary figure.
+def plot_training_summary_panels(fig, log_dir, Niter=None):
+    """Add embedding, weight comparison, g_phi, and f_theta function panels to a summary figure.
 
     Finds the last saved training snapshot and loads the PNG images into subplots 2-5
     of a 2x3 grid figure.
@@ -28,10 +28,13 @@ def plot_training_summary_panels(fig, log_dir):
     Args:
         fig: matplotlib Figure (expected 2x3 subplot layout, panel 1 already used for loss)
         log_dir: path to the training log directory
+        Niter: iterations per epoch (for global iteration x-axis in R² panel)
     """
     import glob
     import os
     import imageio
+    from flyvis_gnn.figure_style import default_style
+    style = default_style
 
     embedding_files = glob.glob(f"{log_dir}/tmp_training/embedding/*.png")
     if not embedding_files:
@@ -42,17 +45,17 @@ def plot_training_summary_panels(fig, log_dir):
     last_epoch, last_N = filename.replace('.png', '').split('_')
 
     panels = [
-        (2, f"{log_dir}/tmp_training/embedding/{last_epoch}_{last_N}.png", 'Embedding'),
-        (3, f"{log_dir}/tmp_training/matrix/comparison_{last_epoch}_{last_N}.png", 'Weight Comparison'),
-        (4, f"{log_dir}/tmp_training/function/MLP1/func_{last_epoch}_{last_N}.png", 'Edge Function'),
-        (5, f"{log_dir}/tmp_training/function/MLP0/func_{last_epoch}_{last_N}.png", 'Phi Function'),
+        (2, f"{log_dir}/tmp_training/embedding/{last_epoch}_{last_N}.png", 'learned embedding'),
+        (3, f"{log_dir}/tmp_training/matrix/comparison_{last_epoch}_{last_N}.png", 'weight comparison'),
+        (4, f"{log_dir}/tmp_training/function/MLP1/func_{last_epoch}_{last_N}.png", r'$g_\phi$ (MLP1)'),
+        (5, f"{log_dir}/tmp_training/function/MLP0/func_{last_epoch}_{last_N}.png", r'$f_\theta$ (MLP0)'),
     ]
     for pos, path, title in panels:
         fig.add_subplot(2, 3, pos)
         img = imageio.imread(path)
         plt.imshow(img)
         plt.axis('off')
-        plt.title(title, fontsize=12)
+        plt.title(title, fontsize=style.label_font_size)
 
     # Panel 6: R² metrics trajectory
     metrics_log_path = os.path.join(log_dir, 'tmp_training', 'metrics.log')
@@ -65,7 +68,10 @@ def plot_training_summary_panels(fig, log_dir):
                     if not line or line.startswith('epoch'):
                         continue
                     parts = line.split(',')
-                    r2_iters.append(int(parts[1]))
+                    ep = int(parts[0])
+                    it = int(parts[1])
+                    global_iter = ep * (Niter if Niter else 0) + it
+                    r2_iters.append(global_iter)
                     conn_vals.append(float(parts[2]))
                     vrest_vals.append(float(parts[3]) if len(parts) > 3 else 0.0)
                     tau_vals.append(float(parts[4]) if len(parts) > 4 else 0.0)
@@ -73,15 +79,15 @@ def plot_training_summary_panels(fig, log_dir):
             pass
         if conn_vals:
             ax6 = fig.add_subplot(2, 3, 6)
-            ax6.plot(r2_iters, conn_vals, color='#d62728', linewidth=1.5, marker='o', markersize=3, label='conn')
-            ax6.plot(r2_iters, vrest_vals, color='#1f77b4', linewidth=1.5, marker='s', markersize=3, label='V_rest')
-            ax6.plot(r2_iters, tau_vals, color='#2ca02c', linewidth=1.5, marker='^', markersize=3, label='tau')
+            ax6.plot(r2_iters, conn_vals, color='#d62728', linewidth=style.line_width, label='conn')
+            ax6.plot(r2_iters, vrest_vals, color='#1f77b4', linewidth=style.line_width, label=r'$V_{rest}$')
+            ax6.plot(r2_iters, tau_vals, color='#2ca02c', linewidth=style.line_width, label=r'$\tau$')
             ax6.axhline(y=0.9, color='green', linestyle='--', alpha=0.4, linewidth=1)
             ax6.set_ylim(-0.05, 1.05)
-            ax6.set_xlabel('iteration', fontsize=10)
-            ax6.set_ylabel('R²', fontsize=10)
-            ax6.set_title('R² Metrics', fontsize=12)
-            ax6.legend(fontsize=8, loc='lower right')
+            style.xlabel(ax6, 'iteration')
+            style.ylabel(ax6, r'$R^2$')
+            ax6.set_title(r'$R^2$ metrics', fontsize=style.label_font_size)
+            ax6.legend(fontsize=style.annotation_font_size, loc='lower right')
             ax6.grid(True, alpha=0.3)
 
 
@@ -1460,12 +1466,13 @@ def plot_signal_loss(loss_dict, log_dir, epoch=None, Niter=None, debug=False,
         Dictionary containing loss component lists with keys:
         - 'loss': Loss without regularization
         - 'regul_total': Total regularization loss
+        - 'iteration': Global iteration numbers (for x-axis)
         - 'W_L1': W L1 sparsity penalty
         - 'W_L2': W L2 regularization penalty
-        - 'edge_diff': Edge monotonicity penalty
-        - 'edge_norm': Edge normalization
-        - 'edge_weight': Edge MLP weight regularization
-        - 'phi_weight': Phi MLP weight regularization
+        - 'g_phi_diff': g_phi monotonicity penalty
+        - 'g_phi_norm': g_phi normalization
+        - 'g_phi_weight': g_phi MLP weight regularization
+        - 'f_theta_weight': f_theta MLP weight regularization
         - 'W_sign': W sign consistency penalty
     log_dir : str
         Directory to save the figure
@@ -1493,8 +1500,8 @@ def plot_signal_loss(loss_dict, log_dir, epoch=None, Niter=None, debug=False,
 
         # Get current iteration component values (last element in each list)
         comp_sum = (loss_dict['W_L1'][-1] + loss_dict['W_L2'][-1] +
-                   loss_dict['edge_diff'][-1] + loss_dict['edge_norm'][-1] +
-                   loss_dict['edge_weight'][-1] + loss_dict['phi_weight'][-1] +
+                   loss_dict['g_phi_diff'][-1] + loss_dict['g_phi_norm'][-1] +
+                   loss_dict['g_phi_weight'][-1] + loss_dict['f_theta_weight'][-1] +
                    loss_dict['W_sign'][-1])
 
         print(f"\n=== DEBUG Loss Components (Epoch {epoch}, Iter {Niter}) ===")
@@ -1506,10 +1513,10 @@ def plot_signal_loss(loss_dict, log_dir, epoch=None, Niter=None, debug=False,
         print(f"  W_L1: {loss_dict['W_L1'][-1]:.6f}")
         print(f"  W_L2: {loss_dict['W_L2'][-1]:.6f}")
         print(f"  W_sign: {loss_dict['W_sign'][-1]:.6f}")
-        print(f"  edge_diff: {loss_dict['edge_diff'][-1]:.6f}")
-        print(f"  edge_norm: {loss_dict['edge_norm'][-1]:.6f}")
-        print(f"  edge_weight: {loss_dict['edge_weight'][-1]:.6f}")
-        print(f"  phi_weight: {loss_dict['phi_weight'][-1]:.6f}")
+        print(f"  g_phi_diff: {loss_dict['g_phi_diff'][-1]:.6f}")
+        print(f"  g_phi_norm: {loss_dict['g_phi_norm'][-1]:.6f}")
+        print(f"  g_phi_weight: {loss_dict['g_phi_weight'][-1]:.6f}")
+        print(f"  f_theta_weight: {loss_dict['f_theta_weight'][-1]:.6f}")
         print(f"  Sum of components: {comp_sum:.6f}")
         if total_loss is not None and total_loss_regul is not None:
             print("\nAccumulated (for reference):")
@@ -1525,45 +1532,37 @@ def plot_signal_loss(loss_dict, log_dir, epoch=None, Niter=None, debug=False,
     lw = style.line_width
     fig_loss, (ax1, ax2, ax3) = style.figure(ncols=3, width=3 * style.figure_height * style.default_aspect)
 
-    # epoch / iteration annotation
-    info_text = ""
-    if epoch is not None:
-        info_text += f"epoch: {epoch}"
-    if Niter is not None:
-        if info_text:
-            info_text += " | "
-        info_text += f"iterations/epoch: {Niter}"
-    if info_text:
-        style.annotate(ax1, info_text, (0.02, 0.98), verticalalignment='top')
+    # x-axis: use global iteration if available, otherwise list index
+    x_iter = loss_dict.get('iteration') or list(range(len(loss_dict['loss'])))
 
     # Linear scale
     legend_fs = 7
-    ax1.plot(loss_dict['loss'], color='b', linewidth=1, label='loss (no regul)', alpha=0.8)
-    ax1.plot(loss_dict['regul_total'], color='b', linewidth=1, label='total regularization', alpha=0.8)
-    ax1.plot(loss_dict['W_L1'], color='r', linewidth=1, label='w l1 sparsity', alpha=0.7)
-    ax1.plot(loss_dict['W_L2'], color='darkred', linewidth=1, label='w l2 regul', alpha=0.7)
-    ax1.plot(loss_dict['W_sign'], color='navy', linewidth=1, label='w sign (dale)', alpha=0.7)
-    ax1.plot(loss_dict['phi_weight'], color='lime', linewidth=1, label=r'$\phi$ weight regul', alpha=0.7)
-    ax1.plot(loss_dict['edge_diff'], color='orange', linewidth=1, label='edge monotonicity', alpha=0.7)
-    ax1.plot(loss_dict['edge_norm'], color='brown', linewidth=1, label='edge norm', alpha=0.7)
-    ax1.plot(loss_dict['edge_weight'], color='pink', linewidth=1, label='edge weight regul', alpha=0.7)
-    ax1.set_xlabel('iteration', fontsize=style.label_font_size - 2)
-    ax1.set_ylabel('loss', fontsize=style.label_font_size - 2)
+    ax1.plot(x_iter, loss_dict['loss'], color='b', linewidth=1, label='loss (no regul)', alpha=0.8)
+    ax1.plot(x_iter, loss_dict['regul_total'], color='b', linewidth=1, label='total regularization', alpha=0.8)
+    ax1.plot(x_iter, loss_dict['W_L1'], color='r', linewidth=1, label='W l1 sparsity', alpha=0.7)
+    ax1.plot(x_iter, loss_dict['W_L2'], color='darkred', linewidth=1, label='W l2 regul', alpha=0.7)
+    ax1.plot(x_iter, loss_dict['W_sign'], color='navy', linewidth=1, label='W sign (dale)', alpha=0.7)
+    ax1.plot(x_iter, loss_dict['f_theta_weight'], color='lime', linewidth=1, label=r'$f_\theta$ weight regul', alpha=0.7)
+    ax1.plot(x_iter, loss_dict['g_phi_diff'], color='orange', linewidth=1, label=r'$g_\phi$ monotonicity', alpha=0.7)
+    ax1.plot(x_iter, loss_dict['g_phi_norm'], color='brown', linewidth=1, label=r'$g_\phi$ norm', alpha=0.7)
+    ax1.plot(x_iter, loss_dict['g_phi_weight'], color='pink', linewidth=1, label=r'$g_\phi$ weight regul', alpha=0.7)
+    style.xlabel(ax1, 'iteration')
+    style.ylabel(ax1, 'loss')
     ax1.tick_params(labelsize=style.tick_font_size - 2)
     ax1.legend(fontsize=legend_fs, loc='best', ncol=2)
 
     # Log scale
-    ax2.plot(loss_dict['loss'], color='b', linewidth=1, label='loss (no regul)', alpha=0.8)
-    ax2.plot(loss_dict['regul_total'], color='b', linewidth=1, label='total regularization', alpha=0.8)
-    ax2.plot(loss_dict['W_L1'], color='r', linewidth=1, label='w l1 sparsity', alpha=0.7)
-    ax2.plot(loss_dict['W_L2'], color='darkred', linewidth=1, label='w l2 regul', alpha=0.7)
-    ax2.plot(loss_dict['W_sign'], color='navy', linewidth=1, label='w sign (dale)', alpha=0.7)
-    ax2.plot(loss_dict['phi_weight'], color='lime', linewidth=1, label=r'$\phi$ weight regul', alpha=0.7)
-    ax2.plot(loss_dict['edge_diff'], color='orange', linewidth=1, label='edge monotonicity', alpha=0.7)
-    ax2.plot(loss_dict['edge_norm'], color='brown', linewidth=1, label='edge norm', alpha=0.7)
-    ax2.plot(loss_dict['edge_weight'], color='pink', linewidth=1, label='edge weight regul', alpha=0.7)
-    ax2.set_xlabel('iteration', fontsize=style.label_font_size - 2)
-    ax2.set_ylabel('loss', fontsize=style.label_font_size - 2)
+    ax2.plot(x_iter, loss_dict['loss'], color='b', linewidth=1, label='loss (no regul)', alpha=0.8)
+    ax2.plot(x_iter, loss_dict['regul_total'], color='b', linewidth=1, label='total regularization', alpha=0.8)
+    ax2.plot(x_iter, loss_dict['W_L1'], color='r', linewidth=1, label='W l1 sparsity', alpha=0.7)
+    ax2.plot(x_iter, loss_dict['W_L2'], color='darkred', linewidth=1, label='W l2 regul', alpha=0.7)
+    ax2.plot(x_iter, loss_dict['W_sign'], color='navy', linewidth=1, label='W sign (dale)', alpha=0.7)
+    ax2.plot(x_iter, loss_dict['f_theta_weight'], color='lime', linewidth=1, label=r'$f_\theta$ weight regul', alpha=0.7)
+    ax2.plot(x_iter, loss_dict['g_phi_diff'], color='orange', linewidth=1, label=r'$g_\phi$ monotonicity', alpha=0.7)
+    ax2.plot(x_iter, loss_dict['g_phi_norm'], color='brown', linewidth=1, label=r'$g_\phi$ norm', alpha=0.7)
+    ax2.plot(x_iter, loss_dict['g_phi_weight'], color='pink', linewidth=1, label=r'$g_\phi$ weight regul', alpha=0.7)
+    style.xlabel(ax2, 'iteration')
+    style.ylabel(ax2, 'loss')
     ax2.tick_params(labelsize=style.tick_font_size - 2)
     ax2.set_yscale('log')
     ax2.legend(fontsize=legend_fs, loc='best', ncol=2)
@@ -1598,7 +1597,7 @@ def plot_signal_loss(loss_dict, log_dir, epoch=None, Niter=None, debug=False,
             ax3.axhline(y=0.9, color='green', linestyle='--', alpha=0.4, linewidth=1)
             ax3.set_ylim(-0.05, 1.05)
             style.xlabel(ax3, 'iteration')
-            ax3.set_ylabel(r'$R^2$', fontsize=style.label_font_size)
+            style.ylabel(ax3, r'$R^2$')
             ax3.legend(fontsize=legend_fs, loc='lower right')
             # most recent R2 values
             latest_text = (f"conn={conn_vals[-1]:.3f}\n"

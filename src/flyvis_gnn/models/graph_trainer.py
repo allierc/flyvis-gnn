@@ -344,7 +344,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         k = 0
 
         loss_noise_level = tc.loss_noise_level * (0.95 ** epoch)
-        regularizer.set_epoch(epoch, plot_frequency)
+        regularizer.set_epoch(epoch, plot_frequency, Niter=Niter)
 
         last_connectivity_r2 = None
         last_vrest_r2 = 0.0
@@ -758,16 +758,17 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
         torch.save(list_loss, os.path.join(log_dir, 'loss.pt'))
 
-        fig = plt.figure(figsize=(15, 10))
+        fig = plt.figure(figsize=(3 * default_style.figure_height * default_style.default_aspect,
+                                    2 * default_style.figure_height))
 
         # Plot 1: Loss
-        fig.add_subplot(2, 3, 1)
-        plt.plot(list_loss, color=default_style.foreground, linewidth=1)
-        plt.xlim([0, tc.n_epochs])
-        plt.ylabel('loss', fontsize=12)
-        plt.xlabel('epochs', fontsize=12)
+        ax1 = fig.add_subplot(2, 3, 1)
+        ax1.plot(list_loss, color=default_style.foreground, linewidth=default_style.line_width)
+        ax1.set_xlim([0, tc.n_epochs])
+        default_style.ylabel(ax1, 'loss')
+        default_style.xlabel(ax1, 'epochs')
 
-        plot_training_summary_panels(fig, log_dir)
+        plot_training_summary_panels(fig, log_dir, Niter=Niter)
 
         if replace_with_cluster:
 
