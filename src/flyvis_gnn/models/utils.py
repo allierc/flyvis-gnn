@@ -1241,10 +1241,9 @@ class LossRegularizer:
         first_coeff_L1 = getattr(tc, 'first_coeff_L1', tc.coeff_W_L1)
 
         if self.trainer_type == 'flyvis':
-            # Flyvis: annealed coefficients
-            self._coeffs['W_L1'] = tc.coeff_W_L1 * (1 - np.exp(-tc.coeff_W_L1_rate * epoch))
-            self._coeffs['g_phi_weight_L1'] = tc.coeff_g_phi_weight_L1 * (1 - np.exp(-tc.coeff_g_phi_weight_L1_rate ** epoch))
-            self._coeffs['f_theta_weight_L1'] = tc.coeff_f_theta_weight_L1 * (1 - np.exp(-tc.coeff_f_theta_weight_L1_rate * epoch))
+            self._coeffs['W_L1'] = tc.coeff_W_L1
+            self._coeffs['g_phi_weight_L1'] = tc.coeff_g_phi_weight_L1
+            self._coeffs['f_theta_weight_L1'] = tc.coeff_f_theta_weight_L1
         else:
             # Signal: two-phase training if n_epochs_init > 0
             if n_epochs_init > 0 and epoch < n_epochs_init:
