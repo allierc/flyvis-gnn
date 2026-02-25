@@ -349,6 +349,7 @@ if __name__ == "__main__":
     generate_data = claude_cfg.get('generate_data', "generate" in task)
     training_time_target_min = claude_cfg.get('training_time_target_min', 60)
     n_iter_block = claude_n_iter_block
+    cluster_enabled = args.cluster
 
     mode = "cluster" if cluster_enabled else "local (sequential)"
     print(f"\033[94mMode: {mode}, node: gpu_{claude_node_name}, n_parallel: {N_PARALLEL}, generate_data: {generate_data}, training_time_target_min: {training_time_target_min}\033[0m")
@@ -425,8 +426,6 @@ if __name__ == "__main__":
 
     log_dir = exploration_dir
     os.makedirs(exploration_dir, exist_ok=True)
-
-    cluster_enabled = args.cluster
 
     # Check instruction file exists
     if not os.path.exists(instruction_path):
