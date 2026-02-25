@@ -1285,8 +1285,7 @@ class LossRegularizer:
         self.iter_count = 0
 
     def reset_iteration(self):
-        """Reset per-iteration accumulator."""
-        self.iter_count += 1
+        """Reset per-iteration accumulator (called once per batch, NOT per N iteration)."""
         self._iter_total = 0.0
         self._iter_tracker = {comp: 0.0 for comp in self.COMPONENTS}
         # Flag to ensure W_L1 is only applied once per iteration (not per batch item)
@@ -1542,8 +1541,10 @@ class LossRegularizer:
         """
         Finalize the current iteration by recording to history if appropriate.
 
-        This should be called after all regularization computations (compute + compute_update_regul).
+        This should be called once per training iteration N (after all batch regularizations).
+        iter_count increments here — NOT in reset_iteration() — so it counts iterations, not batches.
         """
+        self.iter_count += 1
         if self.should_record():
             self._record_to_history()
 

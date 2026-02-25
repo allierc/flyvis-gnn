@@ -1548,7 +1548,6 @@ def plot_signal_loss(loss_dict, log_dir, epoch=None, Niter=None, debug=False,
     ax1.plot(x_iter, loss_dict['g_phi_weight'], color='pink', linewidth=1, label=r'$g_\phi$ weight regul', alpha=0.7)
     style.xlabel(ax1, 'iteration')
     style.ylabel(ax1, 'loss')
-    ax1.tick_params(labelsize=style.tick_font_size - 2)
     ax1.legend(fontsize=legend_fs, loc='best', ncol=2)
 
     # Log scale
@@ -1563,9 +1562,15 @@ def plot_signal_loss(loss_dict, log_dir, epoch=None, Niter=None, debug=False,
     ax2.plot(x_iter, loss_dict['g_phi_weight'], color='pink', linewidth=1, label=r'$g_\phi$ weight regul', alpha=0.7)
     style.xlabel(ax2, 'iteration')
     style.ylabel(ax2, 'loss')
-    ax2.tick_params(labelsize=style.tick_font_size - 2)
     ax2.set_yscale('log')
     ax2.legend(fontsize=legend_fs, loc='best', ncol=2)
+
+    # Epoch boundary lines on all three panels
+    if epoch is not None and Niter and epoch > 0:
+        for k in range(1, epoch + 1):
+            xb = k * Niter
+            for ax in (ax1, ax2, ax3):
+                ax.axvline(x=xb, color='gray', linestyle='--', linewidth=0.8, alpha=0.6)
 
     # R2 metrics panel (conn, V_rest, tau)
     metrics_log_path = os.path.join(log_dir, 'tmp_training', 'metrics.log')
