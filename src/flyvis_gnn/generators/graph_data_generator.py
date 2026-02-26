@@ -1,4 +1,5 @@
 import glob
+import time
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -392,6 +393,9 @@ def _run_ode_generation(stimulus_sequences, net, pde, x, edge_index, initial_sta
                         break
                 if it >= target_frames:
                     break
+                # Brief GPU cooldown every 25 sequences
+                if data_idx > 0 and data_idx % 25 == 0:
+                    time.sleep(0.5)
             if it >= target_frames:
                 break
 
