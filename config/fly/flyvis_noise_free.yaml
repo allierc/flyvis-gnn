@@ -58,15 +58,17 @@ training:
   coeff_f_theta_msg_diff: 0
   coeff_g_phi_norm: 0.9
   coeff_g_phi_weight_L1: 0.28
-  coeff_f_theta_weight_L1: 0
+  coeff_f_theta_weight_L1: 0.5
+  coeff_f_theta_weight_L1_rate: 0.5
   coeff_g_phi_weight_L2: 0
   coeff_f_theta_weight_L2: 0.001
   coeff_W_L1: 7.5e-05
+  coeff_W_L1_rate: 0.5
   coeff_W_L2: 1.5e-06
   w_init_mode: "randn_scaled"
   seed: 42
 claude:
-  n_epochs: 1
+  n_epochs: 10
   data_augmentation_loop: 20
   n_iter_block: 12
   ucb_c: 1.414
