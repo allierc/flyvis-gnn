@@ -76,7 +76,6 @@ def plot_training_summary_panels(fig, log_dir, Niter=None):
             pass
         if conn_vals:
             ax6 = fig.add_subplot(2, 3, 6)
-            ax6.set_box_aspect(1)
             ax6.plot(r2_iters, conn_vals, color='#d62728', linewidth=style.line_width, label='conn')
             ax6.plot(r2_iters, vrest_vals, color='#1f77b4', linewidth=style.line_width, label=r'$V_{rest}$')
             ax6.plot(r2_iters, tau_vals, color='#2ca02c', linewidth=style.line_width, label=r'$\tau$')
@@ -667,7 +666,7 @@ def plot_weight_scatter(ax, gt_weights, learned_weights, corrected=False,
     r_squared, slope = compute_r_squared(true_in, learned_in)
 
     scatter_color = mc_in if mc_in is not None else 'k'
-    ax.scatter(true_in, learned_in, s=scatter_size, c=scatter_color, alpha=0.06)
+    ax.scatter(true_in, learned_in, s=scatter_size, c=scatter_color, alpha=0.04)
     ax.text(0.05, 0.95,
             f'$R^2$: {r_squared:.3f}\nslope: {slope:.2f}\nN: {len(true_in)}',
             transform=ax.transAxes, verticalalignment='top', fontsize=24)

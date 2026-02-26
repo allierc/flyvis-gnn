@@ -764,7 +764,6 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
         # Plot 1: Loss
         ax1 = fig.add_subplot(2, 3, 1)
-        ax1.set_box_aspect(1)
         ax1.plot(list_loss, color=default_style.foreground, linewidth=default_style.line_width)
         ax1.set_xlim([0, tc.n_epochs])
         default_style.ylabel(ax1, 'loss')
@@ -851,7 +850,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                     learning_rate_NNR=learning_rate_NNR)
 
         plt.tight_layout()
-        plt.savefig(f"{log_dir}/tmp_training/epoch_{epoch}.png")
+        plt.savefig(f"{log_dir}/tmp_training/epoch_{epoch}.png", bbox_inches='tight', pad_inches=0.1)
         plt.close()
 
     # Calculate and log training time
