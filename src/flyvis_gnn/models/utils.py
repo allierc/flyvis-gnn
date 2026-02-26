@@ -1249,6 +1249,9 @@ class LossRegularizer:
             self._coeffs['W_L1'] = anneal(tc.coeff_W_L1, W_L1_rate)
             self._coeffs['g_phi_weight_L1'] = anneal(tc.coeff_g_phi_weight_L1, g_phi_rate)
             self._coeffs['f_theta_weight_L1'] = anneal(tc.coeff_f_theta_weight_L1, f_theta_rate)
+            if epoch == 0:
+                print(f"[annealing] epoch={epoch}  W_L1_rate={W_L1_rate}  g_phi_rate={g_phi_rate}  f_theta_rate={f_theta_rate}")
+                print(f"[annealing] W_L1={self._coeffs['W_L1']:.6e}  g_phi_weight_L1={self._coeffs['g_phi_weight_L1']:.6e}  f_theta_weight_L1={self._coeffs['f_theta_weight_L1']:.6e}")
         else:
             # Signal: two-phase training if n_epochs_init > 0
             if n_epochs_init > 0 and epoch < n_epochs_init:
