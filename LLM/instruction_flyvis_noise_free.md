@@ -89,9 +89,11 @@ The training loss includes:
 | `coeff_g_phi_weight_L1`        | L1 penalty on g_phi MLP weights                                                     | 0.28    |
 | `coeff_g_phi_weight_L2`        | L2 penalty on g_phi MLP weights                                                     | 0       |
 | `coeff_f_theta_weight_L1`      | L1 penalty on f_theta MLP weights                                                   | 0.5     |
+| `coeff_f_theta_weight_L1_rate` | Annealing rate: coeff*(1-exp(-rate*epoch)), 0=no annealing                          | 0.5     |
 | `coeff_f_theta_weight_L2`      | L2 penalty on f_theta MLP weights                                                   | 0.001   |
 | `coeff_f_theta_msg_diff`       | Monotonicity of f_theta w.r.t. message input                                        | 0       |
 | `coeff_W_L1`                   | L1 sparsity penalty on connectivity W                                               | 7.5e-05 |
+| `coeff_W_L1_rate`              | Annealing rate: coeff*(1-exp(-rate*epoch)), 0=no annealing                          | 0.5     |
 | `coeff_W_L2`                   | L2 penalty on W                                                                     | 1.5e-06 |
 
 ## Training Parameters (explorable)
