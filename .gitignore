@@ -1,6 +1,9 @@
 # Data root config (per-environment, not tracked)
 data_paths.json
 
+# Config files live in GraphData/config/, not in the repo
+config/
+
 # Data files (large simulation data)
 *.npy
 *.npz
