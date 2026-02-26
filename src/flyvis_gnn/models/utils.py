@@ -1164,7 +1164,7 @@ def save_exploration_artifacts_flyvis(root_dir, exploration_dir, config, config_
 
 class LossRegularizer:
     """
-    Handles all regularization terms, coefficient annealing, and history tracking.
+    Handles all regularization terms, coefficient scheduling, and history tracking.
 
     Usage:
         regularizer = LossRegularizer(train_config, model_config, activity_column=6,
@@ -1199,7 +1199,7 @@ class LossRegularizer:
             activity_column: Column index for activity (6 for signal, 3 for flyvis)
             plot_frequency: How often to record to history
             n_neurons: Number of neurons for normalization
-            trainer_type: 'signal' or 'flyvis' - controls annealing behavior
+            trainer_type: 'signal' or 'flyvis'
         """
         self.train_config = train_config
         self.model_config = model_config
@@ -1208,7 +1208,7 @@ class LossRegularizer:
         self.n_neurons = n_neurons
         self.trainer_type = trainer_type
 
-        # Current epoch (for annealing)
+        # Current epoch
         self.epoch = 0
         self.Niter = 0
 
@@ -1232,7 +1232,7 @@ class LossRegularizer:
         self._update_coeffs()
 
     def _update_coeffs(self):
-        """Recompute coefficients based on current epoch (annealing for flyvis only)."""
+        """Recompute coefficients based on current epoch."""
         tc = self.train_config
         epoch = self.epoch
 
@@ -1240,28 +1240,12 @@ class LossRegularizer:
         n_epochs_init = getattr(tc, 'n_epochs_init', 0)
         first_coeff_L1 = getattr(tc, 'first_coeff_L1', tc.coeff_W_L1)
 
-        if self.trainer_type == 'flyvis':
-            # Flyvis: annealed coefficients — ramp up from 0 via 1-exp(-rate*epoch)
-            W_L1_rate = getattr(tc, 'coeff_W_L1_rate', 0)
-            g_phi_rate = getattr(tc, 'coeff_g_phi_weight_L1_rate', 0)
-            f_theta_rate = getattr(tc, 'coeff_f_theta_weight_L1_rate', 0)
-            anneal = lambda coeff, rate: coeff * (1 - np.exp(-rate * epoch)) if rate > 0 else coeff
-            self._coeffs['W_L1'] = anneal(tc.coeff_W_L1, W_L1_rate)
-            self._coeffs['g_phi_weight_L1'] = anneal(tc.coeff_g_phi_weight_L1, g_phi_rate)
-            self._coeffs['f_theta_weight_L1'] = anneal(tc.coeff_f_theta_weight_L1, f_theta_rate)
-            if epoch == 0:
-                print(f"[annealing] epoch={epoch}  W_L1_rate={W_L1_rate}  g_phi_rate={g_phi_rate}  f_theta_rate={f_theta_rate}")
-                print(f"[annealing] W_L1={self._coeffs['W_L1']:.6e}  g_phi_weight_L1={self._coeffs['g_phi_weight_L1']:.6e}  f_theta_weight_L1={self._coeffs['f_theta_weight_L1']:.6e}")
+        if n_epochs_init > 0 and epoch < n_epochs_init:
+            self._coeffs['W_L1'] = first_coeff_L1
         else:
-            # Signal: two-phase training if n_epochs_init > 0
-            if n_epochs_init > 0 and epoch < n_epochs_init:
-                # Phase 1: use first_coeff_L1 (typically 0 or small)
-                self._coeffs['W_L1'] = first_coeff_L1
-            else:
-                # Phase 2: use coeff_W_L1 (target L1)
-                self._coeffs['W_L1'] = tc.coeff_W_L1
-            self._coeffs['g_phi_weight_L1'] = tc.coeff_g_phi_weight_L1
-            self._coeffs['f_theta_weight_L1'] = tc.coeff_f_theta_weight_L1
+            self._coeffs['W_L1'] = tc.coeff_W_L1
+        self._coeffs['g_phi_weight_L1'] = tc.coeff_g_phi_weight_L1
+        self._coeffs['f_theta_weight_L1'] = tc.coeff_f_theta_weight_L1
 
         # Non-annealed coefficients (same for both)
         self._coeffs['W_L2'] = tc.coeff_W_L2
@@ -1284,7 +1268,7 @@ class LossRegularizer:
         self._coeffs['modulation'] = tc.coeff_lin_modulation
 
     def set_epoch(self, epoch: int, plot_frequency: int = None, Niter: int = None):
-        """Set current epoch and update annealed coefficients."""
+        """Set current epoch and update coefficients."""
         self.epoch = epoch
         self._update_coeffs()
         if plot_frequency is not None:
