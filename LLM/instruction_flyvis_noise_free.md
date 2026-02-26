@@ -2,8 +2,10 @@
 
 ## Goal
 
-Optimize GNN training hyperparameters for the **Drosophila visual system** (flyvis_noise_free, no noise, DAVIS input).
-The data is **pre-generated** — do NOT modify simulation parameters.
+Test **robustness of GNN training** for the **Drosophila visual system** with no noise (noise_model_level=0.0, DAVIS input).
+The goal is to find a config that achieves **connectivity_R2 > 0.9 across different random seeds**, demonstrating that the result is not data-dependent.
+
+Data is **re-generated each iteration** with a different seed to verify seed independence.
 
 Primary metric: **connectivity_R2** (R² between learned W and ground-truth W).
 Secondary metrics: **tau_R2** (time constant recovery), **V_rest_R2** (resting potential recovery), **cluster_accuracy** (neuron type clustering from embeddings).
@@ -12,27 +14,34 @@ Secondary metrics: **tau_R2** (time constant recovery), **V_rest_R2** (resting p
 
 This exploration follows a strict **hypothesize → test → validate/falsify** cycle:
 
-1. **Hypothesize**: Based on available data (metrics, prior results, established principles), form a specific, testable hypothesis about how a parameter change will affect connectivity_R2 (e.g., "Increasing coeff_g_phi_diff from 750 to 1500 will improve connectivity_R2 because stronger monotonicity constraints reduce MLP compensation")
-2. **Design experiment**: Choose a mutation that specifically tests the hypothesis — change ONE parameter at a time per slot
-3. **Run training**: The experiment runs — you cannot predict the outcome
-4. **Analyze results**: Compare metrics to the parent config. Did the change improve, worsen, or not affect connectivity_R2?
+1. **Hypothesize**: Based on available data (metrics, seed variance, prior results), form a hypothesis about what controls robustness (e.g., "Higher coeff_g_phi_diff will reduce seed variance because stronger monotonicity constraints reduce the number of degenerate solutions")
+2. **Design experiment**: Choose a mutation that specifically tests the hypothesis — change ONE parameter at a time
+3. **Run training**: The experiment runs across 4 seeds — you cannot predict the outcome
+4. **Analyze results**: Use both metrics AND cross-seed variance to evaluate whether the hypothesis was supported or contradicted
 5. **Update understanding**: Revise hypotheses based on evidence. A falsified hypothesis is valuable information.
 
 **CRITICAL**: You can only hypothesize. Only training results can validate or falsify your hypotheses. Never assume a hypothesis is correct without experimental evidence. When results contradict your hypothesis, update it — do not rationalize away the evidence.
 
 **Evidence hierarchy:**
 
-| Level            | Criterion                              | Action                 |
-| ---------------- | -------------------------------------- | ---------------------- |
-| **Established**  | Consistent across 3+ iterations        | Add to Principles      |
-| **Tentative**    | Observed 1-2 times                     | Add to Open Questions  |
-| **Contradicted** | Conflicting evidence                   | Note in Open Questions |
+| Level            | Criterion                                     | Action                 |
+| ---------------- | --------------------------------------------- | ---------------------- |
+| **Established**  | Consistent across 3+ iterations AND 4/4 seeds | Add to Principles      |
+| **Tentative**    | Observed 1-2 times or inconsistent across seeds | Add to Open Questions  |
+| **Contradicted** | Conflicting evidence across iterations/seeds  | Note in Open Questions |
 
-## CRITICAL: Data is PRE-GENERATED
+## CRITICAL: Data is RE-GENERATED per slot
 
-**DO NOT change any simulation parameters** (n_neurons, n_frames, n_edges, n_input_neurons, n_neuron_types, delta_t, noise_model_level, visual_input_type). The data lives in `graphs_data/fly/flyvis_noise_free/` and is fixed.
+Each slot re-generates its data with a **different random seed**.
+Both `simulation.seed` and `training.seed` are **forced by the pipeline** — DO NOT modify them in config files.
 
-**Seeds are forced by the pipeline** — DO NOT modify `simulation.seed` or `training.seed` in config files. The actual seed values are provided in the prompt for each slot — log them in your iteration entries.
+Seed formula (set automatically by GNN_LLM.py):
+- `simulation.seed = iteration * 1000 + slot` (controls data generation)
+- `training.seed = iteration * 1000 + slot + 500` (controls weight init & training randomness)
+
+The actual seed values are provided in the prompt for each slot — **log them in your iteration entries**.
+
+Simulation parameters (n_neurons, n_frames, etc.) stay fixed — **DO NOT change them**.
 
 ## FlyVis Model
 
@@ -94,7 +103,7 @@ The training loss includes:
 | `learning_rate_embedding_start` | 1.55e-3      | Learning rate for neuron embeddings          |
 | `n_epochs`                      | 1 (claude)   | Epochs per iteration (keep ≤ 2 for time)     |
 | `batch_size`                    | 2            | Batch size for training                      |
-| `data_augmentation_loop`        | 25           | Data augmentation multiplier                 |
+| `data_augmentation_loop`        | 20           | Data augmentation multiplier                 |
 | `recurrent_training`            | false        | Enable multi-step rollout training           |
 | `time_step`                     | 1            | Recurrent steps (if recurrent_training=true) |
 | `w_init_mode`                   | randn_scaled | W initialization: "zeros" or "randn_scaled"  |
@@ -102,7 +111,8 @@ The training loss includes:
 ## Training Time Constraint
 
 Baseline (batch_size=2, 64K frames, hidden_dim=80): **~60 min/epoch on H100**, **~90 min on A100**.
-Keep total training time ≤ 90 min/iteration. Monitor `training_time_min`.
+Data generation adds **~10-15 min** per slot.
+Keep total training time (generation + training) ≤ 100 min/iteration. Monitor `training_time_min`.
 
 Factors that increase training time:
 
@@ -114,35 +124,41 @@ Factors that increase training time:
 ## Parallel Mode — 4 Slots Per Batch
 
 You receive **4 results per batch** and propose **4 mutations** for the next batch.
+Each slot runs with a **different random seed** for data generation, so you can directly assess seed robustness within a single batch.
+
+### Robustness Assessment
+
+After each batch, evaluate:
+
+- **Robust**: all 4 slots have connectivity_R2 > 0.9
+- **Partially robust**: 2-3 slots have connectivity_R2 > 0.9
+- **Fragile**: 0-1 slots have connectivity_R2 > 0.9
+
+A config is considered **validated** only when it achieves connectivity_R2 > 0.9 on all 4 seeds.
 
 ### Slot Strategy
 
+Since the goal is robustness testing, all 4 slots should run the **same config** (different seeds are applied automatically).
+
 | Slot | Role               | Description                                                 |
 | ---- | ------------------ | ----------------------------------------------------------- |
-| 0    | **exploit**        | Highest UCB node, conservative mutation of best config      |
-| 1    | **exploit**        | 2nd highest UCB or same parent, different parameter         |
-| 2    | **explore**        | Under-visited node or new parameter dimension               |
-| 3    | **principle-test** | Validate or challenge one Established Principle from memory |
+| 0    | **seed test**      | Same config, seed varies automatically                      |
+| 1    | **seed test**      | Same config, seed varies automatically                      |
+| 2    | **seed test**      | Same config, seed varies automatically                      |
+| 3    | **seed test**      | Same config, seed varies automatically                      |
 
-You may deviate from this split based on context (e.g. all exploit early in block, boundary-probe if all configs converge).
+When a config is validated as robust (all 4 seeds > 0.9), you may switch to exploring a variation:
 
-### Slot 3: Principle Testing
-
-1. Read "Established Principles" in memory.md
-2. Randomly select one principle (rotate — do not repeat consecutively)
-3. Design a config that tests or challenges it
-4. Write `Mode/Strategy: principle-test` in the log entry
-5. Include `Testing principle: "[quoted text]"` in the Mutation line
-6. After results: update evidence level (confirmed → keep, contradicted → Open Questions)
-
-If no Established Principles yet, use slot 3 as **boundary-probe** instead.
+| Slot | Role               | Description                                                 |
+| ---- | ------------------ | ----------------------------------------------------------- |
+| 0-3  | **exploit**        | All 4 slots test the next candidate config across seeds     |
 
 ### Config Files
 
 - Edit all 4 config files: `{name}_00.yaml` through `{name}_03.yaml`
-- **DO NOT change `dataset`** — each slot is pre-routed to its data directory
+- **All 4 configs should be identical** (only seeds differ, set automatically)
 - Only modify `training:` and `graph_model:` parameters (and `claude:` where allowed)
-- **DO NOT change `simulation:` parameters**
+- **DO NOT change `simulation:` parameters** (except that seed is managed automatically)
 
 ## Iteration Loop Structure
 
@@ -166,7 +182,7 @@ You maintain **THREE** files:
 **File**: `{llm_task_name}_memory.md`
 
 - Read at start, update at end
-- Contains: parameter effects table, hypotheses, established principles, current block iterations
+- Contains: robustness comparison table, hypotheses, established principles, current block iterations
 - Keep ≤ 500 lines
 
 ### 3. User Input (read every batch, acknowledge pending items)
@@ -181,7 +197,7 @@ You maintain **THREE** files:
 
 ### Step 1: Read Working Memory + User Input
 
-- Read `{llm_task_name}_memory.md` for context — especially hypotheses and parameter effects table
+- Read `{llm_task_name}_memory.md` for context — especially hypotheses and robustness table
 - Read `user_input.md` for any pending user instructions
 
 ### Step 2: Analyze Results (4 slots)
@@ -195,48 +211,60 @@ You maintain **THREE** files:
 - `test_R2`: one-step prediction R²
 - `training_time_min`: training duration
 
-**Classification:**
+**Robustness classification (across all 4 seeds):**
+
+- **Robust**: all 4 slots connectivity_R2 > 0.9
+- **Partially robust**: 2-3 slots connectivity_R2 > 0.9
+- **Fragile**: 0-1 slots connectivity_R2 > 0.9
+
+**Per-slot classification:**
 
 - **Converged**: connectivity_R2 > 0.9
 - **Partial**: connectivity_R2 0.3–0.9
 - **Failed**: connectivity_R2 < 0.3
+
+**Seed variance analysis (compute every batch):**
+
+- Compute mean, std, and CV (coefficient of variation = std/mean) for connectivity_R2 across the 4 slots
+- CV < 5% → highly stable; CV 5-15% → moderate variance; CV > 15% → seed-sensitive
 
 **UCB scores from `ucb_scores.txt`:**
 
 - UCB(k) = R²_k + c × sqrt(ln(N) / n_k) where c = `ucb_c` (default 1.414)
 - At block boundaries the UCB file is empty — use `parent=root`
 
-### Step 3: Write 4 Log Entries + Update Hypotheses + Update Memory
+### Step 3: Write Log Entries + Update Hypotheses + Update Memory
 
 **3a. Append to Full Log** (`{llm_task_name}_analysis.md`) and **Current Block** in memory.md:
 
 ```
-## Iter N: [converged/partial/failed]
+## Iter N: [robust/partially robust/fragile]
 Node: id=N, parent=P
-Mode/Strategy: [exploit/explore/boundary/principle-test]
 Hypothesis tested: "[quoted hypothesis being tested]"
-Config: lr_W=X, lr=Y, lr_emb=Z, coeff_g_phi_diff=A, coeff_W_L1=B, batch_size=C, hidden_dim=D, recurrent=[T/F]
-Metrics: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, training_time_min=F
-Embedding: [visual observation]
+Config (same for all slots): lr_W=X, lr=Y, lr_emb=Z, coeff_g_phi_diff=A, coeff_W_L1=B, batch_size=C, hidden_dim=D
+Slot 0: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, sim_seed=S, train_seed=T
+Slot 1: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, sim_seed=S, train_seed=T
+Slot 2: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, sim_seed=S, train_seed=T
+Slot 3: connectivity_R2=A, tau_R2=B, V_rest_R2=C, cluster_accuracy=D, test_R2=E, sim_seed=S, train_seed=T
+Seed stats: mean_conn_R2=X, std=Y, CV=Z%
 Mutation: [param]: [old] -> [new]
-Parent rule: [one line]
 Verdict: [supported/falsified/inconclusive] — [one line explanation]
-Observation: [one line]
+Observation: [one line about seed sensitivity or robustness pattern]
 Next: parent=P
 ```
 
-**CRITICAL**: `Mutation:` is parsed by the UCB tree builder — always include exact parameter change.
-**CRITICAL**: `Next: parent=P` — P must be from a previous batch or current batch, NEVER `id+1` (circular reference).
+**CRITICAL**: The `Mutation:` line is parsed by the UCB tree builder — always include exact parameter change.
+**CRITICAL**: `Next: parent=P` — P must be from a previous batch or current batch, NEVER `id+1`.
 
 **3b. Update Hypotheses in memory.md:**
 
-After analyzing results, update the `## Current Hypothesis` section:
+After analyzing results, update the `## Hypotheses` section:
 
 - If results **support** the hypothesis → increase confidence, note supporting evidence
 - If results **falsify** the hypothesis → mark as falsified, formulate a new hypothesis informed by the contradicting evidence
 - If results are **inconclusive** → note what additional experiment would clarify
 
-**3c. Update Parameter Effects Table in memory.md** (see Working Memory Structure below).
+**3c. Update Robustness Comparison Table in memory.md** (see Working Memory Structure below).
 
 ### Step 4: Acknowledge User Input (if any)
 
@@ -247,22 +275,23 @@ If `user_input.md` has content in "Pending Instructions":
 
 ### Step 5: Formulate Next Hypothesis + Edit 4 Config Files
 
-1. Based on current understanding, formulate the **next hypothesis** for each slot
-2. Design config mutations that specifically test these hypotheses (ONE parameter change per slot)
-3. Write the hypotheses to memory.md before editing configs
+1. Based on current understanding, formulate the **next hypothesis** to test
+2. Design a config mutation that specifically tests this hypothesis (ONE parameter change)
+3. All 4 configs should be **identical** — the pipeline assigns different seeds automatically
+4. Write the hypothesis to memory.md before editing configs
 
 ## Block Partition (suggested)
 
 | Block | Focus                  | Parameters                                                               |
 | ----- | ---------------------- | ------------------------------------------------------------------------ |
-| 1     | Learning rates         | lr_W, lr, lr_emb                                                         |
-| 2     | g_phi regularization   | coeff_g_phi_diff, coeff_g_phi_norm, coeff_g_phi_weight_L1                |
-| 3     | f_theta regularization | coeff_f_theta_weight_L1, coeff_f_theta_weight_L2, coeff_f_theta_msg_diff |
-| 4     | W regularization       | coeff_W_L1, coeff_W_L2, w_init_mode                                      |
-| 5     | Architecture           | hidden_dim, n_layers, hidden_dim_update, n_layers_update, embedding_dim  |
-| 6     | Batch & augmentation   | batch_size, data_augmentation_loop                                       |
-| 7     | Recurrent training     | recurrent_training, time_step                                            |
-| 8     | Combined best          | Best parameters from blocks 1–7                                          |
+| 1     | Baseline robustness    | Default config across 4 seeds — establish baseline                      |
+| 2     | Learning rates         | lr_W, lr, lr_emb                                                         |
+| 3     | g_phi regularization   | coeff_g_phi_diff, coeff_g_phi_norm, coeff_g_phi_weight_L1                |
+| 4     | f_theta regularization | coeff_f_theta_weight_L1, coeff_f_theta_weight_L2, coeff_f_theta_msg_diff |
+| 5     | W regularization       | coeff_W_L1, coeff_W_L2, w_init_mode                                      |
+| 6     | Architecture           | hidden_dim, n_layers, hidden_dim_update, n_layers_update, embedding_dim  |
+| 7     | Combined best          | Best parameters from blocks 1–6                                          |
+| 8     | Validation             | Re-run best config with more seeds / longer training                     |
 
 ## Block Boundaries
 
@@ -270,17 +299,18 @@ At the end of each block:
 
 1. Update "Paper Summary" at the top of memory.md — rewrite both bullet points to reflect the current state of knowledge
 2. Summarize findings in memory.md "Previous Block Summary"
-3. Update "Established Principles" with confirmed insights (require 3+ supporting iterations)
+3. Update "Established Principles" with confirmed insights (require 3+ supporting iterations AND cross-seed consistency)
 4. Move falsified hypotheses to "Falsified Hypotheses" with evidence summary
 5. Clear "Current Block" for next block
-6. Carry forward best config as starting point
+6. Carry forward best **robust** config as starting point
 
 ## Failed Slots
 
 If a slot is `[FAILED]`:
 
-- Write a brief `## Iter N: failed` entry noting the failure
-- Still propose a mutation for that slot's next batch
+- Write a brief note in the log entry
+- A single slot failure may indicate seed sensitivity — note this
+- Still propose the next config for the next batch
 - Do not draw conclusions from a single failure
 
 ## Known Results (prior experiments)
@@ -289,19 +319,19 @@ If a slot is `[FAILED]`:
 - `flyvis_62_1` with Sintel input: R²_W=0.99, tau_R2=1.00, V_rest_R2=0.85
 - W initialization: `randn_scaled` and `zeros` perform similarly; plain `randn` performs poorly
 - Larger MLP (80-dim/3-layer) works better than smaller (32-dim/2-layer)
-- No noise should allow faster convergence and potentially higher connectivity_R2 than noise=0.05
 - `coeff_g_phi_diff` (monotonicity) is among the most important regularizers — too low causes non-monotonic messages
+- No noise should allow faster convergence and potentially higher connectivity_R2 than noise=0.05
 
 ## Start Call
 
 When prompt says `PARALLEL START`:
 
 - Read base config to understand training regime
-- Create 4 diverse initial variations
-- Suggested spread: vary `learning_rate_W_start` across range (e.g. 3e-4, 6e-4, 1e-3, 2e-3)
-- All 4 slots share same simulation parameters (pre-generated data)
-- Write planned initial variations and **initial hypotheses** to working memory
-- State the hypothesis for each slot (e.g., "Slot 0: lr_W=3e-4 — hypothesis: lower lr_W improves stability at the cost of slower convergence")
+- Set all 4 configs **identically** to the baseline config
+- Data will be generated with different seeds per slot automatically
+- Write planned config and **initial hypothesis** to working memory
+- First iteration establishes baseline robustness — do not change hyperparameters yet
+- State the baseline hypothesis: "The default config achieves connectivity_R2 > 0.9 robustly across seeds"
 
 ---
 
@@ -321,38 +351,36 @@ Brief paragraph for a scientific paper summarizing the current state of this exp
 
 ## Knowledge Base (accumulated across all blocks)
 
-### Parameter Effects Table
+### Robustness Comparison Table
 
-| Block | Focus | Best conn_R2 | Best tau_R2 | Best V_rest_R2 | Best Cluster_Acc | Time_min | Key finding |
-| ----- | ----- | ------------ | ----------- | -------------- | ---------------- | -------- | ----------- |
-| 1     | lr    | ?            | ?           | ?              | ?                | ?        | baseline    |
+| Iter | Config summary | conn_R2 (mean±std) | CV% | min | max | tau_R2 (mean) | V_rest_R2 (mean) | Robust? | Hypothesis tested |
+| ---- | -------------- | ------------------ | --- | --- | --- | ------------- | ---------------- | ------- | ----------------- |
+| 1    | defaults       | ?                  | ?   | ?   | ?   | ?             | ?                | ?       | baseline          |
 
 ### Established Principles
 
-[Confirmed patterns — require 3+ supporting iterations]
+[Confirmed patterns — require 3+ supporting iterations AND cross-seed consistency]
 
 Examples of good principles:
-- ✓ "lr_W in [4e-4, 8e-4] consistently converges (5/5 iterations)" (causal, generalizable)
-- ✓ "coeff_g_phi_diff < 300 causes connectivity_R2 < 0.5 (3/3 iterations)" (boundary condition)
+- ✓ "coeff_g_phi_diff ≥ 500 is necessary for robust convergence (3/3 iterations, all seeds > 0.9)"
+- ✓ "lr_W > 1e-3 causes seed-dependent failures (CV > 20% in 2 iterations)"
 - ✗ "lr_W=6e-4 worked in iteration 3" (too specific, not a principle)
-- ✗ "Block 2 converged" (not a principle)
 
 ### Falsified Hypotheses
 
 [Hypotheses that were contradicted by experimental evidence — keep as record]
-Format: "H: [hypothesis] — FALSIFIED iter N: [evidence] — Learned: [what this taught us]"
 
 ### Open Questions
 
-[Patterns needing more testing, contradictions, tentative observations]
+[Patterns needing more testing, contradictions, seed-dependent observations]
 
 ---
 
 ## Previous Block Summary (Block N-1)
 
 [Short summary: 2-3 lines. NOT individual iterations.
-Example: "Block 1 (learning rates): Best conn_R2=0.93 at lr_W=6e-4.
-Key finding: lr_W optimal range is 4e-4 to 8e-4, lr_emb has minimal impact."]
+Example: "Block 1 (baseline): Default config achieves conn_R2=0.93±0.04, CV=4.3%.
+3/4 seeds > 0.9. Key finding: baseline is partially robust, lr_W may need tuning for full robustness."]
 
 ---
 
@@ -377,7 +405,7 @@ Iterations: M to M+n_iter_block
 
 ### Emerging Observations
 
-[Running notes on what patterns are emerging]
+[Running notes on what patterns are emerging across seeds and iterations]
 **CRITICAL: This section must ALWAYS be at the END of memory file.**
 ```
 
@@ -389,13 +417,14 @@ Iterations: M to M+n_iter_block
 
 A principle must satisfy ALL of:
 1. Observed consistently across **3+ iterations**
-2. States a **causal relationship** (not just a correlation)
-3. Is **generalizable** (not tied to a specific iteration number)
+2. Consistent across **all 4 seeds** (not just mean, but low variance)
+3. States a **causal relationship** (not just a correlation)
 
 ### What to Add to Open Questions
 
 - Patterns observed 1-2 times
-- Contradictions between iterations or blocks
+- Seed-dependent effects (works for some seeds but not others)
+- Contradictions between iterations
 - Theoretical predictions not yet verified
 
 ### What to Add to Falsified Hypotheses
