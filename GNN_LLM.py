@@ -963,9 +963,9 @@ Fix the bug. Do NOT make other changes."""
             shutil.copy2(config_paths[slot], dst_config)
 
             # Check training time
-            log_path = analysis_log_paths[slot]
-            if os.path.exists(log_path):
-                with open(log_path, 'r') as f:
+            slot_log_path = analysis_log_paths[slot]
+            if os.path.exists(slot_log_path):
+                with open(slot_log_path, 'r') as f:
                     log_content = f.read()
                 time_m = re.search(r'training_time_min[=:]\s*([\d.]+)', log_content)
                 if time_m:
@@ -993,10 +993,10 @@ Fix the bug. Do NOT make other changes."""
         for slot_idx, iteration in enumerate(iterations):
             if not job_results.get(slot_idx, False):
                 continue
-            log_path = analysis_log_paths[slot_idx]
-            if not os.path.exists(log_path):
+            slot_log_path = analysis_log_paths[slot_idx]
+            if not os.path.exists(slot_log_path):
                 continue
-            with open(log_path, 'r') as f:
+            with open(slot_log_path, 'r') as f:
                 log_content = f.read()
             r2_m = re.search(r'connectivity_R2[=:]\s*([\d.eE+-]+|nan)', log_content)
             pearson_m = re.search(r'test_pearson[=:]\s*([\d.eE+-]+|nan)', log_content)
