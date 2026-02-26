@@ -1,5 +1,5 @@
 description: designed by Claude (parallel flyvis)
-dataset: flyvis_noise_005_02
+dataset: flyvis_noise_free_03
 simulation:
   connectivity_file: to be specified
   adjacency_matrix: ''
@@ -16,8 +16,8 @@ simulation:
   delta_t: 0.02
   baseline_value: 0
   visual_input_type: DAVIS
-  noise_model_level: 0.05
-  seed: 39002
+  noise_model_level: 0.0
+  seed: 4003
 graph_model:
   signal_model_name: flyvis_A
   prediction: first_derivative
@@ -46,25 +46,25 @@ training:
   n_runs: 1
   device: auto
   recurrent_training: false
-  batch_size: 4
+  batch_size: 2
   batch_ratio: 1
   small_init_batch_size: false
   sparsity: none
   data_augmentation_loop: 20
-  learning_rate_W_start: 0.0009
+  learning_rate_W_start: 0.001
   learning_rate_start: 0.0018
-  learning_rate_embedding_start: 0.002325
+  learning_rate_embedding_start: 0.002
   coeff_g_phi_diff: 750
-  coeff_f_theta_msg_diff: 100
+  coeff_f_theta_msg_diff: 0
   coeff_g_phi_norm: 0.9
   coeff_g_phi_weight_L1: 0.28
-  coeff_f_theta_weight_L1: 0.05
+  coeff_f_theta_weight_L1: 0.5
   coeff_g_phi_weight_L2: 0
   coeff_f_theta_weight_L2: 0.001
   coeff_W_L1: 0.00015
-  coeff_W_L2: 1.5e-06
+  coeff_W_L2: 3.0e-06
   w_init_mode: randn_scaled
-  seed: 39502
+  seed: 4503
 claude:
   n_epochs: 1
   data_augmentation_loop: 20
