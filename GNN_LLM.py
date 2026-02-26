@@ -334,6 +334,21 @@ if __name__ == "__main__":
     llm_dir = f"{root_dir}/LLM"
     exploration_dir = os.path.abspath(log_path('Claude_exploration', exploration_name))
 
+    # --- Load source config and claude settings ---
+    for cfg in config_list:
+        cfg_file, pre = add_pre_folder(cfg)
+        source_config = f"{config_root}/{pre}{cfg}.yaml"
+
+    with open(source_config, 'r') as f:
+        source_data = yaml.safe_load(f)
+    claude_cfg = source_data.get('claude', {})
+    claude_n_epochs = claude_cfg.get('n_epochs', 1)
+    claude_data_augmentation_loop = claude_cfg.get('data_augmentation_loop', 25)
+    claude_n_iter_block = claude_cfg.get('n_iter_block', 12)
+    claude_ucb_c = claude_cfg.get('ucb_c', 1.414)
+    claude_node_name = claude_cfg.get('node_name', 'h100')
+    N_PARALLEL = claude_cfg.get('n_parallel', 4)
+
     if args.resume:
         analysis_path_probe = f"{exploration_dir}/{llm_task_name}_analysis.md"
         config_save_dir_probe = f"{exploration_dir}/config"
@@ -354,21 +369,6 @@ if __name__ == "__main__":
                 print("Aborted.")
                 sys.exit(0)
         print("\033[93mfresh start\033[0m")
-
-    # --- Initialize 4 slot configs from source ---
-    for cfg in config_list:
-        cfg_file, pre = add_pre_folder(cfg)
-        source_config = f"{config_root}/{pre}{cfg}.yaml"
-
-    with open(source_config, 'r') as f:
-        source_data = yaml.safe_load(f)
-    claude_cfg = source_data.get('claude', {})
-    claude_n_epochs = claude_cfg.get('n_epochs', 1)
-    claude_data_augmentation_loop = claude_cfg.get('data_augmentation_loop', 25)
-    claude_n_iter_block = claude_cfg.get('n_iter_block', 12)
-    claude_ucb_c = claude_cfg.get('ucb_c', 1.414)
-    claude_node_name = claude_cfg.get('node_name', 'h100')
-    N_PARALLEL = claude_cfg.get('n_parallel', 4)
     # generate_data: prefer YAML claude.generate_data, fall back to "generate" in task name
     generate_data = claude_cfg.get('generate_data', "generate" in task)
     training_time_target_min = claude_cfg.get('training_time_target_min', 60)
@@ -478,10 +478,16 @@ if __name__ == "__main__":
             f.write("- **GNN optimization**: [pending first results]\n")
             f.write("- **LLM-driven exploration**: [pending first results]\n\n")
             f.write("## Knowledge Base (accumulated across all blocks)\n\n")
-            f.write("### Parameter Effects Table\n")
-            f.write("| Block | Focus | Best conn_R2 | Best tau_R2 | Best V_rest_R2 | Best Cluster_Acc | Time_min | Key finding |\n")
-            f.write("| ----- | ----- | ------------ | ----------- | -------------- | ---------------- | -------- | ----------- |\n\n")
+            if generate_data:
+                f.write("### Robustness Comparison Table\n\n")
+                f.write("| Iter | Config summary | conn_R2 (mean±std) | CV% | min | max | tau_R2 (mean) | V_rest_R2 (mean) | Robust? | Hypothesis tested |\n")
+                f.write("| ---- | -------------- | ------------------ | --- | --- | --- | ------------- | ---------------- | ------- | ----------------- |\n\n")
+            else:
+                f.write("### Parameter Effects Table\n\n")
+                f.write("| Block | Focus | Best conn_R2 | Best tau_R2 | Best V_rest_R2 | Best Cluster_Acc | Time_min | Key finding |\n")
+                f.write("| ----- | ----- | ------------ | ----------- | -------------- | ---------------- | -------- | ----------- |\n\n")
             f.write("### Established Principles\n\n")
+            f.write("### Falsified Hypotheses\n\n")
             f.write("### Open Questions\n\n")
             f.write("---\n\n")
             f.write("## Previous Block Summary\n\n")
@@ -1147,6 +1153,11 @@ IMPORTANT: Read user_input.md — if there are pending instructions, acknowledge
         n_success = sum(1 for v in job_results.values() if v)
         n_failed = sum(1 for v in job_results.values() if not v)
         print(f"\n\033[92mBatch {batch_first}-{batch_last} complete: {n_success} succeeded, {n_failed} failed\033[0m")
+
+
+# python GNN_LLM.py -o generate_train_test_plot_Claude_cluster flyvis_noise_free --cluster 
+# python GNN_LLM.py -o generate_train_test_plot_Claude_cluster flyvis_noise_005 --cluster --resume 
+
 
 
 # python GNN_LLM_parallel.py -o train_test_plot_Claude_cluster flyvis_62_0 iterations=144 --resume
