@@ -1,0 +1,44 @@
+[
+  {
+    "objectID": "Notebook_00.html",
+    "href": "Notebook_00.html",
+    "title": "Data Generation: Drosophila Visual System",
+    "section": "",
+    "text": "Synapse-level connectomes describe the structure of neural circuits, but not the electrical and chemical dynamics. Conversely, large-scale recordings of neural activity capture these dynamics, but not the circuit structure. We combine binary connectivity and recorded neural activity to infer mechanistic models of neural circuits using a GNN trained on Drosophila visual system simulations (13,741 neurons, 65 cell types, 434,112 connections).\nThe simulated dynamics follow:\n\\[\\tau_i\\frac{dv_i}{dt} = -v_i + V_i^{\\text{rest}} + \\sum_{j\\in\\mathcal{N}_i} W_{ij}\\,\\text{ReLU}(v_j) + I_i(t) + \\sigma\\,\\xi_i(t)\\]\nwhere \\(\\tau_i\\) is the time constant, \\(V_i^{\\text{rest}}\\) the resting potential, \\(W_{ij}\\) the synaptic weight, \\(I_i(t)\\) the visual stimulus, and \\(\\xi_i(t) \\sim \\mathcal{N}(0,1)\\) is independent Gaussian noise scaled by \\(\\sigma\\).\nThe noise term \\(\\sigma\\,\\xi_i(t)\\) models intrinsic stochasticity in the membrane dynamics (e.g. channel noise, synaptic variability), not measurement noise. It enters the ODE itself, so it affects the temporal evolution of \\(v_i(t)\\) and propagates through the network via synaptic connections.\nWe generate data at three noise levels \\(\\sigma\\):"
+  },
+  {
+    "objectID": "Notebook_00.html#configuration",
+    "href": "Notebook_00.html#configuration",
+    "title": "Data Generation: Drosophila Visual System",
+    "section": "Configuration",
+    "text": "Configuration"
+  },
+  {
+    "objectID": "Notebook_00.html#step-1-generate-data",
+    "href": "Notebook_00.html#step-1-generate-data",
+    "title": "Data Generation: Drosophila Visual System",
+    "section": "Step 1: Generate Data",
+    "text": "Step 1: Generate Data\nSimulate the Drosophila visual system ODE driven by DAVIS video input at three noise levels. Each simulation records membrane voltage \\(v_i(t)\\) for 13,741 neurons over 64,000 time frames.\n\n\nCode\nprint()\nprint(\"=\" * 80)\nprint(\"STEP 1: GENERATE - Simulating fly visual system at three noise levels\")\nprint(\"=\" * 80)\n\nfor config_name, label in datasets:\n    config = configs[config_name]\n    graphs_dir = graphs_dirs[config_name]\n    print()\n    print(f\"--- {label} (noise_model_level={config.simulation.noise_model_level}) ---\")\n\n    data_exists = os.path.isdir(f'{graphs_dir}/x_list_train') or os.path.isdir(f'{graphs_dir}/x_list_0')\n    if data_exists:\n        print(f\"  data already exists at {graphs_dir}/\")\n        print(\"  skipping simulation...\")\n    else:\n        print(f\"  simulating {config.simulation.n_neurons} neurons, {config.simulation.n_neuron_types} types\")\n        print(f\"  generating {config.simulation.n_frames} time frames\")\n        print(f\"  visual input: {config.simulation.visual_input_type}\")\n        print(f\"  output: {graphs_dir}/\")\n        print()\n        data_generate(\n            config,\n            device=device,\n            visualize=True,\n            run_vizualized=0,\n            style=\"color\",\n            alpha=1,\n            erase=False,\n            save=True,\n            step=100,\n        )"
+  },
+  {
+    "objectID": "Notebook_00.html#visual-stimulus-preview",
+    "href": "Notebook_00.html#visual-stimulus-preview",
+    "title": "Data Generation: Drosophila Visual System",
+    "section": "Visual Stimulus Preview",
+    "text": "Visual Stimulus Preview\nFirst frames of shuffled DAVIS sequences used for training and testing (noise-free dataset)."
+  },
+  {
+    "objectID": "Notebook_00.html#activity-traces-comparison",
+    "href": "Notebook_00.html#activity-traces-comparison",
+    "title": "Data Generation: Drosophila Visual System",
+    "section": "Activity Traces Comparison",
+    "text": "Activity Traces Comparison\nSample voltage traces \\(v_i(t)\\) across the three noise conditions. Higher noise broadens the voltage distribution and obscures fine temporal structure."
+  },
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "FlyVis-GNN: Graph neural networks recover interpretable circuit models from neural activity",
+    "section": "",
+    "text": "A message-passing GNN is trained to forecast the activity of simulated Drosophila visual system neurons (13,741 neurons, 65 cell types, 434,112 connections). Given only the binary adjacency matrix and recorded voltage traces, the model recovers effective connectivity weights, neuron-type identities via latent embeddings, and nonlinear activation functions.\nThe simulated dynamics follow:\n\\[\\tau_i\\frac{dv_i}{dt} = -v_i + V_i^{\\text{rest}} + \\sum_{j\\in\\mathcal{N}_i} W_{ij}\\,\\text{ReLU}(v_j) + I_i(t)\\]\nThe GNN learns to approximate these dynamics with:\n\\[\\frac{\\widehat{dv}_i}{dt} = f_\\theta\\!\\left(v_i,\\,\\mathbf{a}_i,\\,\\sum_{j\\in\\mathcal{N}_i} \\widehat{W}_{ij}\\,g_\\phi(v_j, \\mathbf{a}_j)^2,\\,I_i(t)\\right)\\]\nwhere \\(f_\\theta\\) and \\(g_\\phi\\) are learned MLPs, \\(\\mathbf{a}_i \\in \\mathbb{R}^2\\) are latent embeddings, and \\(\\widehat{W}_{ij}\\) are learned synaptic weights.\n\n\n\n\n\n\n   \n    \n    \n      Order By\n      Default\n      \n        Title\n      \n    \n  \n    \n      \n      \n    \n\n\n\n\n\n\n\n\n\n\nData Generation: Drosophila Visual System\n\n\n\nFlyVis\n\nSimulation\n\nData Generation\n\n\n\n\n\n\n\n\n\nNotebook_00.py\n\n\n\n\n\nNo matching items"
+  }
+]
