@@ -1,251 +1,173 @@
 # %% [raw]
 # ---
-# title: "Noise-free: 13,741 neurons, DAVIS visual input"
-# author: Cédric Allier, Michael Innerberger, Stephan Saalfeld
+# title: "Data Generation: Drosophila Visual System"
+# author: "Allier, Innerberger, Saalfeld"
 # categories:
 #   - FlyVis
 #   - Simulation
-#   - GNN Training
+#   - Data Generation
 # execute:
 #   echo: false
 # image: "graphs_data/fly/flyvis_noise_free/activity_traces.png"
 # ---
 
 # %% [markdown]
-# This notebook runs the full GNN pipeline for the **noise-free** FlyVis simulation.
-#
-# **Simulation parameters:**
-#
-# - $N_{\text{neurons}}$: 13,741 (1,736 photoreceptors)
-# - $N_{\text{types}}$: 65
-# - $N_{\text{edges}}$: 434,112
-# - $N_{\text{frames}}$: 64,000 at 50 FPS
-# - Visual input: DAVIS dataset
-# - Noise level: 0.0 (noise-free)
-# - ODE step: $\Delta t = 0.02$
+# Synapse-level connectomes describe the structure of neural circuits, but not
+# the electrical and chemical dynamics. Conversely, large-scale recordings of
+# neural activity capture these dynamics, but not the circuit structure. We
+# combine binary connectivity and recorded neural activity to infer mechanistic
+# models of neural circuits using a GNN trained on *Drosophila* visual system
+# simulations (13,741 neurons, 65 cell types, 434,112 connections).
 #
 # The simulated dynamics follow:
 #
-# $$\tau_i\frac{dv_i}{dt} = -v_i + V_i^{\text{rest}} + \sum_{j\in\mathcal{N}_i} W_{ij}\,\text{ReLU}(v_j) + I_i(t)$$
+# $$\tau_i\frac{dv_i}{dt} = -v_i + V_i^{\text{rest}} + \sum_{j\in\mathcal{N}_i} W_{ij}\,\text{ReLU}(v_j) + I_i(t) + \sigma\,\xi_i(t)$$
 #
 # where $\tau_i$ is the time constant, $V_i^{\text{rest}}$ the resting potential,
-# $W_{ij}$ the synaptic weight, and $I_i(t)$ the visual stimulus.
+# $W_{ij}$ the synaptic weight, $I_i(t)$ the visual stimulus, and
+# $\xi_i(t) \sim \mathcal{N}(0,1)$ is independent Gaussian noise scaled by $\sigma$.
+#
+# The noise term $\sigma\,\xi_i(t)$ models intrinsic stochasticity in the
+# membrane dynamics (e.g. channel noise, synaptic variability), not
+# measurement noise. It enters the ODE itself, so it affects the temporal
+# evolution of $v_i(t)$ and propagates through the network via synaptic
+# connections.
+#
+# We generate data at three noise levels $\sigma$:
+#
+# | Dataset | $\sigma$ | Description |
+# |---------|----------|-------------|
+# | `flyvis_noise_free` | 0.0 | Deterministic (no intrinsic noise) |
+# | `flyvis_noise_005` | 0.05 | Low intrinsic noise |
+# | `flyvis_noise_05` | 0.5 | High intrinsic noise |
 
 # %%
 #| output: false
 import os
-import glob
 import warnings
 
+import imageio
 import matplotlib
 matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 from flyvis_gnn.config import NeuralGraphConfig
 from flyvis_gnn.generators.graph_data_generator import data_generate
-from flyvis_gnn.models.graph_trainer import data_train, data_test
-from flyvis_gnn.utils import set_device, add_pre_folder, load_and_display, graphs_data_path, log_path
-from GNN_PlotFigure import data_plot
+from flyvis_gnn.utils import set_device, add_pre_folder, load_and_display, graphs_data_path
 
 warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API")
 warnings.filterwarnings("ignore", category=FutureWarning)
 
+
+def display_row(paths, titles, figsize=(18, 6)):
+    """Display multiple images side by side."""
+    fig, axes = plt.subplots(1, len(paths), figsize=figsize)
+    if len(paths) == 1:
+        axes = [axes]
+    for ax, path, title in zip(axes, paths, titles):
+        img = imageio.imread(path)
+        ax.imshow(img)
+        ax.set_title(title, fontsize=14)
+        ax.axis('off')
+    plt.tight_layout()
+    plt.show()
+
 # %% [markdown]
-# ## Configuration and Setup
+# ## Configuration
 
 # %%
-#| echo: true
 #| output: false
-print()
-print("=" * 80)
-print("Noise-free: 13,741 neurons, DAVIS visual input")
-print("=" * 80)
-
-config_file_ = 'flyvis_noise_free'
+datasets = [
+    ('flyvis_noise_free', 'Noise-free'),
+    ('flyvis_noise_005', 'Noise 0.05'),
+    ('flyvis_noise_05', 'Noise 0.5'),
+]
 
 config_root = "./config"
-config_file, pre_folder = add_pre_folder(config_file_)
+configs = {}
+graphs_dirs = {}
 
-config = NeuralGraphConfig.from_yaml(f"{config_root}/{config_file}.yaml")
-config.dataset = pre_folder + config.dataset
-config.config_file = pre_folder + config_file_
+for config_name, label in datasets:
+    config_file, pre_folder = add_pre_folder(config_name)
+    config = NeuralGraphConfig.from_yaml(f"{config_root}/{config_file}.yaml")
+    config.dataset = pre_folder + config.dataset
+    config.config_file = pre_folder + config_name
+    configs[config_name] = config
+    graphs_dirs[config_name] = graphs_data_path(pre_folder + config_name)
 
-device = set_device(config.training.device)
+device = set_device(configs[datasets[0][0]].training.device)
 
-log_dir = log_path(pre_folder + config_file_)
-graphs_dir = graphs_data_path(pre_folder + config_file_)
-
-print(f"config: {config.config_file}")
-print(f"device: {device}")
-print(f"log_dir: {log_dir}")
-print(f"graphs_dir: {graphs_dir}")
+for config_name, label in datasets:
+    print(f"{label}: {graphs_dirs[config_name]}")
 
 # %% [markdown]
 # ## Step 1: Generate Data
-# Simulate the *Drosophila* visual system ODE driven by DAVIS video input.
-# Records membrane voltage $v_i(t)$ for 13,741 neurons over 64,000 time frames.
-#
-# **Outputs:**
-#
-# - Activity traces for selected neuron types
-# - Kinograph showing spatio-temporal voltage pattern
+# Simulate the *Drosophila* visual system ODE driven by DAVIS video input at
+# three noise levels. Each simulation records membrane voltage $v_i(t)$ for
+# 13,741 neurons over 64,000 time frames.
 
 # %%
 #| echo: true
 #| output: false
 print()
-print("-" * 80)
-print("STEP 1: GENERATE - Simulating fly visual system")
-print("-" * 80)
+print("=" * 80)
+print("STEP 1: GENERATE - Simulating fly visual system at three noise levels")
+print("=" * 80)
 
-data_exists = os.path.isdir(f'{graphs_dir}/x_list_0')
-if data_exists:
-    print(f"data already exists at {graphs_dir}/x_list_0/ (zarr)")
-    print("skipping simulation...")
-else:
-    print(f"simulating {config.simulation.n_neurons} neurons, {config.simulation.n_neuron_types} types")
-    print(f"generating {config.simulation.n_frames} time frames")
-    print(f"visual input: {config.simulation.visual_input_type}")
-    print(f"noise level: {config.simulation.noise_model_level}")
-    print(f"output: {graphs_dir}/")
+for config_name, label in datasets:
+    config = configs[config_name]
+    graphs_dir = graphs_dirs[config_name]
     print()
-    data_generate(
-        config,
-        device=device,
-        visualize=True,
-        run_vizualized=0,
-        style="color",
-        alpha=1,
-        erase=False,
-        save=True,
-        step=100,
-    )
+    print(f"--- {label} (noise_model_level={config.simulation.noise_model_level}) ---")
 
-# %%
-#| fig-cap: "Activity traces $v_i(t)$ for selected neuron types."
-load_and_display(f"{graphs_dir}/activity_traces.png")
-
-# %%
-#| fig-cap: "Kinograph: spatio-temporal voltage pattern."
-load_and_display(f"{graphs_dir}/kinograph.png")
+    data_exists = os.path.isdir(f'{graphs_dir}/x_list_train') or os.path.isdir(f'{graphs_dir}/x_list_0')
+    if data_exists:
+        print(f"  data already exists at {graphs_dir}/")
+        print("  skipping simulation...")
+    else:
+        print(f"  simulating {config.simulation.n_neurons} neurons, {config.simulation.n_neuron_types} types")
+        print(f"  generating {config.simulation.n_frames} time frames")
+        print(f"  visual input: {config.simulation.visual_input_type}")
+        print(f"  output: {graphs_dir}/")
+        print()
+        data_generate(
+            config,
+            device=device,
+            visualize=True,
+            run_vizualized=0,
+            style="color",
+            alpha=1,
+            erase=False,
+            save=True,
+            step=100,
+        )
 
 # %% [markdown]
-# ## Step 2: Train GNN
-# Train a message-passing GNN to learn the effective connectivity $\widehat{W}_{ij}$,
-# latent embeddings $\mathbf{a}_i \in \mathbb{R}^2$, and functions $f_\theta$, $g_\phi$.
-#
-# The GNN approximates the dynamics with:
-#
-# $$\frac{\widehat{dv}_i}{dt} = f_\theta\!\left(v_i,\,\mathbf{a}_i,\,\sum_{j\in\mathcal{N}_i} \widehat{W}_{ij}\,g_\phi(v_j, \mathbf{a}_j)^2,\,I_i(t)\right)$$
-#
-# where $f_\theta$ (MLP$_0$) and $g_\phi$ (MLP$_1$) are three-layer perceptrons (width 80, ReLU).
+# ## Visual Stimulus Preview
+# First frames of shuffled DAVIS sequences used for training and testing
+# (noise-free dataset).
 
 # %%
-#| echo: true
-#| output: false
-print()
-print("-" * 80)
-print("STEP 2: TRAIN - Learning W, embeddings a_i, f_theta, g_phi")
-print("-" * 80)
-
-model_files = glob.glob(f'{log_dir}/models/*.pt')
-if model_files:
-    print(f"trained model already exists at {log_dir}/models/")
-    print("skipping training (delete models folder to retrain)")
-else:
-    print(f"training for {config.training.n_epochs} epochs")
-    print(f"models: {log_dir}/models/")
-    print(f"training plots: {log_dir}/tmp_training/")
-    print()
-    data_train(
-        config=config,
-        erase=False,
-        best_model='',
-        device=device,
-    )
-
-# %% [markdown]
-# ## Step 3: GNN Evaluation
-# Evaluate the trained model: learned connectivity $\widehat{W}_{ij}$,
-# latent embeddings $\mathbf{a}_i$, and learned functions $f_\theta$, $g_\phi$.
-
-# %%
-#| echo: true
-#| output: false
-print()
-print("-" * 80)
-print("STEP 3: GNN EVALUATION")
-print("-" * 80)
-
-folder_name = log_path(pre_folder, 'tmp_results') + '/'
-os.makedirs(folder_name, exist_ok=True)
-data_plot(
-    config=config,
-    config_file=config_file,
-    epoch_list=['best'],
-    style='color',
-    extended='plots',
-    device=device,
+#| lightbox: true
+#| fig-cap: "Shuffled DAVIS sequences: first frame of each sequence mapped onto the hex photoreceptor grid. Left: training set. Right: test set."
+graphs_dir_0 = graphs_dirs[datasets[0][0]]
+display_row(
+    [f"{graphs_dir_0}/shuffle_first_frames_train.png",
+     f"{graphs_dir_0}/shuffle_first_frames_test.png"],
+    ["Train sequences", "Test sequences"],
+    figsize=(20, 8),
 )
 
 # %% [markdown]
-# ### Evaluation Results
+# ## Activity Traces Comparison
+# Sample voltage traces $v_i(t)$ across the three noise conditions. Higher
+# noise broadens the voltage distribution and obscures fine temporal structure.
 
 # %%
-#| fig-cap: "Learned connectivity matrix $\\widehat{W}_{ij}$."
-load_and_display(f"{log_dir}/results/connectivity_learned.png")
-
-# %%
-#| fig-cap: "Comparison of learned $\\widehat{W}_{ij}$ and true $W_{ij}$."
-load_and_display(f"{log_dir}/results/weights_comparison_corrected.png")
-
-# %%
-#| fig-cap: "Learned latent embeddings $\\mathbf{a}_i \\in \\mathbb{R}^2$."
-load_and_display(f"{log_dir}/results/embedding.pdf")
-
-# %%
-#| fig-cap: "Learned neuron update function $f_\\theta$ (MLP$_0$)."
-load_and_display(f"{log_dir}/results/MLP0.png")
-
-# %%
-#| fig-cap: "Learned edge message function $g_\\phi$ (MLP$_1$)."
-load_and_display(f"{log_dir}/results/MLP1_corrected.png")
-
-# %% [markdown]
-# ## Step 4: Test Model
-# Test the trained GNN with rollout inference. The learned model is run forward
-# in time to predict $v_i(t)$ and compared to ground truth.
-
-# %%
-#| echo: true
-#| output: false
-print()
-print("-" * 80)
-print("STEP 4: TEST - Rollout inference")
-print("-" * 80)
-
-config.simulation.noise_model_level = 0.0
-
-data_test(
-    config=config,
-    visualize=True,
-    style="color name continuous_slice",
-    verbose=False,
-    best_model='best',
-    run=0,
-    test_mode="",
-    sample_embedding=False,
-    step=10,
-    n_rollout_frames=250,
-    device=device,
-    particle_of_interest=0,
-    new_params=None,
-    rollout_without_noise=False,
+#| lightbox: true
+#| fig-cap: "Activity traces at three noise levels: noise-free (left), low noise 0.05 (center), high noise 0.5 (right)."
+display_row(
+    [f"{graphs_dirs[name]}/activity_traces.png" for name, _ in datasets],
+    [label for _, label in datasets],
+    figsize=(24, 6),
 )
-
-# %% [markdown]
-# ### Rollout Results
-
-# %%
-#| fig-cap: "Rollout: ground truth $v_i(t)$ (green) vs GNN prediction $\\widehat{v}_i(t)$ (black)."
-output_name = config.dataset.split('flyvis_')[1] if 'flyvis_' in config.dataset else 'no_id'
-load_and_display(f"{log_dir}/results/rollout_{output_name}_DAVIS.png")
