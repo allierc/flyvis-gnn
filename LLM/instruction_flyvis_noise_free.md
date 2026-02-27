@@ -83,17 +83,43 @@ Example: embedding_dim=4 → input_size=5, input_size_update=7. Shape mismatch c
 
 The training loss includes:
 
-| Config parameter          | Role                                                                                | Default |
-| ------------------------- | ----------------------------------------------------------------------------------- | ------- |
-| `coeff_g_phi_diff`        | Monotonicity penalty on g_phi: ReLU(-dg_phi/dv) → enforces increasing edge messages | 750     |
-| `coeff_g_phi_norm`        | Normalization penalty on g_phi at saturation voltage                                | 0.9     |
-| `coeff_g_phi_weight_L1`   | L1 penalty on g_phi MLP weights                                                     | 0.28    |
-| `coeff_g_phi_weight_L2`   | L2 penalty on g_phi MLP weights                                                     | 0       |
-| `coeff_f_theta_weight_L1` | L1 penalty on f_theta MLP weights                                                   | 0.5     |
-| `coeff_f_theta_weight_L2` | L2 penalty on f_theta MLP weights                                                   | 0.001   |
-| `coeff_f_theta_msg_diff`  | Monotonicity of f_theta w.r.t. message input                                        | 0       |
-| `coeff_W_L1`              | L1 sparsity penalty on connectivity W                                               | 7.5e-05 |
-| `coeff_W_L2`              | L2 penalty on W                                                                     | 1.5e-06 |
+| Config parameter          | Role                                                                                | Default | Annealed? |
+| ------------------------- | ----------------------------------------------------------------------------------- | ------- | --------- |
+| `coeff_g_phi_diff`        | Monotonicity penalty on g_phi: ReLU(-dg_phi/dv) → enforces increasing edge messages | 750     | No        |
+| `coeff_g_phi_norm`        | Normalization penalty on g_phi at saturation voltage                                | 0.9     | No        |
+| `coeff_g_phi_weight_L1`   | L1 penalty on g_phi MLP weights                                                     | 0.28    | **Yes**   |
+| `coeff_g_phi_weight_L2`   | L2 penalty on g_phi MLP weights                                                     | 0       | **Yes**   |
+| `coeff_f_theta_weight_L1` | L1 penalty on f_theta MLP weights                                                   | 0.5     | **Yes**   |
+| `coeff_f_theta_weight_L2` | L2 penalty on f_theta MLP weights                                                   | 0.001   | **Yes**   |
+| `coeff_f_theta_msg_diff`  | Monotonicity of f_theta w.r.t. message input                                        | 0       | No        |
+| `coeff_W_L1`              | L1 sparsity penalty on connectivity W                                               | 7.5e-05 | **Yes**   |
+| `coeff_W_L2`              | L2 penalty on W                                                                     | 1.5e-06 | **Yes**   |
+
+### Regularization Annealing
+
+All 6 weight regularization coefficients (L1 and L2 for g_phi, f_theta, and W) share a **single exponential ramp-up annealing** controlled by one parameter:
+
+| Config parameter        | Default | Description                                    |
+| ----------------------- | ------- | ---------------------------------------------- |
+| `regul_annealing_rate`  | 0.5     | Shared annealing rate for all L1/L2 regularizers |
+
+**Formula**: `effective_coeff = coeff * (1 - exp(-rate * epoch))`
+
+**Ramp-up schedule** (rate=0.5):
+
+| Epoch | Multiplier | Meaning                        |
+| ----- | ---------- | ------------------------------ |
+| 0     | 0.00       | No regularization at start     |
+| 1     | 0.39       | ~39% of configured coefficient |
+| 2     | 0.63       | ~63%                           |
+| 5     | 0.92       | ~92% (near full strength)      |
+| 10    | 0.99       | ~full strength                 |
+
+**Purpose**: Allows the model to learn dynamics first before regularization pressure is applied. At epoch 0, all L1/L2 penalties are zero regardless of their configured coefficients. Set `regul_annealing_rate: 0` to disable annealing (coefficients apply at full strength immediately).
+
+**Important for 1-epoch training**: With the default rate=0.5 and n_epochs=1, the effective regularization strength is only ~39% of the configured values throughout training. This means configured coefficients need to be set ~2.5x higher than the desired effective strength, or `regul_annealing_rate` should be increased.
+
+**Non-annealed coefficients**: `coeff_g_phi_diff`, `coeff_g_phi_norm`, and `coeff_f_theta_msg_diff` apply at full strength from epoch 0.
 
 ## Training Parameters (explorable)
 
