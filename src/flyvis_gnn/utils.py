@@ -2254,17 +2254,22 @@ def compute_trace_metrics(true, pred, label=""):
             r2 = 1 - (ss_res / ss_tot) if ss_tot > 1e-8 else np.nan
             r2_list.append(r2)
 
-    rmse = np.array(rmse_list)
-    pearson = np.array(pearson_list)
-    r2 = np.array(r2_list)
+    rmse = np.array(rmse_list) if rmse_list else np.array([np.nan])
+    pearson = np.array(pearson_list) if pearson_list else np.array([np.nan])
+    r2 = np.array(r2_list) if r2_list else np.array([np.nan])
 
-    print(f"RMSE: \033[92m{np.mean(rmse):.4f}\033[0m ± {np.std(rmse):.4f} [{np.min(rmse):.4f}, {np.max(rmse):.4f}]")
-    print(f"Pearson r: \033[92m{np.nanmean(pearson):.3f}\033[0m ± {np.nanstd(pearson):.3f} [{np.nanmin(pearson):.3f}, {np.nanmax(pearson):.3f}]")
-    print(f"R²: \033[92m{np.nanmean(r2):.3f}\033[0m ± {np.nanstd(r2):.3f} [{np.nanmin(r2):.3f}, {np.nanmax(r2):.3f}]")
+    if len(rmse_list) == 0:
+        print(f"\033[91mERROR: all neurons contain NaN — model diverged\033[0m")
+    else:
+        print(f"RMSE: \033[92m{np.nanmean(rmse):.4f}\033[0m ± {np.nanstd(rmse):.4f} [{np.nanmin(rmse):.4f}, {np.nanmax(rmse):.4f}]")
+        print(f"Pearson r: \033[92m{np.nanmean(pearson):.3f}\033[0m ± {np.nanstd(pearson):.3f} [{np.nanmin(pearson):.3f}, {np.nanmax(pearson):.3f}]")
+        print(f"R²: \033[92m{np.nanmean(r2):.3f}\033[0m ± {np.nanstd(r2):.3f} [{np.nanmin(r2):.3f}, {np.nanmax(r2):.3f}]")
 
     feve = compute_feve(true, pred, None)
-    print(f"FEVE: \033[92m{np.mean(feve):.3f}\033[0m ± {np.std(feve):.3f} [{np.min(feve):.3f}, {np.max(feve):.3f}]")
-
+    if np.all(np.isnan(feve)):
+        print(f"\033[91mFEVE: NaN (model diverged)\033[0m")
+    else:
+        print(f"FEVE: \033[92m{np.nanmean(feve):.3f}\033[0m ± {np.nanstd(feve):.3f} [{np.nanmin(feve):.3f}, {np.nanmax(feve):.3f}]")
 
     return rmse, pearson, feve, r2
 

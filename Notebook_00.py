@@ -1,7 +1,7 @@
 # %% [raw]
 # ---
 # title: "Data Generation: Drosophila Visual System"
-# author: "Allier, Innerberger, Saalfeld"
+# author: "Allier, Lappalainen, Saalfeld"
 # categories:
 #   - FlyVis
 #   - Simulation
@@ -12,24 +12,26 @@
 # ---
 
 # %% [markdown]
-# Synapse-level connectomes describe the structure of neural circuits, but not
-# the electrical and chemical dynamics. Conversely, large-scale recordings of
-# neural activity capture these dynamics, but not the circuit structure. We
-# combine binary connectivity and recorded neural activity to infer mechanistic
-# models of neural circuits using a GNN trained on *Drosophila* visual system
-# simulations (13,741 neurons, 65 cell types, 434,112 connections).
+# ## Simulation
 #
-# The simulated dynamics follow:
+# We simulated neural activity in the *Drosophila* visual system using
+# [*flyvis*](https://github.com/TuragaLab/flyvis)' pretrained models [1].  The recurrent neural network contains
+# 13,741 neurons from 65 cell types and 434,122 synaptic connections,
+# corresponding to real neurons and their synapses.  Each neuron is modeled
+# as a non-spiking compartment governed by
 #
-# $$\tau_i\frac{dv_i}{dt} = -v_i + V_i^{\text{rest}} + \sum_{j\in\mathcal{N}_i} W_{ij}\,\text{ReLU}(v_j) + I_i(t) + \sigma\,\xi_i(t)$$
+# $$\tau_i\frac{dv_i(t)}{dt} = -v_i(t) + V_i^{\text{rest}} + \sum_{j\in\mathcal{N}_i} \mathbf{W}_{ij}\,\text{ReLU}\!\big(v_j(t)\big) + I_i(t) + \sigma\,\xi_i(t),$$
 #
-# where $\tau_i$ is the time constant, $V_i^{\text{rest}}$ the resting potential,
-# $W_{ij}$ the synaptic weight, $I_i(t)$ the visual stimulus, and
-# $\xi_i(t) \sim \mathcal{N}(0,1)$ is independent Gaussian noise scaled by $\sigma$.
+# where $\tau_i$ and $V_i^{\text{rest}}$ are cell-type parameters,
+# $\mathbf{W}_{ij}$ is the connectome-constrained synaptic weight,
+# $I_i(t)$ the visual input, and
+# $\xi_i(t) \sim \mathcal{N}(0,1)$ is independent Gaussian noise scaled
+# by $\sigma$.  We restricted the original system of 721 retinotopic
+# columns to the central subset of 217 columns.
 #
 # The noise term $\sigma\,\xi_i(t)$ models intrinsic stochasticity in the
 # membrane dynamics (e.g. channel noise, synaptic variability), not
-# measurement noise. It enters the ODE itself, so it affects the temporal
+# measurement noise.  It enters the ODE itself, so it affects the temporal
 # evolution of $v_i(t)$ and propagates through the network via synaptic
 # connections.
 #
@@ -46,10 +48,7 @@
 import os
 import warnings
 
-import imageio
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
+from IPython.display import Image, display
 
 from flyvis_gnn.config import NeuralGraphConfig
 from flyvis_gnn.generators.graph_data_generator import data_generate
@@ -59,18 +58,9 @@ warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 
-def display_row(paths, titles, figsize=(18, 6)):
-    """Display multiple images side by side."""
-    fig, axes = plt.subplots(1, len(paths), figsize=figsize)
-    if len(paths) == 1:
-        axes = [axes]
-    for ax, path, title in zip(axes, paths, titles):
-        img = imageio.imread(path)
-        ax.imshow(img)
-        ax.set_title(title, fontsize=14)
-        ax.axis('off')
-    plt.tight_layout()
-    plt.show()
+def display_image(path, width=700):
+    """Display a full-resolution image; width controls inline size (px)."""
+    display(Image(filename=path, width=width))
 
 # %% [markdown]
 # ## Configuration
@@ -101,10 +91,26 @@ for config_name, label in datasets:
     print(f"{label}: {graphs_dirs[config_name]}")
 
 # %% [markdown]
-# ## Step 1: Generate Data
-# Simulate the *Drosophila* visual system ODE driven by DAVIS video input at
-# three noise levels. Each simulation records membrane voltage $v_i(t)$ for
-# 13,741 neurons over 64,000 time frames.
+# ## Visual Stimulus
+#
+# The visual input $I_i(t)$ is derived from the DAVIS dataset [2, 3], a
+# collection of natural video sequences at 480p resolution originally
+# developed for optical flow and video segmentation benchmarks.  Each RGB
+# frame is center-cropped to 60% of its spatial extent, converted to
+# grayscale luminance, and resampled onto the hexagonal photoreceptor
+# lattice of 217 columns via a Gaussian box-eye filter (extent 8,
+# kernel size 13).  Each column feeds 8 photoreceptor types (R1–R8),
+# giving 1,736 input neurons.  Videos longer than 80 frames are split
+# into 50-frame chunks; temporal interpolation resamples each chunk to
+# match the simulation time step $\Delta t = 0.02$.
+#
+# The full set of sequences is augmented with horizontal and vertical
+# flips and four rotations (0°, 90°, 180°, 270°) of the hexagonal
+# array.  All augmentations of the same base video are kept together and
+# the dataset is split 80/20 at the *base-video level* to prevent data
+# leakage between training and testing.  The sequences within each split
+# are shuffled (seed 42) and concatenated into a continuous stimulus
+# stream.
 
 # %%
 #| echo: true
@@ -143,31 +149,59 @@ for config_name, label in datasets:
         )
 
 # %% [markdown]
-# ## Visual Stimulus Preview
-# First frames of shuffled DAVIS sequences used for training and testing
-# (noise-free dataset).
+# ### Training sequences
+# First frames of the shuffled DAVIS sequences assigned to training
+# (shown for the noise-free dataset).
 
 # %%
 #| lightbox: true
-#| fig-cap: "Shuffled DAVIS sequences: first frame of each sequence mapped onto the hex photoreceptor grid. Left: training set. Right: test set."
 graphs_dir_0 = graphs_dirs[datasets[0][0]]
-display_row(
-    [f"{graphs_dir_0}/shuffle_first_frames_train.png",
-     f"{graphs_dir_0}/shuffle_first_frames_test.png"],
-    ["Train sequences", "Test sequences"],
-    figsize=(20, 8),
-)
+display_image(f"{graphs_dir_0}/shuffle_first_frames_train.png", width=900)
 
 # %% [markdown]
-# ## Activity Traces Comparison
-# Sample voltage traces $v_i(t)$ across the three noise conditions. Higher
-# noise broadens the voltage distribution and obscures fine temporal structure.
+# ### Test sequences
 
 # %%
 #| lightbox: true
-#| fig-cap: "Activity traces at three noise levels: noise-free (left), low noise 0.05 (center), high noise 0.5 (right)."
-display_row(
-    [f"{graphs_dirs[name]}/activity_traces.png" for name, _ in datasets],
-    [label for _, label in datasets],
-    figsize=(24, 6),
-)
+display_image(f"{graphs_dir_0}/shuffle_first_frames_test.png", width=900)
+
+# %% [markdown]
+# ## Activity Traces
+# 100 randomly selected voltage traces $v_i(t)$ over the first 10,000
+# time steps (out of 64,000 total) across the three noise conditions.
+
+# %% [markdown]
+# ### Noise-free ($\sigma = 0$)
+
+# %%
+#| lightbox: true
+display_image(f"{graphs_dirs['flyvis_noise_free']}/activity_traces.png", width=850)
+
+# %% [markdown]
+# ### Low noise ($\sigma = 0.05$)
+
+# %%
+#| lightbox: true
+display_image(f"{graphs_dirs['flyvis_noise_005']}/activity_traces.png", width=850)
+
+# %% [markdown]
+# ### High noise ($\sigma = 0.5$)
+
+# %%
+#| lightbox: true
+display_image(f"{graphs_dirs['flyvis_noise_05']}/activity_traces.png", width=850)
+
+# %% [markdown]
+# ## References
+#
+# [1] J. K. Lappalainen et al., "Connectome-constrained networks predict
+# neural activity across the fly visual system," *Nature*, 2024.
+# [doi:10.1038/s41586-024-07939-3](https://doi.org/10.1038/s41586-024-07939-3)
+#
+# [2] D. J. Butler et al., "A Naturalistic Open Source Movie for Optical
+# Flow Evaluation," *ECCV*, 2012.
+# [doi:10.1007/978-3-642-33783-3_44](https://doi.org/10.1007/978-3-642-33783-3_44)
+#
+# [3] F. Perazzi et al., "A Benchmark Dataset and Evaluation Methodology
+# for Video Object Segmentation," *CVPR*, 2016.
+# [doi:10.1109/CVPR.2016.85](https://doi.org/10.1109/CVPR.2016.85)

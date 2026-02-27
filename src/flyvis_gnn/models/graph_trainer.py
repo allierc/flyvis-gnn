@@ -1808,6 +1808,12 @@ def data_test_flyvis(config, best_model=None, device=None, log_file=None, test_c
             else:
                 x.voltage = x.voltage + sim.delta_t * y.squeeze(-1)
 
+            # Guard against NaN / divergence from a poorly trained model
+            if torch.isnan(x.voltage).any() or torch.isinf(x.voltage).any():
+                print(f"\n\033[91mERROR: rollout diverged at frame {k} (NaN/Inf in voltage) — aborting\033[0m")
+                break
+            x.voltage = torch.clamp(x.voltage, min=-100.0, max=100.0)
+
             # Calcium dynamics
             if sim.calcium_type == "leaky":
                 if sim.calcium_activation == "softplus":
@@ -2527,6 +2533,16 @@ def data_test_flyvis_special(
                             x.voltage = x.voltage + sim.delta_t * y.squeeze(-1)
                         if (it <= warm_up_length) and ('RNN' in model_config.signal_model_name):
                             x.voltage = x_generated.voltage.clone()
+
+                    # Guard against NaN / divergence from a poorly trained model
+                    v_model = x_selected.voltage if tc.training_selected_neurons else x.voltage
+                    if torch.isnan(v_model).any() or torch.isinf(v_model).any():
+                        print(f"\n\033[91mERROR: rollout diverged at iteration {it} (NaN/Inf in voltage) — aborting\033[0m")
+                        break
+                    if tc.training_selected_neurons:
+                        x_selected.voltage = torch.clamp(x_selected.voltage, min=-100.0, max=100.0)
+                    else:
+                        x.voltage = torch.clamp(x.voltage, min=-100.0, max=100.0)
 
                     if sim.calcium_type == "leaky":
                         # Voltage-driven activation

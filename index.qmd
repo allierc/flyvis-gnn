@@ -1,5 +1,5 @@
 ---
-title: "FlyVis-GNN: Graph neural networks recover interpretable circuit models from neural activity"
+title: "Graph Neural Networks Recover Interpretable Circuit Models from Neural Activity"
 listing:
   contents: "Notebook_*.py"
   type: default
@@ -11,15 +11,32 @@ listing:
   filter-ui: true
 ---
 
-A message-passing GNN is trained to forecast the activity of simulated *Drosophila* visual system neurons (13,741 neurons, 65 cell types, 434,112 connections).
+Synapse-level connectomes describe the structure of neural circuits, but not the electrical and chemical dynamics [1, 3, 4].
+Conversely, large-scale recordings of neural activity capture these dynamics, but not the circuit structure [5].
+We combine binary connectivity and recorded neural activity to infer mechanistic models of neural circuits using graph neural networks [2].
+A message-passing GNN is trained to forecast the activity of simulated *Drosophila* visual system neurons (13,741 neurons, 65 cell types, 434,122 connections).
 Given only the binary adjacency matrix and recorded voltage traces, the model recovers effective connectivity weights, neuron-type identities via latent embeddings, and nonlinear activation functions.
 
-The simulated dynamics follow:
+The simulated dynamics follow [1]:
 
-$$\tau_i\frac{dv_i}{dt} = -v_i + V_i^{\text{rest}} + \sum_{j\in\mathcal{N}_i} W_{ij}\,\text{ReLU}(v_j) + I_i(t)$$
+$$\tau_i\frac{dv_i(t)}{dt} = -v_i(t) + V_i^{\text{rest}} + \sum_{j\in\mathcal{N}_i} \mathbf{W}_{ij}\,\text{ReLU}\!\big(v_j(t)\big) + I_i(t)$$
 
 The GNN learns to approximate these dynamics with:
 
 $$\frac{\widehat{dv}_i}{dt} = f_\theta\!\left(v_i,\,\mathbf{a}_i,\,\sum_{j\in\mathcal{N}_i} \widehat{W}_{ij}\,g_\phi(v_j, \mathbf{a}_j)^2,\,I_i(t)\right)$$
 
 where $f_\theta$ and $g_\phi$ are learned MLPs, $\mathbf{a}_i \in \mathbb{R}^2$ are latent embeddings, and $\widehat{W}_{ij}$ are learned synaptic weights.
+
+::: {style="font-size: 0.8em;"}
+### References
+
+[1] J. K. Lappalainen et al., "Connectome-constrained networks predict neural activity across the fly visual system," *Nature*, 2024. [doi:10.1038/s41586-024-07939-3](https://doi.org/10.1038/s41586-024-07939-3)
+
+[2] J. Gilmer et al., "Neural Message Passing for Quantum Chemistry," 2017. [doi:10.48550/arXiv.1704.01212](https://doi.org/10.48550/arXiv.1704.01212)
+
+[3] L. Mi et al., "Connectome-constrained Latent Variable Model of Whole-Brain Neural Activity," *ICLR*, 2021.
+
+[4] D. A. Pospisil et al., "The fly connectome reveals a path to the effectome," *Nature* 634, 2024. [doi:10.1038/s41586-024-07982-0](https://doi.org/10.1038/s41586-024-07982-0)
+
+[5] E. Y. Wang et al., "Foundation model of neural activity predicts response to new stimulus types," *Nature* 640, 2025. [doi:10.1038/s41586-025-08829-y](https://doi.org/10.1038/s41586-025-08829-y)
+:::
