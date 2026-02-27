@@ -599,6 +599,13 @@ class TrainingConfig(BaseModel):
     alternate_joint_ratio: float = 0.4  # fraction of total iterations for joint phase (all components at full LR)
     alternate_lr_ratio: float = 0.1  # LR multiplier for W/g_phi during V_rest focus phase
 
+    # Learning rate scheduler
+    lr_scheduler: str = "none"  # 'none' | 'cosine_warm_restarts' | 'linear_warmup_cosine'
+    lr_scheduler_T0: int = 1000  # restart period in iterations
+    lr_scheduler_T_mult: int = 2  # period multiplier after each restart
+    lr_scheduler_eta_min_ratio: float = 0.01  # min LR as fraction of base LR
+    lr_scheduler_warmup_iters: int = 100  # linear warmup iterations
+
     time_step: int = 1
     recurrent_sequence: str = ""
     recurrent_parameters: list[float] = [0, 0]

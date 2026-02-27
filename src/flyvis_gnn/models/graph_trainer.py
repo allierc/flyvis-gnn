@@ -51,7 +51,7 @@ from flyvis_gnn.models.flyvis_gnn import FlyVisGNN
 from flyvis_gnn.models.registry import create_model
 from flyvis_gnn.models.Neural_ode_wrapper_FlyVis import (
     integrate_neural_ode_FlyVis, neural_ode_loss_FlyVis,
-    debug_check_gradients, DEBUG_ODE
+    debug_check_gradients,
 )
 from flyvis_gnn.zarr_io import load_simulation_data, load_raw_array
 from flyvis_gnn.neuron_state import NeuronState
@@ -539,7 +539,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                 loss.backward()
 
                 # debug gradient check for neural ODE training
-                if DEBUG_ODE and tc.neural_ODE_training and (N % 500 == 0):
+                if tc.neural_ODE_training and (N % 500 == 0):
                     debug_check_gradients(model, loss, N)
 
                 # W-specific gradient clipping: clip W gradients to force optimizer

@@ -6,13 +6,14 @@ Uses torchdiffeq's adjoint method for memory-efficient training:
 - Backward pass uses adjoint ODE solve
 """
 
+import logging
+
 import torch
 import torch.nn as nn
 from torchdiffeq import odeint, odeint_adjoint
 from flyvis_gnn.neuron_state import NeuronState
 
-# Debug flag - set to True to enable debug prints
-DEBUG_ODE = True
+logger = logging.getLogger(__name__)
 
 
 class GNNODEFunc_FlyVis(nn.Module):
@@ -198,15 +199,11 @@ def neural_ode_loss_FlyVis(model, dataset_batch, edge_index, x_ts, k_batch,
         for b in range(batch_size)
     ], device=device)
 
-    if DEBUG_ODE and (iteration % 500 == 0):
-        print(f"\n=== Neural ODE Debug (iter {iteration}) ===")
-        print(f"time_step={time_step}, delta_t={delta_t}, batch_size={batch_size}")
-        print(f"neurons_per_sample={neurons_per_sample}, n_neurons={n_neurons}")
-        print(f"v0 shape={v0.shape}, v0 mean={v0.mean().item():.4f}, std={v0.std().item():.4f}")
-        print(f"k_per_sample={k_per_sample.tolist()}")
-        print(f"x_template n_neurons={x_template.n_neurons}")
-        print(f"batched_edges shape={batched_edges.shape}")
-        print(f"ode_method={ode_method}, adjoint={adjoint}")
+    if iteration % 500 == 0:
+        logger.debug(f"Neural ODE iter {iteration}: time_step={time_step}, delta_t={delta_t}, "
+                      f"batch_size={batch_size}, neurons_per_sample={neurons_per_sample}")
+        logger.debug(f"  v0 shape={v0.shape}, mean={v0.mean().item():.4f}, std={v0.std().item():.4f}")
+        logger.debug(f"  k_per_sample={k_per_sample.tolist()}, ode_method={ode_method}, adjoint={adjoint}")
 
     v_final, v_trajectory = integrate_neural_ode_FlyVis(
         model=model,
@@ -234,30 +231,25 @@ def neural_ode_loss_FlyVis(model, dataset_batch, edge_index, x_ts, k_batch,
     pred_x = v_final.view(-1, 1)
     loss = ((pred_x[ids_batch] - y_batch[ids_batch]) / (delta_t * time_step)).norm(2)
 
-    if DEBUG_ODE and (iteration % 500 == 0):
-        print(f"v_final mean={v_final.mean().item():.4f}, std={v_final.std().item():.4f}")
-        print(f"y_batch mean={y_batch[ids_batch].mean().item():.4f}, std={y_batch[ids_batch].std().item():.4f}")
-        print(f"pred_x mean={pred_x[ids_batch].mean().item():.4f}, std={pred_x[ids_batch].std().item():.4f}")
-        print(f"loss={loss.item():.4f}")
-        print("=== End Debug ===\n")
+    if iteration % 500 == 0:
+        logger.debug(f"  v_final mean={v_final.mean().item():.4f}, std={v_final.std().item():.4f}")
+        logger.debug(f"  pred_x mean={pred_x[ids_batch].mean().item():.4f}, loss={loss.item():.4f}")
 
     return loss, pred_x
 
 
 def debug_check_gradients(model, loss, iteration):
-    """
-    Debug function to check gradient flow after loss.backward().
-    """
-    print(f"\n=== Gradient Check (iter {iteration}) ===")
+    """Log gradient flow diagnostics at DEBUG level after loss.backward()."""
+    logger.debug(f"Gradient check (iter {iteration}), loss={loss.item():.6f}")
 
     if hasattr(model, 'W'):
         if model.W.grad is not None:
             w_grad = model.W.grad
-            print(f"W.grad: shape={w_grad.shape}, mean={w_grad.mean().item():.8f}, "
-                  f"std={w_grad.std().item():.8f}, max={w_grad.abs().max().item():.8f}, "
-                  f"nonzero={(w_grad.abs() > 1e-10).sum().item()}/{w_grad.numel()}")
+            logger.debug(f"  W.grad: mean={w_grad.mean().item():.8f}, "
+                          f"std={w_grad.std().item():.8f}, max={w_grad.abs().max().item():.8f}, "
+                          f"nonzero={(w_grad.abs() > 1e-10).sum().item()}/{w_grad.numel()}")
         else:
-            print("W.grad is None - NO GRADIENT FLOWING TO W!")
+            logger.debug("  W.grad is None — no gradient flowing to W")
 
     if hasattr(model, 'phi_edge'):
         phi_grads = []
@@ -265,17 +257,10 @@ def debug_check_gradients(model, loss, iteration):
             if param.grad is not None:
                 phi_grads.append(param.grad.abs().mean().item())
         if phi_grads:
-            print(f"phi_edge grads: mean={sum(phi_grads)/len(phi_grads):.8f}")
-        else:
-            print("phi_edge: No gradients!")
+            logger.debug(f"  phi_edge grads: mean={sum(phi_grads)/len(phi_grads):.8f}")
 
     if hasattr(model, 'embedding'):
         if model.embedding.weight.grad is not None:
             emb_grad = model.embedding.weight.grad
-            print(f"embedding.grad: mean={emb_grad.mean().item():.8f}, "
-                  f"std={emb_grad.std().item():.8f}")
-        else:
-            print("embedding.grad is None")
-
-    print(f"loss value: {loss.item():.6f}")
-    print("=== End Gradient Check ===\n")
+            logger.debug(f"  embedding.grad: mean={emb_grad.mean().item():.8f}, "
+                          f"std={emb_grad.std().item():.8f}")
