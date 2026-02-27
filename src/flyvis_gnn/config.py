@@ -525,6 +525,7 @@ class TrainingConfig(BaseModel):
     training_NNR_start_epoch: int = 0
 
     coeff_W_L1: float = 0.0
+    coeff_W_L1_rate: float = 0.5  # Exponential ramp-up rate for W L1 annealing: coeff * (1 - exp(-rate * epoch))
     coeff_W_L2: float = 0.0
     coeff_W_sign: float = 0
     W_sign_temperature: float = 10.0
@@ -537,6 +538,7 @@ class TrainingConfig(BaseModel):
     coeff_f_theta_msg_sign: float = 0  # Sign consistency: f_theta output should match message sign
     coeff_func_f_theta: float = 0.0  # Penalize f_theta output at zero input
     coeff_f_theta_weight_L1: float = 0  # L1 penalty on f_theta MLP weights
+    coeff_f_theta_weight_L1_rate: float = 0.5  # Exponential ramp-up rate for f_theta L1 annealing
     coeff_f_theta_weight_L2: float = 0  # L2 penalty on f_theta MLP weights
 
     # -- g_phi (MLP1, edge message) regularizers --
@@ -544,6 +546,7 @@ class TrainingConfig(BaseModel):
     coeff_g_phi_norm: float = 0  # Norm penalty on g_phi edge messages
     coeff_func_g_phi: float = 0.0  # Penalize g_phi output at zero input
     coeff_g_phi_weight_L1: float = 0  # L1 penalty on g_phi MLP weights
+    coeff_g_phi_weight_L1_rate: float = 0.5  # Exponential ramp-up rate for g_phi L1 annealing
     coeff_g_phi_weight_L2: float = 0  # L2 penalty on g_phi MLP weights
 
     # -- W (connectivity) regularizers --

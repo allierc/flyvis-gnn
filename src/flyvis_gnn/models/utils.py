@@ -1232,9 +1232,19 @@ class LossRegularizer:
         self._update_coeffs()
 
     def _update_coeffs(self):
-        """Recompute coefficients based on current epoch."""
+        """Recompute coefficients based on current epoch.
+
+        L1 coefficients use exponential annealing: coeff * (1 - exp(-rate * epoch)).
+        With rate=0.5 (default), L1 ramps from 0 at epoch 0 to ~0.39x at epoch 1
+        to ~0.92x at epoch 5. This allows the model to learn dynamics before
+        sparsity pressure is applied — critical for SIREN visual field training.
+        """
         tc = self.train_config
         epoch = self.epoch
+
+        # Exponential ramp-up annealing for L1 regularization
+        def anneal(coeff, rate):
+            return coeff * (1 - np.exp(-rate * epoch)) if rate > 0 else coeff
 
         # Two-phase training support (like ParticleGraph data_train_synaptic2)
         n_epochs_init = getattr(tc, 'n_epochs_init', 0)
@@ -1243,9 +1253,9 @@ class LossRegularizer:
         if n_epochs_init > 0 and epoch < n_epochs_init:
             self._coeffs['W_L1'] = first_coeff_L1
         else:
-            self._coeffs['W_L1'] = tc.coeff_W_L1
-        self._coeffs['g_phi_weight_L1'] = tc.coeff_g_phi_weight_L1
-        self._coeffs['f_theta_weight_L1'] = tc.coeff_f_theta_weight_L1
+            self._coeffs['W_L1'] = anneal(tc.coeff_W_L1, tc.coeff_W_L1_rate)
+        self._coeffs['g_phi_weight_L1'] = anneal(tc.coeff_g_phi_weight_L1, tc.coeff_g_phi_weight_L1_rate)
+        self._coeffs['f_theta_weight_L1'] = anneal(tc.coeff_f_theta_weight_L1, tc.coeff_f_theta_weight_L1_rate)
 
         # Non-annealed coefficients (same for both)
         self._coeffs['W_L2'] = tc.coeff_W_L2
