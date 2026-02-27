@@ -108,6 +108,17 @@ The training loss includes:
 | `recurrent_training`            | false        | Enable multi-step rollout training           |
 | `time_step`                     | 1            | Recurrent steps (if recurrent_training=true) |
 | `w_init_mode`                   | randn_scaled | W initialization: "zeros" or "randn_scaled"  |
+| `lr_scheduler`                  | none         | LR schedule: "none", "cosine_warm_restarts", "linear_warmup_cosine" |
+| `lr_scheduler_T0`               | 1000         | First restart period in iterations (cosine schedulers only) |
+| `lr_scheduler_T_mult`           | 2            | Period multiplier after each restart         |
+| `lr_scheduler_eta_min_ratio`    | 0.01         | Min LR as fraction of base LR               |
+| `lr_scheduler_warmup_iters`     | 100          | Linear warmup iterations (linear_warmup_cosine only) |
+
+### LR Scheduler Notes
+
+When `lr_scheduler="none"` (default), per-iteration LR is constant and the legacy epoch-level halving (every 10 epochs) remains active. When a scheduler is enabled, it steps **per iteration** (not per epoch), so the LR oscillates within each epoch.
+
+**Recommended exploration**: `cosine_warm_restarts` with `T0=500-2000` provides periodic LR restarts that can help escape local minima. `linear_warmup_cosine` adds a warmup ramp for stability with large initial LR. The `T0` parameter controls how frequently the LR resets — smaller T0 means more frequent restarts.
 
 ## Training Time Constraint
 

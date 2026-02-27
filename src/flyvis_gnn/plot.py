@@ -4,7 +4,9 @@ Used by both the training loop (graph_trainer.py / utils.py) and
 post-training analysis (GNN_PlotFigure.py).
 """
 import os
+from collections import deque
 import matplotlib.pyplot as plt
+from matplotlib.animation import FFMpegWriter
 from matplotlib.collections import LineCollection
 from matplotlib.ticker import FormatStrFormatter
 import numpy as np
@@ -2952,4 +2954,150 @@ def run_neural_architecture_pipeline(top_pairs_by_run, odor_responses_by_run, al
     }
 
 
+def render_visual_field_video(model, x_ts, sim, log_dir, epoch, N, logger):
+    """Render a 3-panel visual field video (GT hex, predicted hex, rolling traces).
+
+    Computes a linear correction gt = a*pred + b over frames 0..800, then
+    renders an MP4 with ground-truth vs corrected-prediction hex scatter
+    plots and rolling traces for 10 representative neurons.
+
+    Args:
+        model: FlyVisGNN model with forward_visual method
+        x_ts: NeuronTimeSeries on GPU
+        sim: SimulationConfig
+        log_dir: output directory path
+        epoch: current epoch number
+        N: current iteration number
+        logger: logging.Logger instance
+
+    Returns:
+        field_R2: R² of corrected predictions vs ground truth
+        field_slope: slope coefficient 'a' of the linear fit
+    """
+    with torch.no_grad():
+
+        # Static XY locations
+        X1 = to_numpy(x_ts.pos[:sim.n_input_neurons])
+
+        # group-based selection of 10 traces
+        groups = 217
+        group_size = sim.n_input_neurons // groups  # expect 8
+        assert groups * group_size == sim.n_input_neurons, "Unexpected packing of input neurons"
+        picked_groups = np.linspace(0, groups - 1, 10, dtype=int)
+        member_in_group = group_size // 2
+        trace_ids = (picked_groups * group_size + member_in_group).astype(int)
+
+        # MP4 writer setup
+        fps = 10
+        metadata = dict(title='Field Evolution', artist='Matplotlib', comment='NN Reconstruction over time')
+        writer = FFMpegWriter(fps=fps, metadata=metadata)
+        fig = plt.figure(figsize=(12, 4))
+
+        out_dir = f"{log_dir}/tmp_training/external_input"
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = f"{out_dir}/field_movie_{epoch}_{N}.mp4"
+        if os.path.exists(out_path):
+            os.remove(out_path)
+
+        # rolling buffers
+        win = 200
+        offset = 1.25
+        hist_t = deque(maxlen=win)
+        hist_gt = {i: deque(maxlen=win) for i in trace_ids}
+        hist_pred = {i: deque(maxlen=win) for i in trace_ids}
+
+        step_video = 2
+
+        # First pass: collect all gt and pred, fit linear transform gt = a*pred + b
+        all_gt = []
+        all_pred = []
+        for k_fit in range(0, 800, step_video):
+            x_fit = x_ts.frame(k_fit)
+            pred_fit = to_numpy(model.forward_visual(x_fit, k_fit)).squeeze()
+            gt_fit = to_numpy(x_ts.stimulus[k_fit, :sim.n_input_neurons]).squeeze()
+            all_gt.append(gt_fit)
+            all_pred.append(pred_fit)
+        all_gt = np.concatenate(all_gt)
+        all_pred = np.concatenate(all_pred)
+
+        # Least-squares fit: gt = a * pred + b
+        A_fit = np.vstack([all_pred, np.ones(len(all_pred))]).T
+        a_coeff, b_coeff = np.linalg.lstsq(A_fit, all_gt, rcond=None)[0]
+        logger.info(f"field linear fit: gt = {a_coeff:.4f} * pred + {b_coeff:.4f}")
+
+        # Compute field_R2 on corrected predictions
+        pred_corrected_all = a_coeff * all_pred + b_coeff
+        ss_res = np.sum((all_gt - pred_corrected_all) ** 2)
+        ss_tot = np.sum((all_gt - np.mean(all_gt)) ** 2)
+        field_R2 = 1 - ss_res / (ss_tot + 1e-16)
+        field_slope = a_coeff
+        logger.info(f"external input R² (corrected): {field_R2:.4f}")
+
+        # GT value range for consistent color scaling
+        gt_vmin = float(all_gt.min())
+        gt_vmax = float(all_gt.max())
+
+        with writer.saving(fig, out_path, dpi=200):
+            error_list = []
+
+            for k in trange(0, 800, step_video, ncols=100):
+                # inputs and predictions
+                x = x_ts.frame(k)
+                pred = to_numpy(model.forward_visual(x, k))
+                pred_vec = np.asarray(pred).squeeze()  # (sim.n_input_neurons,)
+                pred_corrected = a_coeff * pred_vec  # corrected to GT scale
+
+                gt_vec = to_numpy(x_ts.stimulus[k, :sim.n_input_neurons]).squeeze()
+
+                # update rolling traces (store corrected predictions)
+                hist_t.append(k)
+                for i in trace_ids:
+                    hist_gt[i].append(gt_vec[i])
+                    hist_pred[i].append(pred_corrected[i])
+
+                # draw three panels
+                fig.clf()
+
+                # RMSE on corrected predictions
+                rmse_frame = float(np.sqrt(((pred_corrected - gt_vec) ** 2).mean()))
+                running_rmse = float(np.mean(error_list + [rmse_frame])) if len(error_list) else rmse_frame
+
+                # Traces (both on GT scale)
+                ax3 = fig.add_subplot(1, 3, 3)
+                ax3.set_axis_off()
+                ax3.set_facecolor("black")
+
+                t = np.arange(len(hist_t))
+                for j, i in enumerate(trace_ids):
+                    y0 = j * offset
+                    ax3.plot(t, np.array(hist_gt[i])   + y0, color='lime',  lw=1.6, alpha=0.95)
+                    ax3.plot(t, np.array(hist_pred[i]) + y0, color='k', lw=1.2, alpha=0.95)
+
+                ax3.set_xlim(max(0, len(t) - win), len(t))
+                ax3.set_ylim(-offset * 0.5, offset * (len(trace_ids) + 0.5))
+                ax3.text(
+                    0.02, 0.98,
+                    f"frame: {k}   RMSE: {rmse_frame:.3f}   avg RMSE: {running_rmse:.3f}   a={a_coeff:.3f} b={b_coeff:.3f}",
+                    transform=ax3.transAxes,
+                    va='top', ha='left',
+                    fontsize=6, color='k')
+
+                # GT field
+                ax1 = fig.add_subplot(1, 3, 1)
+                ax1.scatter(X1[:, 0], X1[:, 1], s=256, c=gt_vec, cmap=default_style.cmap, marker='h', vmin=gt_vmin, vmax=gt_vmax)
+                ax1.set_axis_off()
+                ax1.set_title('ground truth', fontsize=12)
+
+                # Predicted field (corrected, same scale as GT)
+                ax2 = fig.add_subplot(1, 3, 2)
+                ax2.scatter(X1[:, 0], X1[:, 1], s=256, c=pred_corrected, cmap=default_style.cmap, marker='h')
+                ax2.set_axis_off()
+                ax2.set_title('prediction (corrected)', fontsize=12)
+
+                plt.tight_layout()
+                writer.grab_frame()
+
+                error_list.append(rmse_frame)
+
+    return field_R2, field_slope
 
