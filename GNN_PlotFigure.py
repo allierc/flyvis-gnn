@@ -11,25 +11,32 @@ import seaborn as sns
 import scipy.sparse
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
-from scipy.optimize import curve_fit
 from sklearn.mixture import GaussianMixture
 from sklearn.decomposition import TruncatedSVD
 
 from flyvis_gnn.figure_style import default_style as fig_style
 from flyvis_gnn.zarr_io import load_simulation_data, load_raw_array
-from flyvis_gnn.fitting_models import linear_model
 from flyvis_gnn.sparsify import clustering_gmm
 from flyvis_gnn.models.flyvis_gnn import FlyVisGNN
 from flyvis_gnn.config import NeuralGraphConfig
-from flyvis_gnn.plot import (
+from flyvis_gnn.metrics import (
     get_model_W,
+    compute_r_squared,
+    compute_r_squared_filtered,
+    compute_all_corrected_weights,
+    compute_activity_stats,
+    extract_g_phi_slopes,
+    extract_f_theta_slopes,
+    derive_tau,
+    derive_vrest,
+    INDEX_TO_NAME,
     _vectorized_linspace,
     _batched_mlp_eval,
     _vectorized_linear_fit,
-    _plot_curves_fast,
     _build_g_phi_features,
     _build_f_theta_features,
 )
+from flyvis_gnn.plot import _plot_curves_fast
 from flyvis_gnn.utils import (
     to_numpy,
     CustomColorMap,
@@ -198,8 +205,7 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
     }
 
     activity = x_ts.voltage.to(device).t()  # (N, T)
-    mu_activity = torch.mean(activity, dim=1)
-    sigma_activity = torch.std(activity, dim=1)
+    mu_activity, sigma_activity = compute_activity_stats(x_ts, device)
 
     print(f'neurons: {n_neurons}  edges: {edges.shape[1]}  neuron types: {n_types}  region types: {n_region_types}')
     logger.info(f'neurons: {n_neurons}  edges: {edges.shape[1]}  neuron types: {n_types}  region types: {n_region_types}')
@@ -477,18 +483,12 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
             slopes_f_theta_array = np.array(slopes_f_theta_list)
             offsets_array = np.array(offsets_list)
             gt_taus = to_numpy(gt_taus[:n_neurons])
-            learned_tau = np.where(slopes_f_theta_array != 0, 1.0 / -slopes_f_theta_array, 1)
-            learned_tau = learned_tau[:n_neurons]
-            learned_tau = np.clip(learned_tau, 0, 1)
+            learned_tau = derive_tau(slopes_f_theta_array, n_neurons)
 
             fig = plt.figure(figsize=(10, 9))
             plt.scatter(gt_taus, learned_tau, c=mc, s=1, alpha=0.3)
-            lin_fit_tau, _ = curve_fit(linear_model, gt_taus, learned_tau)
-            residuals = learned_tau - linear_model(gt_taus, *lin_fit_tau)
-            ss_res = np.sum(residuals ** 2)
-            ss_tot = np.sum((learned_tau - np.mean(learned_tau)) ** 2)
-            r_squared_tau = 1 - (ss_res / ss_tot)
-            plt.text(0.05, 0.95, f'R²: {r_squared_tau:.2f}\nslope: {lin_fit_tau[0]:.2f}\nN: {sim.n_edges}',
+            r_squared_tau, slope_tau = compute_r_squared(gt_taus, learned_tau)
+            plt.text(0.05, 0.95, f'R²: {r_squared_tau:.2f}\nslope: {slope_tau:.2f}\nN: {sim.n_edges}',
                      transform=plt.gca().transAxes, verticalalignment='top', fontsize=32)
             plt.xlabel(r'true $\tau$', fontsize=48)
             plt.ylabel(r'learned $\tau$', fontsize=48)
@@ -502,17 +502,12 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
 
 
             # V_rest comparison (reconstructed vs ground truth)
-            learned_V_rest = np.where(slopes_f_theta_array != 0, -offsets_array / slopes_f_theta_array, 1)
-            learned_V_rest = learned_V_rest[:n_neurons]
+            learned_V_rest = derive_vrest(slopes_f_theta_array, offsets_array, n_neurons)
             gt_V_rest = to_numpy(gt_V_Rest[:n_neurons])
             fig = plt.figure(figsize=(10, 9))
             plt.scatter(gt_V_rest, learned_V_rest, c=mc, s=1, alpha=0.3)
-            lin_fit_V_rest, _ = curve_fit(linear_model, gt_V_rest, learned_V_rest)
-            residuals = learned_V_rest - linear_model(gt_V_rest, *lin_fit_V_rest)
-            ss_res = np.sum(residuals ** 2)
-            ss_tot = np.sum((learned_V_rest - np.mean(learned_V_rest)) ** 2)
-            r_squared_V_rest = 1 - (ss_res / ss_tot)
-            plt.text(0.05, 0.95, f'R²: {r_squared_V_rest:.2f}\nslope: {lin_fit_V_rest[0]:.2f}\nN: {sim.n_edges}',
+            r_squared_V_rest, slope_V_rest = compute_r_squared(gt_V_rest, learned_V_rest)
+            plt.text(0.05, 0.95, f'R²: {r_squared_V_rest:.2f}\nslope: {slope_V_rest:.2f}\nN: {sim.n_edges}',
                      transform=plt.gca().transAxes, verticalalignment='top', fontsize=32)
             plt.xlabel(r'true $V_{rest}$', fontsize=48)
             plt.ylabel(r'learned $V_{rest}$', fontsize=48)
@@ -560,12 +555,8 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
             learned_weights = to_numpy(get_model_W(model).squeeze())
             true_weights = to_numpy(gt_weights)
             plt.scatter(true_weights, learned_weights, c=mc, s=0.1, alpha=0.1)
-            lin_fit, lin_fitv = curve_fit(linear_model, true_weights, learned_weights)
-            residuals = learned_weights - linear_model(true_weights, *lin_fit)
-            ss_res = np.sum(residuals ** 2)
-            ss_tot = np.sum((learned_weights - np.mean(learned_weights)) ** 2)
-            r_squared = 1 - (ss_res / ss_tot)
-            plt.text(0.05, 0.95, f'R²: {r_squared:.3f}\nslope: {lin_fit[0]:.2f}',
+            r_squared, slope_raw = compute_r_squared(true_weights, learned_weights)
+            plt.text(0.05, 0.95, f'R²: {r_squared:.3f}\nslope: {slope_raw:.2f}',
                      transform=plt.gca().transAxes, verticalalignment='top', fontsize=24)
 
             # Add Dale's Law statistics
@@ -585,163 +576,41 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
             plt.tight_layout()
             plt.savefig(f'{log_dir}/results/weights_comparison_raw.png', dpi=300)
             plt.close()
-            print(f"first weights fit R²: {r_squared:.2f}  slope: {np.round(lin_fit[0], 4)}")
-            logger.info(f"first weights fit R²: {r_squared:.2f}  slope: {np.round(lin_fit[0], 4)}")
+            print(f"first weights fit R²: {r_squared:.2f}  slope: {np.round(slope_raw, 4)}")
+            logger.info(f"first weights fit R²: {r_squared:.2f}  slope: {np.round(slope_raw, 4)}")
 
-            # k_list = [1]
-
-            k_list = np.linspace(sim.n_frames // 10, sim.n_frames-100, 8, dtype=int).tolist()
-
-            dataset_batch = []
-            ids_batch = []
-            mask_batch = []
-            ids_index = 0
-            mask_index = 0
-
-            for batch in range(len(k_list)):
-
-                k = k_list[batch]
-                x = x_ts.frame(k).to(device).to_packed()
-                ids = np.arange(n_neurons)
-
-                if not (torch.isnan(x).any()):
-
-                    mask = torch.arange(edges.shape[1])
-
-                    y = torch.tensor(y_data[k], device=device) / ynorm
-
-                    if not (torch.isnan(y).any()):
-
-                        import torch_geometric.data as data
-                        dataset = data.Data(x=x, edge_index=edges)
-                        dataset_batch.append(dataset)
-
-                        if len(dataset_batch) == 1:
-                            data_id = torch.zeros((n_neurons, 1), dtype=torch.int, device=device)
-                            y_batch = y
-                            ids_batch = ids
-                            mask_batch = mask
-                        else:
-                            data_id = torch.cat(
-                                (data_id, torch.zeros((n_neurons, 1), dtype=torch.int, device=device)), dim=0)
-                            y_batch = torch.cat((y_batch, y), dim=0)
-                            ids_batch = np.concatenate((ids_batch, ids + ids_index), axis=0)
-                            mask_batch = torch.cat((mask_batch, mask + mask_index), dim=0)
-
-                        ids_index += n_neurons
-                        mask_index += edges.shape[1]
-
-            with torch.no_grad():
-                from torch_geometric.loader import DataLoader
-                from flyvis_gnn.neuron_state import NeuronState
-                batch_loader = DataLoader(dataset_batch, batch_size=len(k_list), shuffle=False)
-                for batch in batch_loader:
-                    batch_state = NeuronState.from_numpy(batch.x)
-                    pred, in_features, msg = model(batch_state, batch.edge_index, data_id=data_id, mask=mask_batch, return_all=True)
-
-            # Extract features and compute gradient of f_theta w.r.t. msg
-            ed = model_config.embedding_dim
-            v = in_features[:, 0:1].clone().detach()
-            embedding = in_features[:, 1:1+ed].clone().detach()
-            msg = in_features[:, 1+ed:2+ed].clone().detach()
-            excitation = in_features[:, 2+ed:3+ed].clone().detach()
-
-            # Re-enable gradients (may have been disabled by data_test)
-            torch.set_grad_enabled(True)
-
-            # Enable gradient tracking for msg
-            msg.requires_grad_(True)
-            # Concatenate input features for the final layer
-            in_features_grad = torch.cat([v, embedding, msg, excitation], dim=1)
-            # Run f_theta outside no_grad context to build computation graph
-            out = model.f_theta(in_features_grad)
-
-            grad_msg = torch.autograd.grad(
-                outputs=out,
-                inputs=msg,
-                grad_outputs=torch.ones_like(out),
-                retain_graph=True,
-                create_graph=False
-            )[0]
-
-
-            plt.figure(figsize=(12, 6))
-
-            n_batches = grad_msg.shape[0] // n_neurons
-            grad_values = grad_msg.view(n_batches, n_neurons)
-            grad_values = grad_values.median(dim=0).values
-            grad_values = to_numpy(grad_values).squeeze()
-
-            # grad_values = to_numpy(grad_msg[0:n_neurons]).squeeze()
-
-            # Flatten to 1D
-            neuron_indices = np.arange(n_neurons)
-            # Create scatter plot colored by neuron type
-            for n in range(n_types):
-                type_mask = (to_numpy(type_list).squeeze() == n)  # Flatten to 1D
-                if np.any(type_mask):
-                    plt.scatter(neuron_indices[type_mask], grad_values[type_mask],
-                                c=colors_65[n], s=1, alpha=0.8)
-
-                    # Add text label for each neuron type
-                    if np.sum(type_mask) > 0:
-                        mean_x = np.mean(neuron_indices[type_mask])
-                        mean_y = np.mean(grad_values[type_mask])
-                        plt.text(mean_x, mean_y, index_to_name.get(n, f'T{n}'),
-                                 fontsize=6, ha='center', va='center')
-            plt.xlabel('neuron index')
-            plt.ylabel('gradient')
-            plt.tight_layout()
-            # plt.savefig(f'{log_dir}/results/msg_gradients_{epoch}.png', dpi=300)
-            plt.close()
-
-            grad_msg_flat = grad_msg.squeeze()
-            assert grad_msg_flat.shape[0] == n_neurons * len(k_list), "Gradient and neuron count mismatch"
-            target_neuron_ids = edges[1, :] % (model.n_edges + model.n_extra_null_edges)
-            grad_msg_per_edge = grad_msg_flat[target_neuron_ids]
-            grad_msg_per_edge = grad_msg_per_edge.unsqueeze(1)  # [434112, 1]
-
-            slopes_f_theta_array = torch.tensor(slopes_f_theta_array, dtype=torch.float32, device=device)
-            slopes_f_theta_per_edge = slopes_f_theta_array[target_neuron_ids]
-
-            slopes_g_phi_array = np.array(slopes_g_phi_list)
-            slopes_g_phi_array = torch.tensor(slopes_g_phi_array, dtype=torch.float32, device=device)
-            prior_neuron_ids = edges[0, :] % (model.n_edges + model.n_extra_null_edges)  # j
-            slopes_g_phi_per_edge = slopes_g_phi_array[prior_neuron_ids]
-
-            corrected_W_ = -get_model_W(model) / slopes_f_theta_per_edge[:, None] * grad_msg_per_edge
-            corrected_W = -get_model_W(model) / slopes_f_theta_per_edge[:, None] * grad_msg_per_edge * slopes_g_phi_per_edge.unsqueeze(1)
-
-            # sanitize: division by near-zero slopes can produce inf/nan
-            corrected_W = torch.nan_to_num(corrected_W, nan=0.0, posinf=0.0, neginf=0.0)
-            corrected_W_ = torch.nan_to_num(corrected_W_, nan=0.0, posinf=0.0, neginf=0.0)
-
+            # Corrected weights via metrics pipeline (replaces inline DataLoader +
+            # gradient computation + correction formula — see metrics.py)
+            corrected_W, ret_slopes_f, ret_slopes_g, ret_offsets = compute_all_corrected_weights(
+                model, config, edges, x_ts, device, n_grad_frames=8)
             torch.save(corrected_W, f'{log_dir}/results/corrected_W.pt')
 
             learned_weights = to_numpy(corrected_W.squeeze())
             true_weights = to_numpy(gt_weights)
 
-            # --- Outlier removal: drop weights beyond 3*MAD ---
+            # Outlier removal + R² via metrics
+            r_squared, slope_corrected, mask = compute_r_squared_filtered(
+                true_weights, learned_weights, outlier_threshold=5.0)
             residuals = learned_weights - true_weights
-            mask = np.abs(residuals) <= 5  # keep only inliers
-
             true_in = true_weights[mask]
             learned_in = learned_weights[mask]
 
             if extended:
+                # Partial correction (without g_phi factor) for diagnostic plot
+                n_w = model.n_edges + model.n_extra_null_edges
+                prior_ids = edges[0, :] % n_w
+                slopes_g_t = torch.tensor(ret_slopes_g, dtype=torch.float32, device=device)
+                corrected_W_ = corrected_W / slopes_g_t[prior_ids].unsqueeze(1)
+                corrected_W_ = torch.nan_to_num(corrected_W_, nan=0.0, posinf=0.0, neginf=0.0)
 
                 learned_in_ = to_numpy(corrected_W_.squeeze())
                 learned_in_ = learned_in_[mask]
 
                 fig = plt.figure(figsize=(10, 9))
                 plt.scatter(true_in, learned_in_, c=mc, s=0.1, alpha=0.1)
-                lin_fit, _ = curve_fit(linear_model, true_in, learned_in_)
-                residuals_ = learned_in_ - linear_model(true_in, *lin_fit)
-                ss_res = np.sum(residuals_ ** 2)
-                ss_tot = np.sum((learned_in_ - np.mean(learned_in_)) ** 2)
-                r_squared = 1 - (ss_res / ss_tot)
+                r_squared_rj, slope_rj = compute_r_squared(true_in, learned_in_)
                 plt.text(0.05, 0.95,
-                        f'R²: {r_squared:.3f}\nslope: {lin_fit[0]:.2f}',
+                        f'R²: {r_squared_rj:.3f}\nslope: {slope_rj:.2f}',
                         transform=plt.gca().transAxes, verticalalignment='top', fontsize=24)
                 plt.xlabel(r'true $W_{ij}$', fontsize=48)
                 plt.ylabel(r'learned $W_{ij}r_j$', fontsize=48)
@@ -751,27 +620,11 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
                 plt.savefig(f'{log_dir}/results/weights_comparison_rj.png', dpi=300)
                 plt.close()
 
-
             fig = plt.figure(figsize=(10, 9))
             plt.scatter(true_in, learned_in, c=mc, s=0.5, alpha=0.06)
-            lin_fit, _ = curve_fit(linear_model, true_in, learned_in)
-            residuals_ = learned_in - linear_model(true_in, *lin_fit)
-            ss_res = np.sum(residuals_ ** 2)
-            ss_tot = np.sum((learned_in - np.mean(learned_in)) ** 2)
-            r_squared = 1 - (ss_res / ss_tot)
             plt.text(0.05, 0.95,
-                     f'R²: {r_squared:.2f}\nslope: {lin_fit[0]:.2f}\nN: {sim.n_edges}',
+                     f'R²: {r_squared:.2f}\nslope: {slope_corrected:.2f}\nN: {sim.n_edges}',
                      transform=plt.gca().transAxes, verticalalignment='top', fontsize=32)
-
-            # Add Dale's Law statistics (reusing dale_results from earlier)
-            # dale_text = (f"excitatory neurons (all W>0): {dale_results['n_excitatory']} "
-            #              f"({100*dale_results['n_excitatory']/n_neurons:.1f}%)\n"
-            #              f"inhibitory neurons (all W<0): {dale_results['n_inhibitory']} "
-            #              f"({100*dale_results['n_inhibitory']/n_neurons:.1f}%)\n"
-            #              f"mixed/zero neurons (violates Dale's Law): {dale_results['n_mixed']} "
-            #              f"({100*dale_results['n_mixed']/n_neurons:.1f}%)")
-            # plt.text(0.05, 0.05, dale_text, transform=plt.gca().transAxes,
-            #          verticalalignment='bottom', fontsize=10)
 
             plt.xlabel(r'true $W_{ij}$', fontsize=48)
             plt.ylabel(r'learned $W_{ij}^*$', fontsize=48)
@@ -783,8 +636,8 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
             plt.savefig(f'{log_dir}/results/weights_comparison_corrected.png', dpi=300)
             plt.close()
 
-            print(f"second weights fit R²: \033[92m{r_squared:.4f}\033[0m  slope: {np.round(lin_fit[0], 4)}")
-            logger.info(f"second weights fit R²: {r_squared:.4f}  slope: {np.round(lin_fit[0], 4)}")
+            print(f"second weights fit R²: \033[92m{r_squared:.4f}\033[0m  slope: {np.round(slope_corrected, 4)}")
+            logger.info(f"second weights fit R²: {r_squared:.4f}  slope: {np.round(slope_corrected, 4)}")
             print(f'median residuals: {np.median(residuals):.4f}')
             inlier_residuals = residuals[mask]
             print(f'inliers: {len(inlier_residuals)}  mean residual: {np.mean(inlier_residuals):.4f}  std: {np.std(inlier_residuals):.4f}  min,max: {np.min(inlier_residuals):.4f}, {np.max(inlier_residuals):.4f}')
@@ -794,10 +647,10 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
                     f'outliers: {len(outlier_residuals)}  mean residual: {np.mean(outlier_residuals):.4f}  std: {np.std(outlier_residuals):.4f}  min,max: {np.min(outlier_residuals):.4f}, {np.max(outlier_residuals):.4f}')
             else:
                 print('outliers: 0  (no outliers detected)')
-            print(f"tau reconstruction R²: \033[92m{r_squared_tau:.3f}\033[0m  slope: {lin_fit_tau[0]:.2f}")
-            logger.info(f"tau reconstruction R²: {r_squared_tau:.3f}  slope: {lin_fit_tau[0]:.2f}")
-            print(f"V_rest reconstruction R²: \033[92m{r_squared_V_rest:.3f}\033[0m  slope: {lin_fit_V_rest[0]:.2f}")
-            logger.info(f"V_rest reconstruction R²: {r_squared_V_rest:.3f}  slope: {lin_fit_V_rest[0]:.2f}")
+            print(f"tau reconstruction R²: \033[92m{r_squared_tau:.3f}\033[0m  slope: {slope_tau:.2f}")
+            logger.info(f"tau reconstruction R²: {r_squared_tau:.3f}  slope: {slope_tau:.2f}")
+            print(f"V_rest reconstruction R²: \033[92m{r_squared_V_rest:.3f}\033[0m  slope: {slope_V_rest:.2f}")
+            logger.info(f"V_rest reconstruction R²: {r_squared_V_rest:.3f}  slope: {slope_V_rest:.2f}")
 
             # Write to analysis log file for Claude
             if log_file:

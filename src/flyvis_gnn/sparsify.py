@@ -656,7 +656,7 @@ def umap_cluster_reassign(model, config, x_ts, edges, n_neurons, type_list, devi
     """
     import umap
     import warnings
-    from flyvis_gnn.plot import extract_f_theta_slopes, compute_activity_stats
+    from flyvis_gnn.metrics import extract_f_theta_slopes, compute_activity_stats
 
     tc = config.training
 

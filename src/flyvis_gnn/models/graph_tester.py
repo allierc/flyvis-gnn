@@ -17,7 +17,8 @@ import numpy as np
 from tqdm import tqdm, trange
 
 from flyvis_gnn.models.utils import _batch_frames
-from flyvis_gnn.plot import INDEX_TO_NAME, plot_spatial_activity_grid, plot_weight_comparison
+from flyvis_gnn.plot import plot_spatial_activity_grid, plot_weight_comparison
+from flyvis_gnn.metrics import INDEX_TO_NAME
 from flyvis_gnn.utils import (
     to_numpy,
     compute_trace_metrics,

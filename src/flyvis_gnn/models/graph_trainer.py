@@ -24,7 +24,8 @@ from flyvis_gnn.models.utils import (
     _batch_frames,
 )
 from flyvis_gnn.models.training_utils import determine_load_fields, load_flyvis_data, build_model, build_lr_scheduler
-from flyvis_gnn.plot import plot_training_flyvis, plot_training_summary_panels, compute_dynamics_r2, render_visual_field_video
+from flyvis_gnn.plot import plot_training_flyvis, plot_training_summary_panels, render_visual_field_video
+from flyvis_gnn.metrics import compute_dynamics_r2
 from flyvis_gnn.utils import (
     to_numpy,
     CustomColorMap,
