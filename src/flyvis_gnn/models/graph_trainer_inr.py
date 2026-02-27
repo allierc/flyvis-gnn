@@ -132,7 +132,8 @@ def _generate_inr_video(gt_np, predict_frame_fn, pos_np, field_name,
     print(f'  video saved: {video_path} ({size_mb:.1f} MB)')
 
 
-def data_train_INR(config=None, device=None, total_steps=10000, field_name='stimulus'):
+def data_train_INR(config=None, device=None, total_steps=10000, field_name='stimulus',
+                   n_training_frames=0, inr_type=None):
     """Train an INR (SIREN or instantNGP) on a field from x_list_train.
 
     Loads the specified field from the zarr V3 dataset, trains the INR,
@@ -148,6 +149,10 @@ def data_train_INR(config=None, device=None, total_steps=10000, field_name='stim
         total_steps: training iterations (default 50000)
         field_name: field to learn from NeuronTimeSeries
                     ('stimulus', 'voltage', 'calcium', 'fluorescence')
+        n_training_frames: number of frames to use (0 = use all, >0 = first N frames).
+                           Overrides config.training.n_training_frames if >0.
+        inr_type: INR architecture to use ('siren_t', 'siren_txy', 'ngp').
+                  Overrides config.graph_model.inr_type if not None.
     """
     from flyvis_gnn.models.Siren_Network import Siren
     from flyvis_gnn.zarr_io import load_simulation_data
@@ -199,13 +204,14 @@ def data_train_INR(config=None, device=None, total_steps=10000, field_name='stim
         print(f'training INR on field "{field_name}"')
         print(f'  data: {n_frames} frames, {n_neurons} neurons')
 
-    # crop to centered window if n_training_frames is set
-    n_training_frames = getattr(tc, 'n_training_frames', 0)
+    # crop to first N frames if n_training_frames is set
+    # function argument overrides config value when >0
+    if n_training_frames <= 0:
+        n_training_frames = getattr(tc, 'n_training_frames', 0)
     if n_training_frames > 0 and n_training_frames < n_frames:
-        start = n_frames // 2 - n_training_frames // 2
-        field_np = field_np[start:start + n_training_frames]
+        field_np = field_np[:n_training_frames]
         n_frames = n_training_frames
-        print(f'  cropped to {n_training_frames} centered frames')
+        print(f'  cropped to first {n_training_frames} frames')
 
     # SVD analysis
     from sklearn.utils.extmath import randomized_svd
@@ -217,8 +223,9 @@ def data_train_INR(config=None, device=None, total_steps=10000, field_name='stim
     print(f'  effective rank: 90%={rank_90}, 99%={rank_99}')
 
     # config parameters
-    # auto-detect INR type from config dimensions if not explicitly set
-    inr_type = getattr(model_config, 'inr_type', None)
+    # function argument overrides config; fall back to auto-detect
+    if inr_type is None:
+        inr_type = getattr(model_config, 'inr_type', None)
     if inr_type is None:
         input_size_nnr = getattr(model_config, 'input_size_nnr_f', 1)
         output_size_nnr = getattr(model_config, 'output_size_nnr_f', None)
@@ -226,6 +233,11 @@ def data_train_INR(config=None, device=None, total_steps=10000, field_name='stim
             inr_type = 'siren_txy'
         else:
             inr_type = 'siren_t'
+    # normalize enum to plain string for consistent filenames / comparisons
+    inr_type = str(inr_type).rsplit('.', 1)[-1].lower()
+    # clean old comparison PNGs from previous runs
+    for old_png in [f for f in os.listdir(output_folder) if f.endswith('.png')]:
+        os.remove(os.path.join(output_folder, old_png))
     hidden_dim = getattr(model_config, 'hidden_dim_nnr_f', 1024)
     n_layers = getattr(model_config, 'n_layers_nnr_f', 3)
     omega_f = getattr(model_config, 'omega_f', 1024)

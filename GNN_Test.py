@@ -525,21 +525,24 @@ def main():
     # Phase 1: Training
     if not args.skip_train:
         print(f"\n\033[93m--- Phase 1: Training ---\033[0m")
+        # Erase metrics.log locally before training to avoid stale R² data
+        # in loss.tif right panel (cluster erase may not sync reliably via NFS)
+        metrics_log = os.path.join(log_dir, 'tmp_training', 'metrics.log')
+        if os.path.exists(metrics_log):
+            os.remove(metrics_log)
+            print(f"erased stale {metrics_log}")
         if args.cluster:
             training_output = run_training_cluster(args.config, root_dir, log_dir)
         else:
             device = set_device('auto')
             run_training_local(config, device)
 
-    # Phase 2: Test + Plot
+    # Phase 2: Test + Plot (always local — cluster test_plot is unreliable)
     if not args.skip_plot:
-        print(f"\n\033[93m--- Phase 2: Test + Plot ---\033[0m")
-        if args.cluster:
-            run_test_plot_cluster(args.config, root_dir, log_dir)
-        else:
-            if 'device' not in dir():
-                device = set_device('auto')
-            run_test_plot(config, config_file, device)
+        print(f"\n\033[93m--- Phase 2: Test + Plot (local) ---\033[0m")
+        if 'device' not in dir():
+            device = set_device('auto')
+        run_test_plot(config, config_file, device)
 
     # Phase 3: Parse metrics
     print(f"\n\033[93m--- Phase 3: Parse Metrics ---\033[0m")
