@@ -30,7 +30,7 @@ from flyvis_gnn.models.utils import (
     LossRegularizer,
     _batch_frames,
 )
-from flyvis_gnn.models.training_utils import determine_load_fields, load_flyvis_data, build_model
+from flyvis_gnn.models.training_utils import determine_load_fields, load_flyvis_data, build_model, build_lr_scheduler
 from flyvis_gnn.models.flyvis_dataset import FlyVisFrameSampler
 from flyvis_gnn.plot import plot_training_flyvis, plot_weight_comparison, plot_training_summary_panels, compute_dynamics_r2
 from flyvis_gnn.utils import (
@@ -224,6 +224,11 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
     optimizer, n_total_params = set_trainable_parameters(model=model, lr_embedding=lr_embedding, lr=lr,
                                                          lr_update=lr_update, lr_W=lr_W, learning_rate_NNR=learning_rate_NNR, learning_rate_NNR_f = learning_rate_NNR_f)
+
+    lr_scheduler = build_lr_scheduler(optimizer, config)
+    scheduler_type = getattr(tc, 'lr_scheduler', 'none')
+    if scheduler_type != 'none':
+        print(f'LR scheduler: {scheduler_type}')
     # === LLM-MODIFIABLE: OPTIMIZER SETUP END ===
     model.train()
 
@@ -525,6 +530,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                         torch.nn.utils.clip_grad_norm_([model.W], max_norm=tc.grad_clip_W)
 
                 optimizer.step()
+                lr_scheduler.step()
                 # === LLM-MODIFIABLE: BACKWARD AND STEP END ===
 
                 total_loss += loss.item()
