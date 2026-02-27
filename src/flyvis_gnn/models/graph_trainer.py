@@ -30,6 +30,8 @@ from flyvis_gnn.models.utils import (
     LossRegularizer,
     _batch_frames,
 )
+from flyvis_gnn.models.training_utils import determine_load_fields, load_flyvis_data, build_model
+from flyvis_gnn.models.flyvis_dataset import FlyVisFrameSampler
 from flyvis_gnn.plot import plot_training_flyvis, plot_weight_comparison, plot_training_summary_panels, compute_dynamics_r2
 from flyvis_gnn.utils import (
     to_numpy,
@@ -157,31 +159,12 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
     log_dir, logger = create_log_dir(config, erase)
 
-    load_fields = ['voltage', 'stimulus', 'neuron_type']
-    if has_visual_field or test_neural_field:
-        load_fields.append('pos')
-    if sim.calcium_type != 'none':
-        load_fields.append('calcium')
-    # Load train split (fall back to x_list_0 for backwards compatibility)
-    train_path = graphs_data_path(config.dataset, 'x_list_train')
-    if os.path.exists(train_path):
-        x_ts = load_simulation_data(train_path, fields=load_fields).to(device)
-        y_ts = load_raw_array(graphs_data_path(config.dataset, 'y_list_train'))
-    else:
-        print("warning: x_list_train not found, falling back to x_list_0")
-        x_ts = load_simulation_data(graphs_data_path(config.dataset, 'x_list_0'), fields=load_fields).to(device)
-        y_ts = load_raw_array(graphs_data_path(config.dataset, 'y_list_0'))
-
-    # extract type_list from loaded data, then construct index (not loaded from disk)
-    type_list = x_ts.neuron_type.float().unsqueeze(-1)
-    x_ts.neuron_type = None
-    x_ts.index = torch.arange(x_ts.n_neurons, dtype=torch.long, device=device)
-
-    if tc.training_selected_neurons:
-        selected_neuron_ids = np.array(tc.selected_neuron_ids).astype(int)
-        x_ts = x_ts.subset_neurons(selected_neuron_ids)
-        y_ts = y_ts[:, selected_neuron_ids, :]
-        type_list = type_list[selected_neuron_ids]
+    load_fields = determine_load_fields(config)
+    x_ts, y_ts, type_list = load_flyvis_data(
+        config.dataset, split='train', fields=load_fields, device=device,
+        training_selected_neurons=tc.training_selected_neurons,
+        selected_neuron_ids=tc.selected_neuron_ids if tc.training_selected_neurons else None
+    )
 
     # get n_neurons and n_frames from data, not config file
     n_neurons = x_ts.n_neurons
@@ -206,37 +189,21 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     else:
         print(f'svd analysis already exists: {svd_plot_path}')
 
-    print('create models ...')
-    model = create_model(model_config.signal_model_name,
-                         aggr_type=model_config.aggr_type, config=config, device=device)
-    model = model.to(device)
+    # Resolve checkpoint path from best_model argument
+    checkpoint_path = None
+    if best_model and best_model != '' and best_model != 'None':
+        checkpoint_path = f"{log_dir}/models/best_model_with_{tc.n_runs - 1}_graphs_{best_model}.pt"
+    elif tc.pretrained_model != '':
+        checkpoint_path = tc.pretrained_model
+
+    model, start_epoch = build_model(config, device, checkpoint_path=checkpoint_path)
+    list_loss = []
 
     # W init mode info
     w_init_mode = getattr(tc, 'w_init_mode', 'randn')
     if w_init_mode != 'randn':
         w_init_scale = getattr(tc, 'w_init_scale', 1.0)
         print(f'W init mode: {w_init_mode}' + (f' (scale={w_init_scale})' if w_init_mode == 'randn_scaled' else ''))
-
-    start_epoch = 0
-    list_loss = []
-    if (best_model != None) & (best_model != '') & (best_model != '') & (best_model != 'None'):
-        net = f"{log_dir}/models/best_model_with_{tc.n_runs - 1}_graphs_{best_model}.pt"
-        print(f'loading state_dict from {net} ...')
-        state_dict = torch.load(net, map_location=device)
-        migrate_state_dict(state_dict)
-        model.load_state_dict(state_dict['model_state_dict'])
-        start_epoch = int(best_model.split('_')[0])
-        print(f'state_dict loaded: best_model={best_model}, start_epoch={start_epoch}')
-    elif  tc.pretrained_model !='':
-        net = tc.pretrained_model
-        print(f'loading pretrained state_dict from {net} ...')
-        state_dict = torch.load(net, map_location=device)
-        migrate_state_dict(state_dict)
-        model.load_state_dict(state_dict['model_state_dict'])
-        print('pretrained state_dict loaded')
-        logger.info(f'pretrained: {net}')
-    else:
-        print('no state_dict loaded - using freshly initialized model')
 
     # === LLM-MODIFIABLE: OPTIMIZER SETUP START ===
     # Change optimizer type, learning rate schedule, parameter groups
@@ -311,6 +278,11 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     with open(metrics_log_path, 'w') as f:
         f.write('iteration,connectivity_r2,vrest_r2,tau_r2\n')
 
+    # Valid frame range for sampling (matches np.random.randint logic it replaces)
+    _frame_min_k = tc.time_window
+    _frame_max_k = sim.n_frames - 4 - tc.time_step  # exclusive upper bound
+    _frame_range = max(_frame_max_k - _frame_min_k, 1)
+
     embedding_frozen = False
     unfreeze_at_iteration = -1
 
@@ -338,6 +310,10 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
         loss_noise_level = tc.loss_noise_level * (0.95 ** epoch)
         regularizer.set_epoch(epoch, plot_frequency, Niter=Niter)
+
+        # Reproducible per-epoch frame sampling (replaces bare np.random.randint)
+        epoch_rng = np.random.RandomState(tc.seed + epoch)
+        frame_indices = epoch_rng.randint(0, _frame_range, size=Niter * tc.batch_size) + _frame_min_k
 
         last_connectivity_r2 = None
         last_vrest_r2 = 0.0
@@ -374,7 +350,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
 
             for batch in range(tc.batch_size):
 
-                k = np.random.randint(sim.n_frames - 4 - tc.time_step - tc.time_window) + tc.time_window
+                k = int(frame_indices[N * tc.batch_size + batch])
 
                 if tc.recurrent_training or tc.neural_ODE_training:
                     k = k - k % tc.time_step

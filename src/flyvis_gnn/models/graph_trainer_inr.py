@@ -348,7 +348,7 @@ def data_train_INR(config=None, device=None, total_steps=10000, field_name='stim
     # --- training loop ---
     loss_list = []
     report_interval = 1000
-    viz_interval = 1000
+    viz_interval = 5000
     last_r2 = 0.0
     t_start = time.time()
 

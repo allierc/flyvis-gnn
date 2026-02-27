@@ -46,8 +46,9 @@ class FlyVisDataset(Dataset):
         self.n_input_neurons = getattr(sim, 'n_input_neurons', 0)
 
         # Valid frame range: leave room for time_step + 4 safety margin
+        # _min_k = time_window so we can look back; _max_k so k + time_step + 4 < n_frames
         self._min_k = self.time_window
-        self._max_k = self.n_frames - 4 - self.time_step - self.time_window
+        self._max_k = self.n_frames - 4 - self.time_step
 
         # Epoch-dependent state
         self.loss_noise_level = 0.0
