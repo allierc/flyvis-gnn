@@ -706,7 +706,7 @@ def generate_summary_stats(nodes: list[ExperimentNode]) -> dict:
     return stats
 
 
-def compute_ucb_scores(analysis_path, ucb_path, c=1.0, current_log_path=None, current_iteration=None, block_size=12):
+def compute_ucb_scores(analysis_path, ucb_path, c=1.0, current_log_path=None, current_iteration=None, block_size=12, reward_key='connectivity_R2'):
     """
     Parse analysis file, build exploration tree, compute UCB scores.
 
@@ -717,6 +717,8 @@ def compute_ucb_scores(analysis_path, ucb_path, c=1.0, current_log_path=None, cu
         current_log_path: Path to current iteration's analysis.log (optional)
         current_iteration: Current iteration number (optional)
         block_size: Size of each simulation block (default 12)
+        reward_key: Metric name to use as reward signal (default 'connectivity_R2').
+                    For INR optimization use 'final_r2'.
 
     Returns:
         True if UCB scores were computed, False if no nodes found
@@ -781,40 +783,25 @@ def compute_ucb_scores(analysis_path, ucb_path, c=1.0, current_log_path=None, cu
                 current_node['mutation'] = mutation_match.group(1).strip()
                 continue
 
-            # Match Metrics line for connectivity_R2, test_pearson, and cluster_accuracy
-            metrics_match = re.search(r'connectivity_R2=([\d.]+|nan)', line)
+            # Match Metrics line using reward_key as trigger (e.g. connectivity_R2 or final_r2)
+            metrics_match = re.search(rf'{re.escape(reward_key)}=([\d.]+|nan)', line)
             if metrics_match and current_node is not None:
                 r2_str = metrics_match.group(1).rstrip('.')  # Strip trailing period
-                current_node['connectivity_R2'] = float(r2_str) if r2_str != 'nan' else 0.0
-                # Also extract test_pearson from same line
-                pearson_match = re.search(r'test_pearson=([\d.]+|nan)', line)
-                if pearson_match:
-                    p_str = pearson_match.group(1).rstrip('.')  # Strip trailing period
-                    current_node['test_pearson'] = float(p_str) if p_str != 'nan' else 0.0
-                else:
-                    current_node['test_pearson'] = 0.0
-                # Also extract cluster_accuracy from same line
-                cluster_match = re.search(r'cluster_accuracy=([\d.]+|nan)', line)
-                if cluster_match:
-                    c_str = cluster_match.group(1).rstrip('.')  # Strip trailing period
-                    current_node['cluster_accuracy'] = float(c_str) if c_str != 'nan' else -1.0
-                else:
-                    current_node['cluster_accuracy'] = -1.0
-                # Also extract tau_R2 from same line
-                tau_match = re.search(r'tau_R2=([\d.]+|nan)', line)
-                if tau_match:
-                    t_str = tau_match.group(1).rstrip('.')
-                    current_node['tau_R2'] = float(t_str) if t_str != 'nan' else -1.0
-                # Also extract V_rest_R2 from same line
-                vrest_match = re.search(r'V_rest_R2=([\d.]+|nan)', line)
-                if vrest_match:
-                    v_str = vrest_match.group(1).rstrip('.')
-                    current_node['V_rest_R2'] = float(v_str) if v_str != 'nan' else -1.0
+                current_node[reward_key] = float(r2_str) if r2_str != 'nan' else 0.0
+                # Extract all key=value pairs from the same metrics line
+                for extra_key in ['test_pearson', 'cluster_accuracy', 'tau_R2', 'V_rest_R2',
+                                  'connectivity_R2', 'final_r2', 'best_r2', 'r2_drop', 'final_loss', 'training_time_min']:
+                    if extra_key == reward_key:
+                        continue  # already parsed above
+                    extra_match = re.search(rf'{re.escape(extra_key)}=([\d.]+|nan)', line)
+                    if extra_match:
+                        e_str = extra_match.group(1).rstrip('.')
+                        current_node[extra_key] = float(e_str) if e_str != 'nan' else -1.0
                 # Don't store node yet - continue collecting fields (Mutation comes after Metrics)
                 continue
 
         # Save the last node if complete
-        if current_node is not None and 'id' in current_node and 'connectivity_R2' in current_node:
+        if current_node is not None and 'id' in current_node and reward_key in current_node:
             nodes[current_node['id']] = current_node
 
     # Apply next_parent_map: if iteration N-1 specified "Next: parent=P", use P as parent for node N
@@ -833,69 +820,40 @@ def compute_ucb_scores(analysis_path, ucb_path, c=1.0, current_log_path=None, cu
         with open(current_log_path, 'r') as f:
             log_content = f.read()
 
-        # parse connectivity_R2 from analysis.log (handles both = and : formats)
-        r2_match = re.search(r'connectivity_R2[=:]\s*([\d.]+|nan)', log_content)
+        # parse reward metric from analysis.log (handles both = and : formats)
+        r2_match = re.search(rf'{re.escape(reward_key)}[=:]\s*([\d.]+|nan)', log_content)
         if r2_match:
             r2_str = r2_match.group(1)
             r2_value = float(r2_str) if r2_str != 'nan' else 0.0
 
-            # parse test_pearson from analysis.log
-            pearson_value = 0.0
-            pearson_match = re.search(r'test_pearson[=:]\s*([\d.]+|nan)', log_content)
-            if pearson_match:
-                p_str = pearson_match.group(1)
-                pearson_value = float(p_str) if p_str != 'nan' else 0.0
-
-            # parse cluster_accuracy from analysis.log
-            cluster_value = -1.0
-            cluster_match = re.search(r'cluster_accuracy[=:]\s*([\d.]+|nan)', log_content)
-            if cluster_match:
-                c_str = cluster_match.group(1)
-                cluster_value = float(c_str) if c_str != 'nan' else -1.0
-
-            # parse training_time_min from analysis.log
-            training_time_value = -1.0
-            time_match = re.search(r'training_time_min[=:]\s*([\d.]+)', log_content)
-            if time_match:
-                training_time_value = float(time_match.group(1))
-
-            # parse tau_R2 from analysis.log
-            tau_r2_value = -1.0
-            tau_match = re.search(r'tau_R2[=:]\s*([\d.]+|nan)', log_content)
-            if tau_match:
-                t_str = tau_match.group(1)
-                tau_r2_value = float(t_str) if t_str != 'nan' else -1.0
-
-            # parse V_rest_R2 from analysis.log
-            vrest_r2_value = -1.0
-            vrest_match = re.search(r'V_rest_R2[=:]\s*([\d.]+|nan)', log_content)
-            if vrest_match:
-                v_str = vrest_match.group(1)
-                vrest_r2_value = float(v_str) if v_str != 'nan' else -1.0
+            # parse all known extra metrics from analysis.log
+            extra_metrics = {}
+            for extra_key in ['test_pearson', 'cluster_accuracy', 'tau_R2', 'V_rest_R2',
+                              'connectivity_R2', 'final_r2', 'best_r2', 'r2_drop', 'final_loss', 'training_time_min']:
+                if extra_key == reward_key:
+                    continue
+                extra_match = re.search(rf'{re.escape(extra_key)}[=:]\s*([\d.]+|nan)', log_content)
+                if extra_match:
+                    e_str = extra_match.group(1)
+                    extra_metrics[extra_key] = float(e_str) if e_str != 'nan' else -1.0
 
             if current_iteration in nodes:
                 # Update existing node's metrics
-                nodes[current_iteration]['connectivity_R2'] = r2_value
-                nodes[current_iteration]['test_pearson'] = pearson_value
-                nodes[current_iteration]['cluster_accuracy'] = cluster_value
-                nodes[current_iteration]['training_time_min'] = training_time_value
-                nodes[current_iteration]['tau_R2'] = tau_r2_value
-                nodes[current_iteration]['V_rest_R2'] = vrest_r2_value
+                nodes[current_iteration][reward_key] = r2_value
+                for k, v in extra_metrics.items():
+                    nodes[current_iteration][k] = v
             else:
                 # Create new node using parent from previous iteration's "Next: parent=P"
                 prev_iter = current_iteration - 1
                 parent = next_parent_map.get(prev_iter, prev_iter if prev_iter in nodes else None)
-                nodes[current_iteration] = {
+                node_data = {
                     'iter': current_iteration,
                     'id': current_iteration,
                     'parent': parent,
-                    'connectivity_R2': r2_value,
-                    'test_pearson': pearson_value,
-                    'cluster_accuracy': cluster_value,
-                    'training_time_min': training_time_value,
-                    'tau_R2': tau_r2_value,
-                    'V_rest_R2': vrest_r2_value
+                    reward_key: r2_value,
                 }
+                node_data.update(extra_metrics)
+                nodes[current_iteration] = node_data
 
     if not nodes:
         return False
@@ -953,28 +911,29 @@ def compute_ucb_scores(analysis_path, ucb_path, c=1.0, current_log_path=None, cu
     ucb_scores = []
     for node_id, node in nodes.items():
         v = visits[node_id]
-        reward = node.get('connectivity_R2', 0.0)
+        reward = node.get(reward_key, 0.0)
 
         # PUCT exploration term: c * sqrt(N_total) / (1 + V)
         exploration_term = c * math.sqrt(n_total) / (1 + v)
 
         ucb = reward + exploration_term
 
-        ucb_scores.append({
+        score_entry = {
             'id': node_id,
             'parent': node['parent'],
             'visits': v,
             'mean_R2': reward,
             'ucb': ucb,
-            'connectivity_R2': reward,
-            'test_pearson': node.get('test_pearson', 0.0),
-            'cluster_accuracy': node.get('cluster_accuracy', -1.0),
-            'training_time_min': node.get('training_time_min', -1.0),
-            'tau_R2': node.get('tau_R2', -1.0),
-            'V_rest_R2': node.get('V_rest_R2', -1.0),
+            reward_key: reward,
             'mutation': node.get('mutation', ''),
-            'is_current': node_id == current_iteration
-        })
+            'is_current': node_id == current_iteration,
+        }
+        # Include all extra metrics present in the node
+        for extra_key in ['test_pearson', 'cluster_accuracy', 'training_time_min',
+                          'tau_R2', 'V_rest_R2', 'connectivity_R2', 'final_r2', 'best_r2', 'r2_drop', 'final_loss']:
+            if extra_key != reward_key and extra_key in node:
+                score_entry[extra_key] = node[extra_key]
+        ucb_scores.append(score_entry)
 
     # Sort by UCB descending (highest UCB = most promising to explore)
     ucb_scores.sort(key=lambda x: x['ucb'], reverse=True)
@@ -992,25 +951,20 @@ def compute_ucb_scores(analysis_path, ucb_path, c=1.0, current_log_path=None, cu
         for score in ucb_scores:
             parent_str = score['parent'] if score['parent'] is not None else 'root'
             mutation_str = score.get('mutation', '')
-            cluster_acc = score.get('cluster_accuracy', -1.0)
-            training_time = score.get('training_time_min', -1.0)
             line = (f"Node {score['id']}: UCB={score['ucb']:.3f}, "
                     f"parent={parent_str}, visits={score['visits']}, "
-                    f"R2={score['connectivity_R2']:.3f}, "
-                    f"Pearson={score['test_pearson']:.3f}")
-            # Add cluster accuracy if available (>= 0)
-            if cluster_acc >= 0:
-                line += f", Cluster={cluster_acc:.3f}"
-            # Add training time if available (>= 0)
-            if training_time >= 0:
-                line += f", Time={training_time:.1f}"
-            # Add tau_R2 and V_rest_R2 if available (>= 0)
-            tau_r2 = score.get('tau_R2', -1.0)
-            vrest_r2 = score.get('V_rest_R2', -1.0)
-            if tau_r2 >= 0:
-                line += f", tau_R2={tau_r2:.3f}"
-            if vrest_r2 >= 0:
-                line += f", V_rest_R2={vrest_r2:.3f}"
+                    f"R2={score.get(reward_key, 0.0):.3f}")
+            # Add extra metrics if available
+            for extra_key, label in [('test_pearson', 'Pearson'), ('cluster_accuracy', 'Cluster'),
+                                     ('training_time_min', 'Time'), ('tau_R2', 'tau_R2'),
+                                     ('V_rest_R2', 'V_rest_R2'), ('final_r2', 'final_R2'),
+                                     ('best_r2', 'best_R2'), ('r2_drop', 'R2drop'), ('final_loss', 'Loss')]:
+                if extra_key == reward_key:
+                    continue
+                val = score.get(extra_key, -1.0)
+                if val >= 0:
+                    fmt = '.1f' if extra_key == 'training_time_min' else '.3f'
+                    line += f", {label}={val:{fmt}}"
             if mutation_str:
                 line += f", Mutation={mutation_str}"
             f.write(line + "\n")

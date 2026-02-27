@@ -266,6 +266,7 @@ class ClaudeConfig(BaseModel):
     node_name: str = "a100"  # cluster GPU node: h100, a100, or l4
     generate_data: bool = False  # generate new simulation data before each training iteration
     training_time_target_min: int = 60  # target training time per iteration in minutes (for LLM guidance)
+    total_steps: int = 20000  # INR training iterations (used by INR_LLM.py)
 
 
 class GraphModelConfig(BaseModel):

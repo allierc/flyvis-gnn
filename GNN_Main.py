@@ -105,8 +105,8 @@ if __name__ == "__main__":
         elif 'train_INR' in task:
             # train INR (SIREN/NGP) on a field from x_list_train
             field_name = args.option[2] if len(args.option) > 2 else 'stimulus'
-            data_train_INR(config=config, device=device, total_steps=50000,
-                           field_name=field_name, n_training_frames=100,
+            data_train_INR(config=config, device=device, total_steps=100000,
+                           field_name=field_name, n_training_frames=1000,
                            inr_type='siren_txy')
 
         elif "train" in task:

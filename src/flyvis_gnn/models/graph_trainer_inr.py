@@ -350,6 +350,7 @@ def data_train_INR(config=None, device=None, total_steps=10000, field_name='stim
     report_interval = 1000
     viz_interval = 5000
     last_r2 = 0.0
+    best_r2 = 0.0
     t_start = time.time()
 
     print(f'  training for {total_steps} steps, batch_size={batch_size}, lr={learning_rate}')
@@ -396,10 +397,12 @@ def data_train_INR(config=None, device=None, total_steps=10000, field_name='stim
             gt_s, pred_s = _predict_sampled(n_sample=200)
             _, _, r_value, _, _ = linregress(gt_s.reshape(-1), pred_s.reshape(-1))
             last_r2 = r_value ** 2
+            if last_r2 > best_r2:
+                best_r2 = last_r2
 
         if step % 1000 == 0:
             c = _r2c(last_r2)
-            pbar.set_postfix_str(f'loss={loss.item():.6f} {c}R²={last_r2:.4f}{_RESET}')
+            pbar.set_postfix_str(f'loss={loss.item():.6f} {c}R²={last_r2:.4f} best={best_r2:.4f}{_RESET}')
 
         # visualization: hex comparison at frame n_frames//2
         if step > 0 and step % viz_interval == 0 and neuron_pos_np is not None:
@@ -436,9 +439,12 @@ def data_train_INR(config=None, device=None, total_steps=10000, field_name='stim
     final_mse = np.mean((gt_s - pred_s) ** 2)
     _, _, r_value, _, _ = linregress(gt_s.reshape(-1), pred_s.reshape(-1))
     final_r2 = r_value ** 2
+    if final_r2 > best_r2:
+        best_r2 = final_r2
+    r2_drop = best_r2 - final_r2
 
     print(f'  training complete: {elapsed / 60:.1f} min')
-    print(f'  final MSE: {final_mse:.6e}, R²: {final_r2:.6f}')
+    print(f'  final MSE: {final_mse:.6e}, R²: {final_r2:.6f}, best R²: {best_r2:.6f}, drop: {r2_drop:.6f}')
     if hasattr(nnr_f, 'get_omegas'):
         print(f'  final omegas: {nnr_f.get_omegas()}')
 
@@ -454,6 +460,8 @@ def data_train_INR(config=None, device=None, total_steps=10000, field_name='stim
         f.write(f'inr_type: {inr_type}\n')
         f.write(f'final_mse: {final_mse:.6e}\n')
         f.write(f'final_r2: {final_r2:.6f}\n')
+        f.write(f'best_r2: {best_r2:.6f}\n')
+        f.write(f'r2_drop: {r2_drop:.6f}\n')
         f.write(f'n_neurons: {n_neurons}\n')
         f.write(f'n_frames: {n_frames}\n')
         f.write(f'total_steps: {total_steps}\n')
