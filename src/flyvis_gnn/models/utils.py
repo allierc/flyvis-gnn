@@ -1234,16 +1234,18 @@ class LossRegularizer:
     def _update_coeffs(self):
         """Recompute coefficients based on current epoch.
 
-        L1 coefficients use exponential annealing: coeff * (1 - exp(-rate * epoch)).
-        With rate=0.5 (default), L1 ramps from 0 at epoch 0 to ~0.39x at epoch 1
+        Weight regularization (L1 and L2) uses exponential annealing:
+        coeff * (1 - exp(-rate * epoch)), controlled by regul_annealing_rate.
+        With rate=0.5 (default), ramps from 0 at epoch 0 to ~0.39x at epoch 1
         to ~0.92x at epoch 5. This allows the model to learn dynamics before
-        sparsity pressure is applied — critical for SIREN visual field training.
+        regularization pressure is applied — critical for SIREN visual field training.
         """
         tc = self.train_config
         epoch = self.epoch
+        rate = tc.regul_annealing_rate
 
-        # Exponential ramp-up annealing for L1 regularization
-        def anneal(coeff, rate):
+        # Exponential ramp-up annealing for weight regularization
+        def anneal(coeff):
             return coeff * (1 - np.exp(-rate * epoch)) if rate > 0 else coeff
 
         # Two-phase training support (like ParticleGraph data_train_synaptic2)
@@ -1253,12 +1255,14 @@ class LossRegularizer:
         if n_epochs_init > 0 and epoch < n_epochs_init:
             self._coeffs['W_L1'] = first_coeff_L1
         else:
-            self._coeffs['W_L1'] = anneal(tc.coeff_W_L1, tc.coeff_W_L1_rate)
-        self._coeffs['g_phi_weight_L1'] = anneal(tc.coeff_g_phi_weight_L1, tc.coeff_g_phi_weight_L1_rate)
-        self._coeffs['f_theta_weight_L1'] = anneal(tc.coeff_f_theta_weight_L1, tc.coeff_f_theta_weight_L1_rate)
+            self._coeffs['W_L1'] = anneal(tc.coeff_W_L1)
+        self._coeffs['W_L2'] = anneal(tc.coeff_W_L2)
+        self._coeffs['g_phi_weight_L1'] = anneal(tc.coeff_g_phi_weight_L1)
+        self._coeffs['g_phi_weight_L2'] = anneal(tc.coeff_g_phi_weight_L2)
+        self._coeffs['f_theta_weight_L1'] = anneal(tc.coeff_f_theta_weight_L1)
+        self._coeffs['f_theta_weight_L2'] = anneal(tc.coeff_f_theta_weight_L2)
 
-        # Non-annealed coefficients (same for both)
-        self._coeffs['W_L2'] = tc.coeff_W_L2
+        # Non-annealed coefficients
         self._coeffs['W_sign'] = tc.coeff_W_sign
         # Two-phase: g_phi_diff is active in phase 1, disabled in phase 2
         if n_epochs_init > 0 and epoch >= n_epochs_init:
@@ -1266,8 +1270,6 @@ class LossRegularizer:
         else:
             self._coeffs['g_phi_diff'] = tc.coeff_g_phi_diff
         self._coeffs['g_phi_norm'] = tc.coeff_g_phi_norm
-        self._coeffs['g_phi_weight_L2'] = tc.coeff_g_phi_weight_L2
-        self._coeffs['f_theta_weight_L2'] = tc.coeff_f_theta_weight_L2
         self._coeffs['f_theta_zero'] = tc.coeff_f_theta_zero
         self._coeffs['f_theta_diff'] = tc.coeff_f_theta_diff
         self._coeffs['f_theta_msg_diff'] = tc.coeff_f_theta_msg_diff
