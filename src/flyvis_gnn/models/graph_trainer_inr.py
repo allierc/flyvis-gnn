@@ -430,6 +430,7 @@ def data_train_INR(config=None, device=None, total_steps=10000, field_name='stim
             fig_cmp.suptitle(f'{field_name}  step {step}  R²={last_r2:.4f}', fontsize=11)
             fig_cmp.tight_layout()
             cmp_path = f"{output_folder}/{inr_type}_comparison_{step}.png"
+            os.makedirs(os.path.dirname(cmp_path), exist_ok=True)
             fig_cmp.savefig(cmp_path, dpi=150)
             plt.close(fig_cmp)
 
