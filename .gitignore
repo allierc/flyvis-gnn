@@ -47,6 +47,9 @@ build/
 *.swp
 *.swo
 
+# Code review
+flyvis_gnn_code_review.pdf
+
 # OS
 .DS_Store
 Thumbs.db

@@ -24,11 +24,11 @@ This exploration follows a strict **hypothesize → test → validate/falsify** 
 
 **Evidence hierarchy:**
 
-| Level            | Criterion                                     | Action                 |
-| ---------------- | --------------------------------------------- | ---------------------- |
-| **Established**  | Consistent across 3+ iterations AND 4/4 seeds | Add to Principles      |
+| Level            | Criterion                                       | Action                 |
+| ---------------- | ----------------------------------------------- | ---------------------- |
+| **Established**  | Consistent across 3+ iterations AND 4/4 seeds   | Add to Principles      |
 | **Tentative**    | Observed 1-2 times or inconsistent across seeds | Add to Open Questions  |
-| **Contradicted** | Conflicting evidence across iterations/seeds  | Note in Open Questions |
+| **Contradicted** | Conflicting evidence across iterations/seeds    | Note in Open Questions |
 
 ## CRITICAL: Data is RE-GENERATED per slot
 
@@ -36,6 +36,7 @@ Each slot re-generates its data with a **different random seed**.
 Both `simulation.seed` and `training.seed` are **forced by the pipeline** — DO NOT modify them in config files.
 
 Seed formula (set automatically by GNN_LLM.py):
+
 - `simulation.seed = iteration * 1000 + slot` (controls data generation)
 - `training.seed = iteration * 1000 + slot + 500` (controls weight init & training randomness)
 
@@ -82,17 +83,17 @@ Example: embedding_dim=4 → input_size=5, input_size_update=7. Shape mismatch c
 
 The training loss includes:
 
-| Config parameter               | Role                                                                                | Default |
-| ------------------------------ | ----------------------------------------------------------------------------------- | ------- |
-| `coeff_g_phi_diff`             | Monotonicity penalty on g_phi: ReLU(-dg_phi/dv) → enforces increasing edge messages | 750     |
-| `coeff_g_phi_norm`             | Normalization penalty on g_phi at saturation voltage                                | 0.9     |
-| `coeff_g_phi_weight_L1`        | L1 penalty on g_phi MLP weights                                                     | 0.28    |
-| `coeff_g_phi_weight_L2`        | L2 penalty on g_phi MLP weights                                                     | 0       |
-| `coeff_f_theta_weight_L1`      | L1 penalty on f_theta MLP weights                                                   | 0.05    |
-| `coeff_f_theta_weight_L2`      | L2 penalty on f_theta MLP weights                                                   | 0.001   |
-| `coeff_f_theta_msg_diff`       | Monotonicity of f_theta w.r.t. message input                                        | 0       |
-| `coeff_W_L1`                   | L1 sparsity penalty on connectivity W                                               | 7.5e-05 |
-| `coeff_W_L2`                   | L2 penalty on W                                                                     | 1.5e-06 |
+| Config parameter          | Role                                                                                | Default |
+| ------------------------- | ----------------------------------------------------------------------------------- | ------- |
+| `coeff_g_phi_diff`        | Monotonicity penalty on g_phi: ReLU(-dg_phi/dv) → enforces increasing edge messages | 750     |
+| `coeff_g_phi_norm`        | Normalization penalty on g_phi at saturation voltage                                | 0.9     |
+| `coeff_g_phi_weight_L1`   | L1 penalty on g_phi MLP weights                                                     | 0.28    |
+| `coeff_g_phi_weight_L2`   | L2 penalty on g_phi MLP weights                                                     | 0       |
+| `coeff_f_theta_weight_L1` | L1 penalty on f_theta MLP weights                                                   | 0.05    |
+| `coeff_f_theta_weight_L2` | L2 penalty on f_theta MLP weights                                                   | 0.001   |
+| `coeff_f_theta_msg_diff`  | Monotonicity of f_theta w.r.t. message input                                        | 0       |
+| `coeff_W_L1`              | L1 sparsity penalty on connectivity W                                               | 7.5e-05 |
+| `coeff_W_L2`              | L2 penalty on W                                                                     | 1.5e-06 |
 
 ## Training Parameters (explorable)
 
@@ -140,18 +141,18 @@ A config is considered **validated** only when it achieves connectivity_R2 > 0.9
 
 Since the goal is robustness testing, all 4 slots should run the **same config** (different seeds are applied automatically).
 
-| Slot | Role               | Description                                                 |
-| ---- | ------------------ | ----------------------------------------------------------- |
-| 0    | **seed test**      | Same config, seed varies automatically                      |
-| 1    | **seed test**      | Same config, seed varies automatically                      |
-| 2    | **seed test**      | Same config, seed varies automatically                      |
-| 3    | **seed test**      | Same config, seed varies automatically                      |
+| Slot | Role          | Description                            |
+| ---- | ------------- | -------------------------------------- |
+| 0    | **seed test** | Same config, seed varies automatically |
+| 1    | **seed test** | Same config, seed varies automatically |
+| 2    | **seed test** | Same config, seed varies automatically |
+| 3    | **seed test** | Same config, seed varies automatically |
 
 When a config is validated as robust (all 4 seeds > 0.9), you may switch to exploring a variation:
 
-| Slot | Role               | Description                                                 |
-| ---- | ------------------ | ----------------------------------------------------------- |
-| 0-3  | **exploit**        | All 4 slots test the next candidate config across seeds     |
+| Slot | Role        | Description                                             |
+| ---- | ----------- | ------------------------------------------------------- |
+| 0-3  | **exploit** | All 4 slots test the next candidate config across seeds |
 
 ### Config Files
 
@@ -284,7 +285,7 @@ If `user_input.md` has content in "Pending Instructions":
 
 | Block | Focus                  | Parameters                                                               |
 | ----- | ---------------------- | ------------------------------------------------------------------------ |
-| 1     | Baseline robustness    | Default config across 4 seeds — establish baseline                      |
+| 1     | Baseline robustness    | Default config across 4 seeds — establish baseline                       |
 | 2     | Learning rates         | lr_W, lr, lr_emb                                                         |
 | 3     | g_phi regularization   | coeff_g_phi_diff, coeff_g_phi_norm, coeff_g_phi_weight_L1                |
 | 4     | f_theta regularization | coeff_f_theta_weight_L1, coeff_f_theta_weight_L2, coeff_f_theta_msg_diff |
@@ -348,6 +349,7 @@ Brief paragraph for a scientific paper summarizing the current state of this exp
 
 - **GNN optimization**: [What has been learned about training GNN to recover Drosophila visual system connectivity from noisy DAVIS data. Best connectivity_R2 achieved, which regularization/learning rate regimes work, key challenges.]
 - **LLM-driven exploration**: [How the LLM-in-the-loop approach performed as an automated hyperparameter search strategy. Number of iterations run, how hypothesis-driven exploration compared to random search, whether the LLM discovered non-obvious parameter interactions.]
+- **Future works**: [what would a google deepmind senior ML suggest as structural change in the code to break ceiling with good rationale, this can include modified GNN class, innovative training scheme, use recent innovations. Cite references of scientific publications, blog, youtube channel. Limit to 10 suggestions.]
 
 ## Knowledge Base (accumulated across all blocks)
 
@@ -362,6 +364,7 @@ Brief paragraph for a scientific paper summarizing the current state of this exp
 [Confirmed patterns — require 3+ supporting iterations AND cross-seed consistency]
 
 Examples of good principles:
+
 - ✓ "coeff_g_phi_diff ≥ 500 is necessary for robust convergence (3/3 iterations, all seeds > 0.9)"
 - ✓ "lr_W > 1e-3 causes seed-dependent failures (CV > 20% in 2 iterations)"
 - ✗ "lr_W=6e-4 worked in iteration 3" (too specific, not a principle)
@@ -416,6 +419,7 @@ Iterations: M to M+n_iter_block
 ### What to Add to Established Principles
 
 A principle must satisfy ALL of:
+
 1. Observed consistently across **3+ iterations**
 2. Consistent across **all 4 seeds** (not just mean, but low variance)
 3. States a **causal relationship** (not just a correlation)
@@ -430,6 +434,7 @@ A principle must satisfy ALL of:
 ### What to Add to Falsified Hypotheses
 
 When a hypothesis is falsified:
+
 1. State the original hypothesis
 2. State the contradicting evidence (iteration number, metrics)
 3. State what was learned from the falsification

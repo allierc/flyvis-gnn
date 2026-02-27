@@ -39,6 +39,7 @@ from flyvis_gnn.utils import (
     graphs_data_path,
     log_path,
     config_path,
+    migrate_state_dict,
 )
 
 # Optional imports
@@ -288,7 +289,7 @@ def plot_synaptic_flyvis(config, epoch_list, log_dir, logger, cc, style, extende
             net = f'{log_dir}/models/best_model_with_{tc.n_runs - 1}_graphs_{epoch}.pt'
             model = FlyVisGNN(aggr_type=model_config.aggr_type, config=config, device=device)
             state_dict = torch.load(net, map_location=device)
-            state_dict['model_state_dict'] = {k.replace('lin_edge.', 'g_phi.').replace('lin_phi.', 'f_theta.'): v for k, v in state_dict['model_state_dict'].items()}
+            migrate_state_dict(state_dict)
             model.load_state_dict(state_dict['model_state_dict'])
             model.edges = edges
 

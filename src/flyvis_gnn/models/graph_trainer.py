@@ -43,6 +43,7 @@ from flyvis_gnn.utils import (
     get_datavis_root_dir,
     graphs_data_path,
     log_path,
+    migrate_state_dict,
 )
 from flyvis_gnn.figure_style import default_style, dark_style
 from flyvis_gnn.plot import plot_spatial_activity_grid, INDEX_TO_NAME
@@ -222,11 +223,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         net = f"{log_dir}/models/best_model_with_{tc.n_runs - 1}_graphs_{best_model}.pt"
         print(f'loading state_dict from {net} ...')
         state_dict = torch.load(net, map_location=device)
-        # Migrate old checkpoint keys: lin_edge→g_phi, lin_phi→f_theta
-        state_dict['model_state_dict'] = {
-            k.replace('lin_edge.', 'g_phi.').replace('lin_phi.', 'f_theta.'): v
-            for k, v in state_dict['model_state_dict'].items()
-        }
+        migrate_state_dict(state_dict)
         model.load_state_dict(state_dict['model_state_dict'])
         start_epoch = int(best_model.split('_')[0])
         print(f'state_dict loaded: best_model={best_model}, start_epoch={start_epoch}')
@@ -234,11 +231,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         net = tc.pretrained_model
         print(f'loading pretrained state_dict from {net} ...')
         state_dict = torch.load(net, map_location=device)
-        # Migrate old checkpoint keys: lin_edge→g_phi, lin_phi→f_theta
-        state_dict['model_state_dict'] = {
-            k.replace('lin_edge.', 'g_phi.').replace('lin_phi.', 'f_theta.'): v
-            for k, v in state_dict['model_state_dict'].items()
-        }
+        migrate_state_dict(state_dict)
         model.load_state_dict(state_dict['model_state_dict'])
         print('pretrained state_dict loaded')
         logger.info(f'pretrained: {net}')
@@ -1626,11 +1619,7 @@ def data_test_flyvis(config, best_model=None, device=None, log_file=None, test_c
     netname = f"{log_dir}/models/best_model_with_{tc.n_runs - 1}_graphs_{best_model}.pt"
     print(f'loading {netname} ...')
     state_dict = torch.load(netname, map_location=device)
-    # Migrate old checkpoint keys: lin_edge→g_phi, lin_phi→f_theta
-    state_dict['model_state_dict'] = {
-        k.replace('lin_edge.', 'g_phi.').replace('lin_phi.', 'f_theta.'): v
-        for k, v in state_dict['model_state_dict'].items()
-    }
+    migrate_state_dict(state_dict)
     model.load_state_dict(state_dict['model_state_dict'])
 
     # Load INR model if visual field is learned
@@ -2109,11 +2098,7 @@ def data_test_flyvis_special(
     netname = f"{log_dir}/models/best_model_with_0_graphs_{best_model}.pt"
     print(f'load {netname} ...')
     state_dict = torch.load(netname, map_location=device)
-    # Migrate old checkpoint keys: lin_edge→g_phi, lin_phi→f_theta
-    state_dict['model_state_dict'] = {
-        k.replace('lin_edge.', 'g_phi.').replace('lin_phi.', 'f_theta.'): v
-        for k, v in state_dict['model_state_dict'].items()
-    }
+    migrate_state_dict(state_dict)
     model.load_state_dict(state_dict['model_state_dict'])
 
     x_coords, y_coords, u_coords, v_coords = get_photoreceptor_positions_from_net(net)

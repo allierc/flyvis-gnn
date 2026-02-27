@@ -199,13 +199,24 @@ def run_training_local(config, device):
     data_train(config=config, erase=False, best_model=None, style='color', device=device)
 
 
+def _local_to_cluster(path, root_dir):
+    """Map a local workspace path to the cluster path (same logic as GNN_LLM.py)."""
+    cluster_home = "/groups/saalfeld/home/allierc"
+    cluster_data_dir = f"{cluster_home}/GraphData"
+    cluster_root_dir = f"{cluster_home}/GraphCluster/flyvis-gnn"
+    for sub in ('config', 'log', 'graphs_data'):
+        local_sub = os.path.join(root_dir, sub)
+        if path.startswith(local_sub):
+            return os.path.join(cluster_data_dir, sub) + path[len(local_sub):]
+    return path.replace(root_dir, cluster_root_dir)
+
+
 def run_training_cluster(config_name, root_dir, log_dir):
     """Submit training to cluster via SSH + bsub (pattern from GNN_LLM.py)."""
     cluster_home = "/groups/saalfeld/home/allierc"
-    cluster_root_dir = f"{cluster_home}/Graph/flyvis-gnn"
+    cluster_root_dir = f"{cluster_home}/GraphCluster/flyvis-gnn"
 
     config_file, pre_folder = add_pre_folder(config_name)
-    cluster_config_path = f"{cluster_root_dir}/config/{config_file}.yaml"
 
     # Build training command
     cluster_train_cmd = (
@@ -220,7 +231,7 @@ def run_training_cluster(config_name, root_dir, log_dir):
         f.write(f"conda run -n neural-graph {cluster_train_cmd}\n")
     os.chmod(cluster_script_path, 0o755)
 
-    cluster_script = cluster_script_path.replace(root_dir, cluster_root_dir)
+    cluster_script = _local_to_cluster(cluster_script_path, root_dir)
 
     ssh_cmd = (
         f"ssh allierc@login1 \"cd {cluster_root_dir} && "
@@ -273,7 +284,7 @@ def run_test_plot(config, config_file, device):
 def run_test_plot_cluster(config_name, root_dir, log_dir):
     """Submit test_plot to cluster via SSH + bsub."""
     cluster_home = "/groups/saalfeld/home/allierc"
-    cluster_root_dir = f"{cluster_home}/Graph/flyvis-gnn"
+    cluster_root_dir = f"{cluster_home}/GraphCluster/flyvis-gnn"
 
     cluster_cmd = f"python GNN_Main.py -o test_plot {config_name}"
 
@@ -284,7 +295,7 @@ def run_test_plot_cluster(config_name, root_dir, log_dir):
         f.write(f"conda run -n neural-graph {cluster_cmd}\n")
     os.chmod(cluster_script_path, 0o755)
 
-    cluster_script = cluster_script_path.replace(root_dir, cluster_root_dir)
+    cluster_script = _local_to_cluster(cluster_script_path, root_dir)
 
     ssh_cmd = (
         f"ssh allierc@login1 \"cd {cluster_root_dir} && "
@@ -589,5 +600,5 @@ def main():
 if __name__ == '__main__':
     main()
 
-# python GNN_Test.py --config flyvis_noise_005
+# python GNN_Test.py --config flyvis_noise_005 --cluster
 # bsub -n 8 -gpu "num=1" -q gpu_a100 -W 6000 -Is "python GNN_Test.py --config flyvis_noise_005 --cluster"
