@@ -268,6 +268,9 @@ class ClaudeConfig(BaseModel):
     generate_data: bool = False  # generate new simulation data before each training iteration
     training_time_target_min: int = 60  # target training time per iteration in minutes (for LLM guidance)
     total_steps: int = 20000  # INR training iterations (used by INR_LLM.py)
+    interaction_code: bool = False  # enable Phase A interactive code sessions at block boundaries
+    case_study: str = ""  # case study identifier (e.g. "measurement_noise")
+    case_study_brief: str = ""  # description of the case study for LLM code briefs
 
 
 class GraphModelConfig(BaseModel):
