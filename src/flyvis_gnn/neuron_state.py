@@ -19,7 +19,7 @@ import torch
 
 # Field classification — used by from_zarr_v3 to pick dtype/shape.
 STATIC_FIELDS = {'index', 'pos', 'group_type', 'neuron_type'}
-DYNAMIC_FIELDS = {'voltage', 'stimulus', 'calcium', 'fluorescence'}
+DYNAMIC_FIELDS = {'voltage', 'stimulus', 'calcium', 'fluorescence', 'noise'}
 ALL_FIELDS = STATIC_FIELDS | DYNAMIC_FIELDS
 
 
@@ -52,6 +52,7 @@ class NeuronState:
     stimulus: torch.Tensor | None = None     # (N,) float32 — visual input / excitation
     calcium: torch.Tensor | None = None      # (N,) float32 — calcium concentration
     fluorescence: torch.Tensor | None = None # (N,) float32 — fluorescence readout
+    noise: torch.Tensor | None = None       # (N,) float32 — measurement noise
 
     @property
     def n_neurons(self) -> int:
@@ -181,6 +182,7 @@ class NeuronTimeSeries:
     stimulus: torch.Tensor | None = None     # (T, N)
     calcium: torch.Tensor | None = None      # (T, N)
     fluorescence: torch.Tensor | None = None # (T, N)
+    noise: torch.Tensor | None = None        # (T, N) — measurement noise
 
     @property
     def n_frames(self) -> int:

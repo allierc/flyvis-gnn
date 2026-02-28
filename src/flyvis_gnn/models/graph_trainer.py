@@ -117,7 +117,8 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     x_ts, y_ts, type_list = load_flyvis_data(
         config.dataset, split='train', fields=load_fields, device=device,
         training_selected_neurons=tc.training_selected_neurons,
-        selected_neuron_ids=tc.selected_neuron_ids if tc.training_selected_neurons else None
+        selected_neuron_ids=tc.selected_neuron_ids if tc.training_selected_neurons else None,
+        measurement_noise_level=sim.measurement_noise_level,
     )
 
     # get n_neurons and n_frames from data, not config file
@@ -315,6 +316,10 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
                     k = k - k % tc.time_step
 
                 x = x_ts.frame(k)
+
+                # Add measurement noise to observed voltage
+                if x.noise is not None and sim.measurement_noise_level > 0:
+                    x.voltage = x.voltage + x.noise
 
                 if tc.time_window > 0:
                     x_temporal = x_ts.voltage[k - tc.time_window + 1: k + 1].T

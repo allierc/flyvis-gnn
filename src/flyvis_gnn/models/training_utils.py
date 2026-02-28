@@ -31,11 +31,14 @@ def determine_load_fields(config):
         fields.append('pos')
     if sim.calcium_type != 'none':
         fields.append('calcium')
+    if sim.measurement_noise_level > 0:
+        fields.append('noise')
     return fields
 
 
 def load_flyvis_data(dataset_name, split='train', fields=None, device=None,
-                     training_selected_neurons=False, selected_neuron_ids=None):
+                     training_selected_neurons=False, selected_neuron_ids=None,
+                     measurement_noise_level=0.0):
     """Load NeuronTimeSeries + derivative targets for a given split.
 
     Handles backwards compatibility: falls back to x_list_0 / y_list_0
@@ -48,6 +51,7 @@ def load_flyvis_data(dataset_name, split='train', fields=None, device=None,
         device: torch device to move data to
         training_selected_neurons: if True, subset neurons
         selected_neuron_ids: list of neuron indices to keep
+        measurement_noise_level: if > 0, load noisy_y_list instead of y_list
 
     Returns:
         x_ts: NeuronTimeSeries on device
@@ -57,9 +61,12 @@ def load_flyvis_data(dataset_name, split='train', fields=None, device=None,
     split_name = f'x_list_{split}'
     path = graphs_data_path(dataset_name, split_name)
 
+    # Choose derivative target: noisy or clean
+    y_prefix = 'noisy_y_list' if measurement_noise_level > 0 else 'y_list'
+
     if os.path.exists(path):
         x_ts = load_simulation_data(path, fields=fields).to(device)
-        y_ts = load_raw_array(graphs_data_path(dataset_name, f'y_list_{split}'))
+        y_ts = load_raw_array(graphs_data_path(dataset_name, f'{y_prefix}_{split}'))
     else:
         print(f"warning: {split_name} not found, falling back to x_list_0")
         x_ts = load_simulation_data(

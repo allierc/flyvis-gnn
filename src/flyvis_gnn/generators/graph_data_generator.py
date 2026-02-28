@@ -349,6 +349,13 @@ def _run_ode_generation(stimulus_sequences, net, pde, x, edge_index, initial_sta
 
                     y = pde(x, edge_index, has_field=False)
                     prev_calcium = x.calcium.clone()
+
+                    # Generate measurement noise for this timestep
+                    if sim.measurement_noise_level > 0:
+                        x.noise = torch.randn(n_neurons, dtype=torch.float32, device=device) * sim.measurement_noise_level
+                    else:
+                        x.noise = torch.zeros(n_neurons, dtype=torch.float32, device=device)
+
                     x_writer.append_state(x)
 
                     dv = y.squeeze()
@@ -396,6 +403,40 @@ def _run_ode_generation(stimulus_sequences, net, pde, x, edge_index, initial_sta
                 break
 
     return it, id_fig
+
+
+def _compute_noisy_derivatives(config, sim, n_neurons, split='train'):
+    """Compute noisy derivatives from saved clean derivatives and noise.
+
+    noisy_y[t] = y_clean[t] + (noise[t+1] - noise[t]) / dt
+    Last frame uses clean derivative (no future noise available).
+    """
+    from flyvis_gnn.zarr_io import load_simulation_data, load_raw_array, ZarrArrayWriter
+    from flyvis_gnn.utils import graphs_data_path
+
+    y_clean = load_raw_array(graphs_data_path(config.dataset, f"y_list_{split}"))  # (T, N, 1)
+    noise_ts = load_simulation_data(
+        graphs_data_path(config.dataset, f"x_list_{split}"), fields=['noise']
+    )
+    noise = noise_ts.noise.numpy()  # (T, N)
+
+    # Compute noise derivative: (noise[t+1] - noise[t]) / dt
+    noise_diff = np.zeros_like(noise)
+    noise_diff[:-1] = (noise[1:] - noise[:-1]) / sim.delta_t  # last frame: 0
+
+    noisy_y = y_clean + noise_diff[:, :, np.newaxis]  # broadcast to (T, N, 1)
+
+    noisy_y_writer = ZarrArrayWriter(
+        path=graphs_data_path(config.dataset, f"noisy_y_list_{split}"),
+        n_neurons=n_neurons,
+        n_features=1,
+        time_chunks=2000,
+    )
+    for t in range(noisy_y.shape[0]):
+        noisy_y_writer.append(noisy_y[t])
+    noisy_y_writer.finalize()
+    print(f"computed noisy derivatives for {split}: {noisy_y.shape[0]} frames "
+          f"(measurement_noise_level={sim.measurement_noise_level})")
 
 
 def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="color", erase=False, step=5, device=None,
@@ -622,6 +663,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
         neuron_type=torch.tensor(node_types_int, dtype=torch.long, device=device),
         calcium=_init_calcium,
         fluorescence=sim.calcium_alpha * _init_calcium + sim.calcium_beta,
+        noise=torch.zeros(n_neurons, dtype=torch.float32, device=device),
     )
 
     # --- Subdirectory-level train/test split ---
@@ -719,6 +761,10 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     y_writer.finalize()
     print(f"generated {n_frames_train} TRAIN frames (saved as .zarr)")
 
+    # --- Compute noisy derivatives for TRAIN split ---
+    if sim.measurement_noise_level > 0:
+        _compute_noisy_derivatives(config, sim, n_neurons, split='train')
+
     # --- Generate TEST split ---
     # Reset neural state to avoid train→test leakage
     x.voltage[:] = initial_state
@@ -757,6 +803,10 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     n_frames_test = x_writer.finalize()
     y_writer.finalize()
     print(f"generated {n_frames_test} TEST frames (saved as .zarr)")
+
+    # --- Compute noisy derivatives for TEST split ---
+    if sim.measurement_noise_level > 0:
+        _compute_noisy_derivatives(config, sim, n_neurons, split='test')
 
     # restore gradient computation now (before any early-return paths)
     torch.set_grad_enabled(True)
@@ -809,6 +859,21 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
         style=fig_style,
     )
 
+    # Plot noisy activity traces (clean vs noisy overlay)
+    if sim.measurement_noise_level > 0:
+        print('plot noisy activity traces ...')
+        noise_data = x_ts.noise.numpy() if x_ts.noise is not None else None
+        if noise_data is not None:
+            noisy_activity = activity_full + noise_data  # (T, N)
+            plot_activity_traces(
+                activity=noisy_activity.T,
+                output_path=graphs_data_path(config.dataset, 'activity_traces_noisy.png'),
+                n_traces=100,
+                max_frames=10000,
+                n_input_neurons=sim.n_input_neurons,
+                style=fig_style,
+            )
+
     # SVD analysis (4-panel plot)
     print('svd analysis ...')
     from flyvis_gnn.models.utils import analyze_data_svd
@@ -832,6 +897,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
         log_f.write(f'test_videos: {test_video_names}\n')
         log_f.write(f'visual_input_type: {sim.visual_input_type}\n')
         log_f.write(f'noise_model_level: {sim.noise_model_level}\n')
+        log_f.write(f'measurement_noise_level: {sim.measurement_noise_level}\n')
         log_f.write(f'model_id: {sim.model_id}\n')
         log_f.write(f'ensemble_id: {sim.ensemble_id}\n')
         log_f.write(f'\n')

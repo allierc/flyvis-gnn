@@ -251,15 +251,17 @@ def get_modified_code_files(root_dir, code_files):
     return modified
 
 
-def run_claude_cli(prompt, root_dir, max_turns=500):
+def run_claude_cli(prompt, root_dir, max_turns=500, allowed_tools=None):
     """Run Claude CLI with real-time output streaming. Returns output text."""
+    if allowed_tools is None:
+        allowed_tools = ['Read', 'Edit', 'Write']
     claude_cmd = [
         'claude',
         '-p', prompt,
         '--output-format', 'text',
         '--max-turns', str(max_turns),
         '--allowedTools',
-        'Read', 'Edit', 'Write'
+        *allowed_tools,
     ]
 
     output_lines = []
@@ -278,6 +280,198 @@ def run_claude_cli(prompt, root_dir, max_turns=500):
 
     process.wait()
     return ''.join(output_lines)
+
+
+# ---------------------------------------------------------------------------
+# Interactive code session (Phase A)
+# ---------------------------------------------------------------------------
+
+def generate_code_brief(memory_path, block_number, case_study, case_study_brief,
+                        root_dir, exploration_dir):
+    """LLM generates a structured code brief from accumulated knowledge."""
+    briefs_dir = os.path.join(exploration_dir, 'briefs')
+    os.makedirs(briefs_dir, exist_ok=True)
+    brief_path = os.path.join(briefs_dir, f'block_{block_number:03d}_brief.md')
+
+    prompt = f"""Generate a structured code modification brief for block {block_number}.
+
+Read the working memory: {memory_path}
+
+Case study: {case_study}
+Case study description: {case_study_brief}
+
+Write a brief to {brief_path} with these sections:
+## Code Brief — Block {block_number}
+### Context
+(Summarize what was learned from previous blocks, current best results)
+### Hypothesis
+(What structural code change do you propose, and why)
+### Required Changes
+(List specific files and functions to modify, with rationale)
+### Constraints
+- Existing configs must still work (backward compatibility)
+- Do not break the training/test pipeline
+### Success Criteria
+(How to verify the code change works)
+
+IMPORTANT: Only write the brief file. Do NOT modify any source code."""
+
+    print(f"\n\033[94m{'='*60}\033[0m")
+    print(f"\033[94mGenerating code brief for block {block_number}...\033[0m")
+    print(f"\033[94m{'='*60}\033[0m")
+
+    run_claude_cli(prompt, root_dir, max_turns=30,
+                   allowed_tools=['Read', 'Write', 'Glob', 'Grep'])
+
+    return brief_path
+
+
+def phase_a_interactive_code(brief_path, memory_path, analysis_path, root_dir,
+                             case_study, cluster_enabled, exploration_dir, block_number):
+    """Interactive code modification session within the running script.
+
+    The script stays running. Human interacts via terminal input().
+    LLM is called via claude CLI behind the scenes.
+    Returns True if code was changed, False if skipped.
+    """
+    code_tools = ['Read', 'Edit', 'Write', 'Glob', 'Grep']
+
+    # Step 1: LLM generates initial proposal
+    proposal_prompt = f"""CODE PROPOSAL SESSION for block {block_number}.
+
+Read the brief: {brief_path}
+Read working memory: {memory_path}
+
+Propose specific code changes. For each file to modify:
+- Show the exact function/lines to change
+- Explain why
+- Show the proposed new code
+
+Do NOT apply changes yet. Just propose and explain."""
+
+    print(f"\n\033[94m{'='*60}\033[0m")
+    print(f"\033[94mPHASE A: Interactive Code Session — Block {block_number}\033[0m")
+    print(f"\033[94mCase study: {case_study}\033[0m")
+    print(f"\033[94m{'='*60}\033[0m\n")
+
+    proposal = run_claude_cli(proposal_prompt, root_dir, max_turns=50,
+                              allowed_tools=code_tools)
+
+    # Step 2: Conversation loop — human provides feedback
+    conversation_history = [proposal]
+
+    while True:
+        print(f"\n\033[93m{'-'*60}\033[0m")
+        print("\033[93mOptions:\033[0m")
+        print("  Type feedback to revise the proposal")
+        print("  'approve' or 'apply' — apply the proposed code changes")
+        print("  'skip' — skip code changes, proceed to hyperparameter exploration")
+        print(f"\033[93m{'-'*60}\033[0m")
+
+        human_input = input("\033[96m> \033[0m").strip()
+
+        if not human_input:
+            continue
+
+        if human_input.lower() == 'skip':
+            print("\033[93mSkipping code changes.\033[0m")
+            return False
+
+        if human_input.lower() in ('approve', 'apply'):
+            # Step 3: LLM applies the approved changes
+            apply_prompt = f"""Apply the code changes from the approved proposal.
+
+Brief: {brief_path}
+Working memory: {memory_path}
+
+The proposal was approved by the human. Now edit the actual source files.
+Apply the changes we discussed. After editing, list every file you changed.
+
+IMPORTANT: Do NOT change config YAML files — only source code (.py files)."""
+
+            print(f"\n\033[93mApplying code changes...\033[0m")
+            result = run_claude_cli(apply_prompt, root_dir, max_turns=50,
+                                    allowed_tools=code_tools)
+
+            # Step 4: Validation sub-loop
+            while True:
+                print(f"\n\033[93m{'-'*60}\033[0m")
+                print("\033[93mChanges applied. Options:\033[0m")
+                print("  'diff' — show git diff")
+                print("  'accept' — accept changes and proceed to Phase B")
+                print("  Type feedback for additional modifications")
+                print(f"\033[93m{'-'*60}\033[0m")
+
+                val_input = input("\033[96m> \033[0m").strip()
+
+                if not val_input:
+                    continue
+
+                if val_input.lower() == 'accept':
+                    # Record the code changes
+                    _record_code_changes(root_dir, analysis_path, block_number,
+                                         exploration_dir)
+                    return True
+
+                elif val_input.lower() == 'diff':
+                    subprocess.run(['git', 'diff', '--stat'], cwd=root_dir)
+                    subprocess.run(['git', 'diff'], cwd=root_dir)
+
+                else:
+                    # More feedback — another LLM round
+                    fix_prompt = f"""Human feedback after reviewing applied changes:
+{val_input}
+
+Make the requested modifications to the source files."""
+                    print(f"\n\033[93mApplying modifications...\033[0m")
+                    run_claude_cli(fix_prompt, root_dir, max_turns=30,
+                                   allowed_tools=code_tools)
+
+        else:
+            # Human gave feedback — revise proposal
+            feedback_prompt = f"""Human feedback on your code proposal:
+{human_input}
+
+Revise your proposal accordingly. Show the updated changes.
+Do NOT apply changes yet — just show the revised proposal."""
+
+            print(f"\n\033[93mRevising proposal...\033[0m")
+            response = run_claude_cli(feedback_prompt, root_dir, max_turns=30,
+                                      allowed_tools=code_tools)
+            conversation_history.append(response)
+
+
+def _record_code_changes(root_dir, analysis_path, block_number, exploration_dir):
+    """Record git diff of code changes in the analysis log."""
+    try:
+        diff_result = subprocess.run(
+            ['git', 'diff', '--stat', '--', '.', ':!config/'],
+            cwd=root_dir, capture_output=True, text=True, timeout=10
+        )
+        diff_stat = diff_result.stdout.strip()
+
+        full_diff = subprocess.run(
+            ['git', 'diff', '--', '.', ':!config/'],
+            cwd=root_dir, capture_output=True, text=True, timeout=10
+        )
+
+        if diff_stat:
+            # Save diff to exploration dir
+            diff_path = os.path.join(exploration_dir, 'code_diffs',
+                                     f'block_{block_number:03d}_code.diff')
+            os.makedirs(os.path.dirname(diff_path), exist_ok=True)
+            with open(diff_path, 'w') as f:
+                f.write(full_diff.stdout)
+            print(f"\033[92mCode diff saved: {diff_path}\033[0m")
+
+            # Append summary to analysis log
+            if os.path.exists(analysis_path):
+                with open(analysis_path, 'a') as f:
+                    f.write(f"\n## Block {block_number}: Code Changes (Phase A)\n")
+                    f.write(f"```\n{diff_stat}\n```\n\n")
+
+    except Exception as e:
+        print(f"\033[91mWarning: could not record code changes: {e}\033[0m")
 
 
 # ---------------------------------------------------------------------------
@@ -375,8 +569,14 @@ if __name__ == "__main__":
     n_iter_block = claude_n_iter_block
     cluster_enabled = args.cluster
 
+    # Interactive code session settings
+    interaction_code = claude_cfg.get('interaction_code', False)
+    case_study = claude_cfg.get('case_study', '')
+    case_study_brief = claude_cfg.get('case_study_brief', '')
+
     mode = "cluster" if cluster_enabled else "local (sequential)"
-    print(f"\033[94mMode: {mode}, node: gpu_{claude_node_name}, n_parallel: {N_PARALLEL}, generate_data: {generate_data}, training_time_target_min: {training_time_target_min}\033[0m")
+    ic_str = f", interaction_code: {case_study}" if interaction_code else ""
+    print(f"\033[94mMode: {mode}, node: gpu_{claude_node_name}, n_parallel: {N_PARALLEL}, generate_data: {generate_data}, training_time_target_min: {training_time_target_min}{ic_str}\033[0m")
 
     # Slot config paths and analysis log paths
     config_paths = {}
@@ -584,10 +784,31 @@ Write the planned mutations to the working memory file."""
         is_block_end = any((it - 1) % n_iter_block + 1 == n_iter_block for it in iterations)
 
         # Block boundary: erase UCB at start of new block
+        is_block_start = (batch_first == 1) or ((batch_first - 1) % n_iter_block == 0)
         if batch_first > 1 and (batch_first - 1) % n_iter_block == 0:
             if os.path.exists(ucb_path):
                 os.remove(ucb_path)
                 print(f"\033[93mblock boundary: deleted {ucb_path}\033[0m")
+
+        # Phase A: Interactive code session at block start (if enabled)
+        if interaction_code and is_block_start:
+            brief_path = generate_code_brief(
+                memory_path, block_number, case_study, case_study_brief,
+                root_dir, exploration_dir
+            )
+            code_changed = phase_a_interactive_code(
+                brief_path, memory_path, analysis_path, root_dir,
+                case_study, cluster_enabled, exploration_dir, block_number
+            )
+            if code_changed and cluster_enabled:
+                print(f"\n\033[93mCode changes applied. Please:\033[0m")
+                print(f"\033[93m  1. git add + commit + push locally\033[0m")
+                print(f"\033[93m  2. git pull on the cluster\033[0m")
+                print(f"\033[93mThen press Enter to continue.\033[0m")
+                input("> ")
+                while not check_cluster_repo():
+                    print(f"\033[91mCluster repo not in sync — please fix and press Enter.\033[0m")
+                    input("> ")
 
         print(f"\n\n\033[94m{'='*60}\033[0m")
         print(f"\033[94mBATCH: iterations {batch_first}-{batch_last} / {n_iterations}  (block {block_number})\033[0m")

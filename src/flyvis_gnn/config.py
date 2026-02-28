@@ -245,6 +245,7 @@ class SimulationConfig(BaseModel):
     calcium_initial: float = 0.0  # initial calcium concentration
     calcium_noise_level: float = 0.0  # optional Gaussian noise added to [Ca] updates
     noise_model_level: float = 0.0  # process noise added during dynamics simulation
+    measurement_noise_level: float = 0.0  # observation noise saved separately in noise.zarr
     calcium_saturation_kd: float = 1.0  # for nonlinear saturation models
     calcium_num_compartments: int = 1
     calcium_down_sample: int = 1  # down-sample [Ca] time series by this factor
@@ -571,8 +572,6 @@ class TrainingConfig(BaseModel):
     coeff_L1: float = 0.0  # Phase 2 target L1 regularization
     coeff_diff: float = 0.0  # Monotonicity constraint on edge function
 
-    noise_level: float = 0
-    measurement_noise_level: float = 0
     loss_noise_level: float = 0.0
 
     # external input learning

@@ -118,7 +118,7 @@ class ZarrArrayWriter:
         return self._total_frames
 
 
-_DYNAMIC_FIELDS = ['voltage', 'stimulus', 'calcium', 'fluorescence']
+_DYNAMIC_FIELDS = ['voltage', 'stimulus', 'calcium', 'fluorescence', 'noise']
 _STATIC_FIELDS = ['pos', 'group_type', 'neuron_type']
 
 
@@ -237,6 +237,11 @@ class ZarrSimulationWriterV3:
         self._buffers['stimulus'].append(to_numpy(state.stimulus).astype(np.float32))
         self._buffers['calcium'].append(to_numpy(state.calcium).astype(np.float32))
         self._buffers['fluorescence'].append(to_numpy(state.fluorescence).astype(np.float32))
+        noise_val = getattr(state, 'noise', None)
+        self._buffers['noise'].append(
+            to_numpy(noise_val).astype(np.float32) if noise_val is not None
+            else np.zeros(self.n_neurons, dtype=np.float32)
+        )
 
         if len(self._buffers['voltage']) >= self.time_chunks:
             self._flush_buffer()
