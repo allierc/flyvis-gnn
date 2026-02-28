@@ -457,7 +457,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     n_frames = sim.n_frames
     n_neurons = sim.n_neurons
 
-    print(f"generating data ... {model_config.signal_model_name}  noise: {sim.noise_model_level}  seed: {sim.seed}")
+    print(f"generating data ... {model_config.signal_model_name}  dynamics_noise: {sim.noise_model_level}  measurement_noise: {sim.measurement_noise_level}  seed: {sim.seed}")
 
     run = 0
 
