@@ -514,9 +514,12 @@ def compute_all_corrected_weights(model, config, edges, x_ts, device, n_grad_fra
     was_training = model.training
     model.eval()
 
+    # Ensure edges are on the correct device
+    edges = edges.to(device)
+
     grad_list = []
     for k in frame_indices:
-        state = x_ts.frame(int(k))
+        state = x_ts.frame(int(k)).to(device)
         with torch.no_grad():
             _, in_features, _ = model(state, edges, data_id=data_id, return_all=True)
         grad_k = compute_grad_msg(model, in_features, config)
