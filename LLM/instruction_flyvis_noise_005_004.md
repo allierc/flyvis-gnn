@@ -1,20 +1,54 @@
-# FlyVis GNN Training Exploration — flyvis_noise_free
+# FlyVis GNN Training Exploration — flyvis_noise_005_004
 
 ## Goal
 
-Test **robustness of GNN training** for the **Drosophila visual system** with no noise (noise_model_level=0.0, DAVIS input).
-The goal is to find a config that achieves **connectivity_R2 > 0.9 across different random seeds**, demonstrating that the result is not data-dependent.
+Test **robustness of GNN training** for the **Drosophila visual system** under **dual noise**: dynamics noise (0.05) + measurement noise (0.04) with DAVIS input.
+The goal is to find a config that achieves **connectivity_R2 > 0.85 across different random seeds**, demonstrating that the result is not data-dependent.
 
 Data is **re-generated each iteration** with a different seed to verify seed independence.
 
 Primary metric: **connectivity_R2** (R² between learned W and ground-truth W).
 Secondary metrics: **tau_R2** (time constant recovery), **V_rest_R2** (resting potential recovery), **cluster_accuracy** (neuron type clustering from embeddings).
 
+## Noise Model
+
+This exploration trains under **two independent noise sources**:
+
+1. **Dynamics noise** (`noise_model_level=0.05`): Additive Gaussian noise injected into the Euler integration at each timestep. This simulates biological variability in membrane dynamics. The ODE integration becomes:
+   ```
+   v(t+1) = v(t) + dt * f(v, W, I) + ε_dyn(t),   ε_dyn ~ N(0, 0.05)
+   ```
+
+2. **Measurement noise** (`measurement_noise_level=0.04`): Additive Gaussian noise applied to observed voltages. This simulates imperfect recording instruments. The GNN sees:
+   ```
+   v_obs(t) = v_clean(t) + ε_meas(t),   ε_meas ~ N(0, 0.04)
+   ```
+
+### Impact on training data
+
+- **Input voltages**: The GNN receives `v_obs = v_clean + ε_meas` — noisy observations
+- **Derivative targets**: Computed from noisy observations, so they contain a noise difference term:
+  ```
+  y_noisy(t) = y_clean(t) + (ε_meas(t+1) - ε_meas(t)) / dt
+  ```
+  This derivative noise has std ≈ `measurement_noise_level * sqrt(2) / dt = 0.04 * 1.414 / 0.02 ≈ 2.83`, which is substantial relative to clean derivative magnitudes.
+- **Test evaluation**:
+  - **connectivity_R2** (primary metric): Compares the learned W matrix directly against the ground-truth W matrix. This is independent of test data — it's a pure parameter comparison, so noise does not affect the evaluation itself, only the GNN's ability to learn W correctly.
+  - **test_R2**: Evaluated on pre-generated test data that has dynamics noise (`noise_model_level=0.05`) but **no measurement noise** added. The test voltages are the same as the `flyvis_noise_005` case.
+
+### Key challenges compared to noise-free / dynamics-only noise
+
+- The derivative noise (~2.83 std) is much larger than the measurement noise (~0.04 std) due to the 1/dt amplification
+- The GNN must learn to average out the noise across many frames — **data_augmentation_loop** and **batch_size** become more important
+- Stronger regularization may be needed to prevent overfitting to noisy derivatives
+- The performance ceiling may be lower than the clean case — even with perfect training, measurement noise creates an irreducible error floor
+- `coeff_g_phi_diff` (monotonicity) is particularly important: it constrains the function space, which helps when targets are noisy
+
 ## Scientific Method
 
 This exploration follows a strict **hypothesize → test → validate/falsify** cycle:
 
-1. **Hypothesize**: Based on available data (metrics, seed variance, prior results), form a hypothesis about what controls robustness (e.g., "Higher coeff_g_phi_diff will reduce seed variance because stronger monotonicity constraints reduce the number of degenerate solutions")
+1. **Hypothesize**: Based on available data (metrics, seed variance, prior results), form a hypothesis about what controls robustness (e.g., "Stronger coeff_g_phi_diff will reduce seed variance because monotonicity constraints limit the space of solutions the GNN can overfit to")
 2. **Design experiment**: Choose a mutation that specifically tests the hypothesis — change ONE parameter at a time
 3. **Run training**: The experiment runs across 4 seeds — you cannot predict the outcome
 4. **Analyze results**: Use both metrics AND cross-seed variance to evaluate whether the hypothesis was supported or contradicted
@@ -37,12 +71,12 @@ Both `simulation.seed` and `training.seed` are **forced by the pipeline** — DO
 
 Seed formula (set automatically by GNN_LLM.py):
 
-- `simulation.seed = iteration * 1000 + slot` (controls data generation)
+- `simulation.seed = iteration * 1000 + slot` (controls data generation AND measurement noise realization)
 - `training.seed = iteration * 1000 + slot + 500` (controls weight init & training randomness)
 
 The actual seed values are provided in the prompt for each slot — **log them in your iteration entries**.
 
-Simulation parameters (n_neurons, n_frames, etc.) stay fixed — **DO NOT change them**.
+Simulation parameters (n_neurons, n_frames, noise levels, etc.) stay fixed — **DO NOT change them**.
 
 ## FlyVis Model
 
@@ -55,7 +89,7 @@ dv_i/dt = f_theta(v_i, a_i, sum_j W_ij * g_phi(v_j, a_j)^2, I_i)
 
 - 13,741 neurons, 65 cell types, 434,112 edges
 - 1,736 input neurons (photoreceptors)
-- DAVIS visual input, **no noise** (noise_model_level=0.0)
+- DAVIS visual input, **noise_model_level=0.05**, **measurement_noise_level=0.04**
 - 64,000 frames, delta_t=0.02
 
 ## GNN Architecture
@@ -89,10 +123,10 @@ The training loss includes:
 | `coeff_g_phi_norm`        | Normalization penalty on g_phi at saturation voltage                                | 0.9     | No        |
 | `coeff_g_phi_weight_L1`   | L1 penalty on g_phi MLP weights                                                     | 0.28    | **Yes**   |
 | `coeff_g_phi_weight_L2`   | L2 penalty on g_phi MLP weights                                                     | 0       | **Yes**   |
-| `coeff_f_theta_weight_L1` | L1 penalty on f_theta MLP weights                                                   | 0.5     | **Yes**   |
+| `coeff_f_theta_weight_L1` | L1 penalty on f_theta MLP weights                                                   | 0.05    | **Yes**   |
 | `coeff_f_theta_weight_L2` | L2 penalty on f_theta MLP weights                                                   | 0.001   | **Yes**   |
 | `coeff_f_theta_msg_diff`  | Monotonicity of f_theta w.r.t. message input                                        | 0       | No        |
-| `coeff_W_L1`              | L1 sparsity penalty on connectivity W                                               | 7.5e-05 | **Yes**   |
+| `coeff_W_L1`              | L1 sparsity penalty on connectivity W                                               | 0.00015 | **Yes**   |
 | `coeff_W_L2`              | L2 penalty on W                                                                     | 1.5e-06 | **Yes**   |
 
 ### Regularization Annealing
@@ -127,15 +161,24 @@ Alternatively, set `regul_annealing_rate: 0` to disable annealing entirely (full
 
 **Non-annealed coefficients**: `coeff_g_phi_diff`, `coeff_g_phi_norm`, and `coeff_f_theta_msg_diff` apply at full strength from epoch 0 regardless of annealing settings.
 
+### Noise-Specific Regularization Considerations
+
+Under measurement noise, the noisy derivative targets have high variance (~2.83 std from noise alone). This affects regularization in several ways:
+
+- **coeff_g_phi_diff** (monotonicity): Likely needs to be **higher** than noise-free to constrain the solution space and prevent overfitting to noisy targets
+- **coeff_W_L1** (connectivity sparsity): May need tuning — too aggressive L1 could prune real connections that are hard to detect under noise, too weak allows spurious connections from noise correlations
+- **coeff_g_phi_weight_L1 / coeff_f_theta_weight_L1**: Weight sparsity helps prevent overfitting; may benefit from being **higher** than noise-free case
+- **data_augmentation_loop**: More passes over different temporal windows helps average out noise — consider increasing
+
 ## Training Parameters (explorable)
 
 | Parameter                       | Default      | Description                                  |
 | ------------------------------- | ------------ | -------------------------------------------- |
-| `learning_rate_W_start`         | 6e-4         | Learning rate for connectivity matrix W      |
-| `learning_rate_start`           | 1.2e-3       | Learning rate for g_phi and f_theta MLPs     |
-| `learning_rate_embedding_start` | 1.55e-3      | Learning rate for neuron embeddings          |
+| `learning_rate_W_start`         | 0.0009       | Learning rate for connectivity matrix W      |
+| `learning_rate_start`           | 0.0018       | Learning rate for g_phi and f_theta MLPs     |
+| `learning_rate_embedding_start` | 0.002325     | Learning rate for neuron embeddings          |
 | `n_epochs`                      | 1 (claude)   | Epochs per iteration (keep ≤ 2 for time)     |
-| `batch_size`                    | 2            | Batch size for training                      |
+| `batch_size`                    | 4            | Batch size for training                      |
 | `data_augmentation_loop`        | 20           | Data augmentation multiplier                 |
 | `recurrent_training`            | false        | Enable multi-step rollout training           |
 | `time_step`                     | 1            | Recurrent steps (if recurrent_training=true) |
@@ -154,7 +197,7 @@ When `lr_scheduler="none"` (default), per-iteration LR is constant and the legac
 
 ## Training Time Constraint
 
-Baseline (batch_size=2, 64K frames, hidden_dim=80): **~60 min/epoch on H100**, **~90 min on A100**.
+Baseline (batch_size=4, 64K frames, hidden_dim=80): **~60 min/epoch on H100**, **~90 min on A100**.
 Data generation adds **~10-15 min** per slot.
 Keep total training time (generation + training) ≤ 100 min/iteration. Monitor `training_time_min`.
 
@@ -174,11 +217,13 @@ Each slot runs with a **different random seed** for data generation, so you can 
 
 After each batch, evaluate:
 
-- **Robust**: all 4 slots have connectivity_R2 > 0.9
-- **Partially robust**: 2-3 slots have connectivity_R2 > 0.9
-- **Fragile**: 0-1 slots have connectivity_R2 > 0.9
+- **Robust**: all 4 slots have connectivity_R2 > 0.85
+- **Partially robust**: 2-3 slots have connectivity_R2 > 0.85
+- **Fragile**: 0-1 slots have connectivity_R2 > 0.85
 
-A config is considered **validated** only when it achieves connectivity_R2 > 0.9 on all 4 seeds.
+A config is considered **validated** only when it achieves connectivity_R2 > 0.85 on all 4 seeds.
+
+**Note**: The robustness threshold is set at 0.85 (vs 0.9 for noise-free) because measurement noise creates an irreducible error floor. This may be revised upward if results show higher performance is achievable.
 
 ### Slot Strategy
 
@@ -191,7 +236,7 @@ Since the goal is robustness testing, all 4 slots should run the **same config**
 | 2    | **seed test** | Same config, seed varies automatically |
 | 3    | **seed test** | Same config, seed varies automatically |
 
-When a config is validated as robust (all 4 seeds > 0.9), you may switch to exploring a variation:
+When a config is validated as robust (all 4 seeds > 0.85), you may switch to exploring a variation:
 
 | Slot | Role        | Description                                             |
 | ---- | ----------- | ------------------------------------------------------- |
@@ -208,6 +253,17 @@ When a config is validated as robust (all 4 seeds > 0.9), you may switch to expl
 
 Each block = `n_iter_block` iterations (default 12).
 The prompt provides: `Block info: block {block_number}, iterations {iter_in_block}/{n_iter_block} within block`
+
+### Interactive Code Phase (interaction_code=true)
+
+This exploration has `interaction_code: true`. At every block boundary, the script enters an **interactive code modification session** before running the next block:
+
+1. The LLM generates a structured **code brief** based on accumulated knowledge
+2. The brief is presented to the human for review
+3. The human can provide feedback, approve code changes, or skip
+4. If code changes are applied, the human must git push locally and git pull on the cluster before continuing
+
+The purpose is to allow **structural code changes** (not just hyperparameter tuning) between blocks — for example, modifying the training loss, adding noise-aware processing, or changing the GNN architecture.
 
 ## File Structure
 
@@ -257,14 +313,14 @@ You maintain **THREE** files:
 
 **Robustness classification (across all 4 seeds):**
 
-- **Robust**: all 4 slots connectivity_R2 > 0.9
-- **Partially robust**: 2-3 slots connectivity_R2 > 0.9
-- **Fragile**: 0-1 slots connectivity_R2 > 0.9
+- **Robust**: all 4 slots connectivity_R2 > 0.85
+- **Partially robust**: 2-3 slots connectivity_R2 > 0.85
+- **Fragile**: 0-1 slots connectivity_R2 > 0.85
 
 **Per-slot classification:**
 
-- **Converged**: connectivity_R2 > 0.9
-- **Partial**: connectivity_R2 0.3–0.9
+- **Converged**: connectivity_R2 > 0.85
+- **Partial**: connectivity_R2 0.3–0.85
 - **Failed**: connectivity_R2 < 0.3
 
 **Seed variance analysis (compute every batch):**
@@ -326,16 +382,16 @@ If `user_input.md` has content in "Pending Instructions":
 
 ## Block Partition (suggested)
 
-| Block | Focus                  | Parameters                                                               |
-| ----- | ---------------------- | ------------------------------------------------------------------------ |
-| 1     | Baseline robustness    | Default config across 4 seeds — establish baseline                       |
-| 2     | Learning rates         | lr_W, lr, lr_emb                                                         |
-| 3     | g_phi regularization   | coeff_g_phi_diff, coeff_g_phi_norm, coeff_g_phi_weight_L1                |
-| 4     | f_theta regularization | coeff_f_theta_weight_L1, coeff_f_theta_weight_L2, coeff_f_theta_msg_diff |
-| 5     | W regularization       | coeff_W_L1, coeff_W_L2, w_init_mode                                      |
-| 6     | Architecture           | hidden_dim, n_layers, hidden_dim_update, n_layers_update, embedding_dim  |
-| 7     | Combined best          | Best parameters from blocks 1–6                                          |
-| 8     | Validation             | Re-run best config with more seeds / longer training                     |
+| Block | Focus                           | Parameters                                                               |
+| ----- | ------------------------------- | ------------------------------------------------------------------------ |
+| 1     | Baseline under dual noise       | Default config across 4 seeds — establish measurement noise baseline     |
+| 2     | Regularization for noisy data   | coeff_g_phi_diff, coeff_g_phi_weight_L1, coeff_W_L1                      |
+| 3     | Learning rates under noise      | lr_W, lr, lr_emb (may need lower LR due to noisy gradients)             |
+| 4     | Data augmentation               | data_augmentation_loop, batch_size (more averaging reduces noise impact) |
+| 5     | f_theta regularization          | coeff_f_theta_weight_L1, coeff_f_theta_weight_L2, coeff_f_theta_msg_diff |
+| 6     | Architecture & multi-epoch      | hidden_dim, n_layers, n_epochs (more capacity or training may help)      |
+| 7     | Combined best                   | Best parameters from blocks 1–6                                          |
+| 8     | Validation                      | Re-run best config with more seeds / longer training                     |
 
 ## Block Boundaries
 
@@ -359,23 +415,25 @@ If a slot is `[FAILED]`:
 
 ## Known Results (prior experiments)
 
-- `flyvis_62_1` (DAVIS + noise 0.05): connectivity_R2=0.95, tau_R2=0.80, V_rest_R2=0.40 (10 epochs, full regularization)
+- `flyvis_62_1` (DAVIS + dynamics noise 0.05, no measurement noise): connectivity_R2=0.95, tau_R2=0.80, V_rest_R2=0.40 (10 epochs, full regularization)
 - `flyvis_62_1` with Sintel input: R²_W=0.99, tau_R2=1.00, V_rest_R2=0.85
 - W initialization: `randn_scaled` and `zeros` perform similarly; plain `randn` performs poorly
 - Larger MLP (80-dim/3-layer) works better than smaller (32-dim/2-layer)
 - `coeff_g_phi_diff` (monotonicity) is among the most important regularizers — too low causes non-monotonic messages
-- No noise should allow faster convergence and potentially higher connectivity_R2 than noise=0.05
+- Dynamics noise 0.05 may require stronger regularization than noise-free to achieve robust convergence
+- **No prior results exist for measurement noise** — this exploration is the first to test it. Expect lower connectivity_R2 than noise-free/dynamics-only due to the corrupted observation channel.
 
 ## Start Call
 
 When prompt says `PARALLEL START`:
 
 - Read base config to understand training regime
+- Note the dual noise setup: dynamics noise 0.05 + measurement noise 0.04
 - Set all 4 configs **identically** to the baseline config
-- Data will be generated with different seeds per slot automatically
+- Data will be generated with different seeds per slot automatically (each seed produces different noise realizations)
 - Write planned config and **initial hypothesis** to working memory
 - First iteration establishes baseline robustness — do not change hyperparameters yet
-- State the baseline hypothesis: "The default config achieves connectivity_R2 > 0.9 robustly across seeds"
+- State the baseline hypothesis: "The default config achieves connectivity_R2 > 0.85 robustly across seeds under dual noise (dynamics 0.05 + measurement 0.04)"
 
 ---
 
@@ -384,13 +442,13 @@ When prompt says `PARALLEL START`:
 The memory file (`{llm_task_name}_memory.md`) must follow this structure:
 
 ```markdown
-# Working Memory: flyvis_noise_free
+# Working Memory: flyvis_noise_005_004
 
 ## Paper Summary (update at every block boundary)
 
 Brief paragraph for a scientific paper summarizing the current state of this exploration:
 
-- **GNN optimization**: [What has been learned about training GNN to recover Drosophila visual system connectivity from noise-free DAVIS data. Best connectivity_R2 achieved, which regularization/learning rate regimes work, key challenges.]
+- **GNN optimization under measurement noise**: [What has been learned about training GNN to recover Drosophila visual system connectivity from doubly-noisy DAVIS data (dynamics noise 0.05 + measurement noise 0.04). Best connectivity_R2 achieved, which regularization/learning rate regimes work, how measurement noise impacts recoverability compared to dynamics-only noise, key challenges.]
 - **LLM-driven exploration**: [How the LLM-in-the-loop approach performed as an automated hyperparameter search strategy. Number of iterations run, how hypothesis-driven exploration compared to random search, whether the LLM discovered non-obvious parameter interactions.]
 - **Future works**: [what would a google deepmind senior ML suggest as structural change in the code to break ceiling with good rationale, this can include modified GNN class, innovative training scheme, use recent innovations. Cite references of scientific publications, blog, youtube channel. Limit to 10 suggestions.]
 
@@ -408,8 +466,8 @@ Brief paragraph for a scientific paper summarizing the current state of this exp
 
 Examples of good principles:
 
-- ✓ "coeff_g_phi_diff ≥ 500 is necessary for robust convergence (3/3 iterations, all seeds > 0.9)"
-- ✓ "lr_W > 1e-3 causes seed-dependent failures (CV > 20% in 2 iterations)"
+- ✓ "coeff_g_phi_diff ≥ 500 is necessary for robust convergence under measurement noise (3/3 iterations, all seeds > 0.85)"
+- ✓ "lr_W > 1e-3 causes seed-dependent failures under dual noise (CV > 20% in 2 iterations)"
 - ✗ "lr_W=6e-4 worked in iteration 3" (too specific, not a principle)
 
 ### Falsified Hypotheses
@@ -425,8 +483,8 @@ Examples of good principles:
 ## Previous Block Summary (Block N-1)
 
 [Short summary: 2-3 lines. NOT individual iterations.
-Example: "Block 1 (baseline): Default config achieves conn_R2=0.93±0.04, CV=4.3%.
-3/4 seeds > 0.9. Key finding: baseline is partially robust, lr_W may need tuning for full robustness."]
+Example: "Block 1 (baseline): Default config achieves conn_R2=0.82±0.06 under dual noise, CV=7.3%.
+2/4 seeds > 0.85. Key finding: measurement noise reduces baseline from ~0.93 (dynamics-only) to ~0.82, confirming performance ceiling impact."]
 
 ---
 
@@ -473,6 +531,7 @@ A principle must satisfy ALL of:
 - Seed-dependent effects (works for some seeds but not others)
 - Contradictions between iterations
 - Theoretical predictions not yet verified
+- Comparisons with dynamics-only noise results (from flyvis_noise_005 exploration)
 
 ### What to Add to Falsified Hypotheses
 

@@ -426,6 +426,15 @@ def _compute_noisy_derivatives(config, sim, n_neurons, split='train'):
 
     noisy_y = y_clean + noise_diff[:, :, np.newaxis]  # broadcast to (T, N, 1)
 
+    # Temporal smoothing of noisy derivatives (reduces derivative noise by sqrt(window))
+    window = sim.derivative_smoothing_window
+    if window > 1:
+        from scipy.ndimage import uniform_filter1d
+        # Apply centered moving average along time axis (axis=0)
+        # mode='nearest' pads boundaries with edge values
+        noisy_y = uniform_filter1d(noisy_y, size=window, axis=0, mode='nearest')
+        print(f"  applied derivative smoothing: window={window} (noise reduction ~{1/np.sqrt(window):.2f}x)")
+
     noisy_y_writer = ZarrArrayWriter(
         path=graphs_data_path(config.dataset, f"noisy_y_list_{split}"),
         n_neurons=n_neurons,
@@ -850,16 +859,19 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     # )
 
     print('plot activity traces ...')
-    plot_activity_traces(
+    trace_indices = plot_activity_traces(
         activity=activity_full.T,
         output_path=graphs_data_path(config.dataset, 'activity_traces.png'),
         n_traces=100,
         max_frames=10000,
         n_input_neurons=sim.n_input_neurons,
         style=fig_style,
+        dpi=300,
+        title='clean voltage traces',
     )
 
-    # Plot noisy activity traces (clean vs noisy overlay)
+    # Plot noisy activity traces using the same neurons + compute SNR
+    snr_stats = None
     if sim.measurement_noise_level > 0:
         print('plot noisy activity traces ...')
         noise_data = x_ts.noise.numpy() if x_ts.noise is not None else None
@@ -872,7 +884,59 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                 max_frames=10000,
                 n_input_neurons=sim.n_input_neurons,
                 style=fig_style,
+                neuron_indices=trace_indices,
+                dpi=300,
+                title='noisy voltage traces (measurement noise)',
             )
+
+            # --- SNR analysis (per neuron) ---
+            # Voltage SNR: std(clean_voltage) / std(measurement_noise) per neuron
+            signal_std = np.std(activity_full, axis=0)  # (N,)
+            noise_std = np.std(noise_data, axis=0)       # (N,)
+            voltage_snr = np.where(noise_std > 0, signal_std / noise_std, np.inf)
+            voltage_snr_finite = voltage_snr[np.isfinite(voltage_snr)]
+
+            # Derivative SNR: std(clean_derivative) / std(derivative_noise) per neuron
+            # derivative noise = (noise[t+1] - noise[t]) / dt
+            deriv_noise = np.diff(noise_data, axis=0) / sim.delta_t  # (T-1, N)
+            deriv_noise_std = np.std(deriv_noise, axis=0)             # (N,)
+            y_clean = load_raw_array(graphs_data_path(config.dataset, 'y_list_train'))  # (T, N, 1)
+            deriv_signal_std = np.std(y_clean[:, :, 0], axis=0)  # (N,)
+            deriv_snr = np.where(deriv_noise_std > 0, deriv_signal_std / deriv_noise_std, np.inf)
+            deriv_snr_finite = deriv_snr[np.isfinite(deriv_snr)]
+
+            deriv_noise_std_theoretical = sim.measurement_noise_level * np.sqrt(2) / sim.delta_t
+            deriv_noise_std_empirical = np.mean(deriv_noise_std)
+
+            snr_stats = {
+                'voltage_snr_mean': np.mean(voltage_snr_finite),
+                'voltage_snr_median': np.median(voltage_snr_finite),
+                'voltage_snr_min': np.min(voltage_snr_finite),
+                'voltage_snr_max': np.max(voltage_snr_finite),
+                'derivative_snr_mean': np.mean(deriv_snr_finite),
+                'derivative_snr_median': np.median(deriv_snr_finite),
+                'derivative_snr_min': np.min(deriv_snr_finite),
+                'derivative_snr_max': np.max(deriv_snr_finite),
+                'derivative_noise_std_theoretical': deriv_noise_std_theoretical,
+                'derivative_noise_std_empirical': deriv_noise_std_empirical,
+            }
+
+            print(f'\033[93m--- Measurement noise SNR analysis ---\033[0m')
+            print(f'  voltage SNR (std_signal / std_noise) per neuron:')
+            print(f'    mean: {snr_stats["voltage_snr_mean"]:.2f}  '
+                  f'median: {snr_stats["voltage_snr_median"]:.2f}  '
+                  f'min: {snr_stats["voltage_snr_min"]:.2f}  '
+                  f'max: {snr_stats["voltage_snr_max"]:.2f}')
+            print(f'  derivative SNR (std_dy/dt / std_noise_dy/dt) per neuron:')
+            print(f'    mean: {snr_stats["derivative_snr_mean"]:.2f}  '
+                  f'median: {snr_stats["derivative_snr_median"]:.2f}  '
+                  f'min: {snr_stats["derivative_snr_min"]:.2f}  '
+                  f'max: {snr_stats["derivative_snr_max"]:.2f}')
+            print(f'  derivative noise std (theoretical): '
+                  f'{snr_stats["derivative_noise_std_theoretical"]:.2f}')
+            print(f'  derivative noise std (empirical mean): '
+                  f'{snr_stats["derivative_noise_std_empirical"]:.2f}')
+            print(f'\033[93m--------------------------------------\033[0m')
 
     # SVD analysis (4-panel plot)
     print('svd analysis ...')
@@ -911,6 +975,10 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
         if svd_results.get('visual_stimuli'):
             log_f.write(f'svd_visual_rank_90: {svd_results["visual_stimuli"]["rank_90"]}\n')
             log_f.write(f'svd_visual_rank_99: {svd_results["visual_stimuli"]["rank_99"]}\n')
+        if snr_stats is not None:
+            log_f.write(f'\n')
+            for key, val in snr_stats.items():
+                log_f.write(f'{key}: {val:.2f}\n')
     print(f'generation log saved to {gen_log_path}')
 
     if not visualize:

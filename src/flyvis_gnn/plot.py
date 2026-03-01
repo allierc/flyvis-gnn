@@ -571,7 +571,10 @@ def plot_activity_traces(
     max_frames: int = 10000,
     n_input_neurons: int = 0,
     style: FigureStyle = default_style,
-) -> None:
+    neuron_indices: np.ndarray | None = None,
+    dpi: int | None = None,
+    title: str | None = None,
+) -> np.ndarray:
     """Sampled neuron voltage traces stacked vertically.
 
     Args:
@@ -581,23 +584,36 @@ def plot_activity_traces(
         max_frames: truncate x-axis at this frame count.
         n_input_neurons: shown as annotation.
         style: FigureStyle instance.
+        neuron_indices: pre-selected neuron indices; if None, random sample.
+        dpi: override DPI for this figure; if None, use style default.
+        title: optional title for the figure.
+
+    Returns:
+        neuron_indices used (for reuse in paired plots).
     """
     n_neurons, n_frames = activity.shape
     n_traces = min(n_traces, n_neurons)
-    sampled_idx = np.sort(np.random.choice(n_neurons, n_traces, replace=False))
-    sampled = activity[sampled_idx]
-    offset = sampled + 2 * np.arange(n_traces)[:, None]
+    if neuron_indices is None:
+        neuron_indices = np.sort(np.random.choice(n_neurons, n_traces, replace=False))
+    sampled = activity[neuron_indices]
+    offset = sampled + 2 * np.arange(len(neuron_indices))[:, None]
 
     fig, ax = style.figure(aspect=1.5)
     ax.plot(offset.T, linewidth=0.5, alpha=0.7, color=style.foreground)
     style.xlabel(ax, 'time (frames)')
-    style.ylabel(ax, f'{n_traces} / {n_neurons} neurons')
+    style.ylabel(ax, f'{len(neuron_indices)} / {n_neurons} neurons')
     ax.set_yticks([])
     ax.set_xlim([0, min(n_frames, max_frames)])
     ax.set_ylim([offset[0].min() - 2, offset[-1].max() + 2])
+    if title:
+        ax.set_title(title, fontsize=style.font_size)
 
     plt.tight_layout()
-    style.savefig(fig, output_path)
+    save_kwargs = {}
+    if dpi is not None:
+        save_kwargs['dpi'] = dpi
+    style.savefig(fig, output_path, **save_kwargs)
+    return neuron_indices
 
 
 def plot_selected_neuron_traces(

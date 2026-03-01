@@ -115,11 +115,17 @@ All 6 weight regularization coefficients (L1 and L2 for g_phi, f_theta, and W) s
 | 5     | 0.92       | ~92% (near full strength)      |
 | 10    | 0.99       | ~full strength                 |
 
-**Purpose**: Allows the model to learn dynamics first before regularization pressure is applied. At epoch 0, all L1/L2 penalties are zero regardless of their configured coefficients. Set `regul_annealing_rate: 0` to disable annealing (coefficients apply at full strength immediately).
+**Purpose**: Allows the model to learn dynamics first before regularization pressure is applied. At epoch 0, all L1/L2 penalties are zero regardless of their configured coefficients.
 
-**Important for 1-epoch training**: With the default rate=0.5 and n_epochs=1, the effective regularization strength is only ~39% of the configured values throughout training. This means configured coefficients need to be set ~2.5x higher than the desired effective strength, or `regul_annealing_rate` should be increased.
+**CRITICAL — 1-epoch training**: With `n_epochs=1`, training only runs epoch 0, where the annealing multiplier is exactly **0.00**. ALL six L1/L2 regularizers are completely inactive — the configured coefficients have NO effect. Only the non-annealed coefficients (`coeff_g_phi_diff`, `coeff_g_phi_norm`, `coeff_f_theta_msg_diff`) apply.
 
-**Non-annealed coefficients**: `coeff_g_phi_diff`, `coeff_g_phi_norm`, and `coeff_f_theta_msg_diff` apply at full strength from epoch 0.
+**Fix**: Use `n_epochs: 2` and halve `data_augmentation_loop` to keep total training time constant. This gives:
+- Epoch 0: L1/L2 = 0 (model learns dynamics freely)
+- Epoch 1: L1/L2 at 39% strength (regularization cleans up weights)
+
+Alternatively, set `regul_annealing_rate: 0` to disable annealing entirely (full strength from epoch 0).
+
+**Non-annealed coefficients**: `coeff_g_phi_diff`, `coeff_g_phi_norm`, and `coeff_f_theta_msg_diff` apply at full strength from epoch 0 regardless of annealing settings.
 
 ## Training Parameters (explorable)
 

@@ -511,7 +511,7 @@ if __name__ == "__main__":
                 task_params[key] = int(value) if value.isdigit() else value
     else:
         best_model = ''
-        task = 'train_test_plot_Claude_cluster'
+        task = 'generate_train_test_plot_Claude'
         config_list = ['flyvis_62_0']
         task_params = {'iterations': 144}
 
@@ -646,7 +646,7 @@ if __name__ == "__main__":
     ucb_path = f"{exploration_dir}/{llm_task_name}_ucb_scores.txt"
     instruction_path = f"{llm_dir}/{instruction_name}.md"
     reasoning_log_path = f"{exploration_dir}/{llm_task_name}_reasoning.log"
-    user_input_path = f"{llm_dir}/user_input.md"
+    user_input_path = f"{exploration_dir}/user_input.md"
 
     log_dir = exploration_dir
     os.makedirs(exploration_dir, exist_ok=True)
@@ -791,7 +791,8 @@ Write the planned mutations to the working memory file."""
                 print(f"\033[93mblock boundary: deleted {ucb_path}\033[0m")
 
         # Phase A: Interactive code session at block start (if enabled)
-        if interaction_code and is_block_start:
+        # Skip block 1 — run baseline first to establish metrics before proposing code changes
+        if interaction_code and is_block_start and block_number > 1:
             brief_path = generate_code_brief(
                 memory_path, block_number, case_study, case_study_brief,
                 root_dir, exploration_dir
@@ -1376,7 +1377,9 @@ IMPORTANT: Read user_input.md — if there are pending instructions, acknowledge
         print(f"\n\033[92mBatch {batch_first}-{batch_last} complete: {n_success} succeeded, {n_failed} failed\033[0m")
 
 
-# python GNN_LLM.py -o generate_train_test_plot_Claude_cluster flyvis_noise_free --cluster 
-# python GNN_LLM.py -o generate_train_test_plot_Claude_cluster flyvis_noise_005 --cluster --resume 
+# python GNN_LLM.py -o generate_train_test_plot_Claude flyvis_noise_free --cluster
+# python GNN_LLM.py -o generate_train_test_plot_Claude flyvis_noise_005 --cluster --resume
+
+# python GNN_LLM.py -o generate_train_test_plot_Claude flyvis_noise_005_004 --cluster
 
 

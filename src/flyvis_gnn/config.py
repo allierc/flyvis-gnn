@@ -246,6 +246,7 @@ class SimulationConfig(BaseModel):
     calcium_noise_level: float = 0.0  # optional Gaussian noise added to [Ca] updates
     noise_model_level: float = 0.0  # process noise added during dynamics simulation
     measurement_noise_level: float = 0.0  # observation noise saved separately in noise.zarr
+    derivative_smoothing_window: int = 1  # temporal smoothing window for noisy derivatives (1 = no smoothing)
     calcium_saturation_kd: float = 1.0  # for nonlinear saturation models
     calcium_num_compartments: int = 1
     calcium_down_sample: int = 1  # down-sample [Ca] time series by this factor
