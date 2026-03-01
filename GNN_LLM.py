@@ -851,7 +851,8 @@ Write the planned mutations to the working memory file."""
 
         # Phase A: Interactive code session at block start (if enabled)
         # Skip block 1 — run baseline first to establish metrics before proposing code changes
-        if interaction_code and is_block_start and block_number > 1:
+        phase_a_marker = os.path.join(exploration_dir, f'phase_a_block_{block_number:03d}.done')
+        if interaction_code and is_block_start and block_number > 1 and not os.path.exists(phase_a_marker):
             brief_path = generate_code_brief(
                 memory_path, block_number, case_study, case_study_brief,
                 root_dir, exploration_dir
@@ -860,6 +861,9 @@ Write the planned mutations to the working memory file."""
                 brief_path, memory_path, analysis_path, root_dir,
                 case_study, cluster_enabled, exploration_dir, block_number
             )
+            # Mark Phase A as done so it won't re-trigger on resume
+            with open(phase_a_marker, 'w') as f:
+                f.write(f"completed at iteration {batch_first}\n")
             if code_changed and cluster_enabled:
                 print(f"\n\033[93mCode changes applied. Please:\033[0m")
                 print(f"\033[93m  1. git add + commit + push locally\033[0m")
@@ -869,6 +873,8 @@ Write the planned mutations to the working memory file."""
                 while not check_cluster_repo():
                     print(f"\033[91mCluster repo not in sync — please fix and press Enter.\033[0m")
                     input("> ")
+        elif interaction_code and is_block_start and block_number > 1 and os.path.exists(phase_a_marker):
+            print(f"\033[93mPhase A already completed for block {block_number} — skipping\033[0m")
 
         print(f"\n\n\033[94m{'='*60}\033[0m")
         print(f"\033[94mBATCH: iterations {batch_first}-{batch_last} / {n_iterations}  (block {block_number})\033[0m")
