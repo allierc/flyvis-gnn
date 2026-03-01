@@ -803,7 +803,7 @@ parameter variations. Each config already has a unique dataset name — do NOT c
 dataset field. Vary training parameters (e.g. lr_W, lr, coeff_g_phi_diff, coeff_W_L1, batch_size)
 across the {N_PARALLEL} slots to explore different starting points.
 
-IMPORTANT: Data is PRE-GENERATED in graphs_data/ — do NOT change simulation parameters.
+{sim_constraint}
 IMPORTANT: Training time target is {training_time_target_min} min per iteration — keep configurations within this budget.
 IMPORTANT: Read user_input.md — if there are pending instructions, acknowledge them by appending to the "Acknowledged" section with timestamp and moving them out of "Pending Instructions".
 
@@ -839,6 +839,19 @@ Write the planned mutations to the working memory file."""
 
         block_number = (batch_first - 1) // n_iter_block + 1
         iter_in_block_first = (batch_first - 1) % n_iter_block + 1
+
+        # Simulation parameter constraint (conditional on generate_data)
+        if generate_data:
+            sim_constraint = (
+                "IMPORTANT: Data is RE-GENERATED each iteration. Do NOT change simulation "
+                "dimensions (n_neurons, n_frames, n_edges, delta_t, noise levels). "
+                "You MAY set simulation.derivative_smoothing_window (int, default 1) to apply "
+                "temporal smoothing to noisy derivative targets."
+            )
+        else:
+            sim_constraint = (
+                "IMPORTANT: Data is PRE-GENERATED in graphs_data/ — do NOT change simulation parameters."
+            )
         iter_in_block_last = (batch_last - 1) % n_iter_block + 1
         is_block_end = any((it - 1) % n_iter_block + 1 == n_iter_block for it in iterations)
 
@@ -1347,6 +1360,25 @@ Fix the bug. Do NOT make other changes."""
 
         block_end_marker = "\n>>> BLOCK END <<<" if is_block_end else ""
 
+        # Find Phase A code change briefs (blocks where Phase A completed)
+        code_brief_context = ""
+        briefs_dir = os.path.join(exploration_dir, 'briefs')
+        if os.path.isdir(briefs_dir):
+            applied_briefs = []
+            for bf in sorted(os.listdir(briefs_dir)):
+                if bf.startswith('block_') and bf.endswith('_brief.md'):
+                    bnum = bf.replace('block_', '').replace('_brief.md', '')
+                    marker = os.path.join(exploration_dir, f'phase_a_block_{bnum}.done')
+                    if os.path.exists(marker):
+                        applied_briefs.append(os.path.join(briefs_dir, bf))
+            if applied_briefs:
+                code_brief_context = (
+                    f"\nPhase A code changes (READ THIS — new explorable parameters): "
+                    + ", ".join(applied_briefs)
+                    + "\nThese briefs describe structural code changes and NEW config fields added to the codebase. "
+                    + "Read them to learn about new explorable training/simulation parameters you can set in YAML configs.\n"
+                )
+
         claude_prompt = f"""Batch iterations {batch_first}-{batch_last} / {n_iterations}
 Block info: block {block_number}, iterations {iter_in_block_first}-{iter_in_block_last}/{n_iter_block} within block{block_end_marker}
 
@@ -1357,7 +1389,7 @@ Working memory: {memory_path}
 Full log (append only): {analysis_path}
 UCB scores: {ucb_path}
 User input (read and acknowledge any pending instructions): {user_input_path}
-
+{code_brief_context}
 {slot_info}
 
 Seeds are forced by pipeline (DO NOT modify simulation.seed or training.seed in configs).
@@ -1368,7 +1400,7 @@ Analyze all {n_slots} results. For each successful slot, write a separate iterat
 to set up the next batch of {N_PARALLEL} experiments.
 
 IMPORTANT: Do NOT change the 'dataset' field in any config — it must stay as-is for each slot.
-IMPORTANT: Data is PRE-GENERATED — do NOT change simulation parameters (n_neurons, n_frames, etc.).
+{sim_constraint}
 IMPORTANT: Training time target is {training_time_target_min} min per iteration. Check training_time_min in the metrics and flag any slot that exceeds this limit.
 IMPORTANT: Read user_input.md — if there are pending instructions, acknowledge them by appending to the "Acknowledged" section with a timestamp and moving them out of "Pending Instructions".
 """
