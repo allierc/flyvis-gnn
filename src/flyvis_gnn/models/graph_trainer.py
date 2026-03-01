@@ -224,8 +224,10 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         activity_column=3,  # flyvis uses column 3 for activity
         plot_frequency=1,   # will be updated per epoch
         n_neurons=n_neurons,
-        trainer_type='flyvis'
+        trainer_type='flyvis',
+        dataset=config.dataset,
     )
+    regularizer.set_activity_stats(x_ts, device)
 
     loss_components = {'loss': []}
 

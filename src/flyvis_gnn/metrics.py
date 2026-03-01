@@ -347,6 +347,91 @@ def derive_vrest(slopes_f_theta, offsets_f_theta, n_neurons):
     return np.where(slopes_f_theta != 0, -offsets_f_theta / slopes_f_theta, 1.0)[:n_neurons]
 
 
+def _torch_linear_fit(x, y):
+    """Differentiable least-squares linear regression in pure torch.
+
+    Same closed-form OLS as _vectorized_linear_fit, but operates on
+    torch tensors with gradient tracking preserved through y.
+
+    Args:
+        x: (N, n_pts) tensor (no grad needed — voltage grid points).
+        y: (N, n_pts) tensor (grad flows through here from f_theta).
+
+    Returns:
+        slopes: (N,) tensor.
+        offsets: (N,) tensor.
+    """
+    n_pts = x.shape[1]
+    sx = x.sum(dim=1)
+    sy = y.sum(dim=1)
+    sxy = (x * y).sum(dim=1)
+    sxx = (x * x).sum(dim=1)
+
+    denom = n_pts * sxx - sx * sx
+    slopes = (n_pts * sxy - sx * sy) / (denom + 1e-12)
+    offsets = (sy - slopes * sx) / n_pts
+
+    return slopes, offsets
+
+
+def compute_f_theta_linearity_loss(model, n_neurons, mu, sigma, device, n_pts=200):
+    """Unsupervised f_theta linearity loss.
+
+    Evaluates f_theta WITH gradient tracking, fits a differentiable OLS
+    line through the outputs, and penalizes the residual (non-linear
+    component). No ground-truth V_rest is needed.
+
+    Physical motivation: the true neuron dynamics are leaky integrators
+    (dv/dt = -(v - V_rest)/tau), which is linear in v. Penalizing
+    f_theta's deviation from linearity is an inductive bias toward the
+    correct physics, constraining the space of solutions so that
+    V_rest = -offset/slope is more uniquely determined.
+
+    Gradients flow through f_theta parameters only:
+    - model.a (embeddings) is detached
+    - rr (voltage grid) is constructed from cached data stats (no grad)
+
+    Args:
+        model: FlyVisGNN model with f_theta and a attributes.
+        n_neurons: Number of neurons.
+        mu: (N,) numpy array — per-neuron mean voltage.
+        sigma: (N,) numpy array — per-neuron std voltage.
+        device: Torch device.
+        n_pts: Number of voltage grid points (default 200).
+
+    Returns:
+        Scalar mean-squared residual loss with gradient through f_theta.
+    """
+    starts = mu - 2 * sigma
+    ends = mu + 2 * sigma
+
+    rr = _vectorized_linspace(starts, ends, n_pts, device)  # (N, n_pts), no grad
+
+    # Evaluate f_theta WITHOUT no_grad — gradient flows through f_theta weights
+    emb_dim = model.a.shape[1]
+    rr_flat = rr.reshape(-1, 1)                                          # (N*n_pts, 1)
+    a_detached = model.a[:n_neurons].detach()                             # block grad to embeddings
+    emb_flat = a_detached[:, None, :].expand(-1, n_pts, -1).reshape(-1, emb_dim)  # (N*n_pts, emb_dim)
+
+    in_features = _build_f_theta_features(rr_flat, emb_flat)             # (N*n_pts, D)
+    out = model.f_theta(in_features.float())                             # (N*n_pts, 1)
+    func = out.squeeze(-1).reshape(n_neurons, n_pts)                     # (N, n_pts)
+
+    # Differentiable OLS: fit a line through f_theta outputs
+    slopes, offsets = _torch_linear_fit(rr, func)
+
+    # Linear prediction: what f_theta WOULD output if it were perfectly linear
+    linear_pred = slopes[:, None] * rr + offsets[:, None]                # (N, n_pts)
+
+    # Residual: the non-linear component of f_theta
+    residual = func - linear_pred                                        # (N, n_pts)
+
+    # Mean squared residual across all neurons and points
+    loss = (residual ** 2).mean()
+
+    return loss
+
+
 # ------------------------------------------------------------------ #
 #  Dynamics R² (V_rest and tau)
 # ------------------------------------------------------------------ #

@@ -568,6 +568,11 @@ class TrainingConfig(BaseModel):
     coeff_model_b: float = 0  # Regularizer on bias b
     coeff_lin_modulation: float = 0  # Regularizer on modulation network
 
+    # -- f_theta linearity regularizer (unsupervised V_rest recovery) --
+    coeff_f_theta_linearity: float = 0.0           # Penalize f_theta nonlinearity (0 = disabled)
+    f_theta_linearity_warmup_fraction: float = 0.3  # Fraction of iterations before activation
+    f_theta_linearity_rampup_iters: int = 200       # Linear ramp-up after warmup ends
+
     g_phi_mode: GPhiMode = GPhiMode.MLP  # mlp=learned MLP, tanh=fixed tanh(u_j), identity=fixed u_j
     w_optimizer_type: WOptimizerType = WOptimizerType.ADAM  # adam (default) or sgd (SGD with momentum)
 

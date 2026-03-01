@@ -1187,11 +1187,13 @@ class LossRegularizer:
         'W_L1', 'W_L2', 'W_sign',
         'g_phi_diff', 'g_phi_norm', 'g_phi_weight', 'f_theta_weight',
         'f_theta_zero', 'f_theta_diff', 'f_theta_msg_diff', 'f_theta_msg_sign',
-        'missing_activity', 'model_a', 'model_b', 'modulation'
+        'missing_activity', 'model_a', 'model_b', 'modulation',
+        'f_theta_linearity'
     ]
 
     def __init__(self, train_config, model_config, activity_column: int,
-                 plot_frequency: int, n_neurons: int, trainer_type: str = 'signal'):
+                 plot_frequency: int, n_neurons: int, trainer_type: str = 'signal',
+                 dataset: str = None):
         """
         Args:
             train_config: TrainingConfig with coeff_* values
@@ -1230,6 +1232,24 @@ class LossRegularizer:
         # Cache coefficients
         self._coeffs = {}
         self._update_coeffs()
+
+        # f_theta linearity loss state (unsupervised — no gt V_rest needed)
+        self._mu_activity = None
+        self._sigma_activity = None
+
+    def set_activity_stats(self, x_ts, device):
+        """Cache per-neuron activity statistics for linearity loss.
+
+        Should be called once after construction, before training starts.
+
+        Args:
+            x_ts: NeuronTimeSeries with voltage field.
+            device: Torch device.
+        """
+        from flyvis_gnn.metrics import compute_activity_stats
+        mu, sigma = compute_activity_stats(x_ts, device)
+        self._mu_activity = to_numpy(mu).astype(np.float32)
+        self._sigma_activity = to_numpy(sigma).astype(np.float32)
 
     def _update_coeffs(self):
         """Recompute coefficients based on current epoch.
@@ -1278,6 +1298,7 @@ class LossRegularizer:
         self._coeffs['model_a'] = tc.coeff_model_a
         self._coeffs['model_b'] = tc.coeff_model_b
         self._coeffs['modulation'] = tc.coeff_lin_modulation
+        self._coeffs['f_theta_linearity'] = getattr(tc, 'coeff_f_theta_linearity', 0.0)
 
     def set_epoch(self, epoch: int, plot_frequency: int = None, Niter: int = None):
         """Set current epoch and update coefficients."""
@@ -1463,6 +1484,27 @@ class LossRegularizer:
         # Note: f_theta regularizations (f_theta_msg_diff, f_theta_msg_sign)
         # are handled by compute_update_regul() which should be called after the model forward pass.
         # Call finalize_iteration() after all regularizations are computed to record to history.
+
+        # --- f_theta linearity loss (unsupervised) ---
+        if (self._coeffs['f_theta_linearity'] > 0
+                and self._mu_activity is not None):
+            tc = self.train_config
+            warmup_threshold = int(getattr(tc, 'f_theta_linearity_warmup_fraction', 0.3) * self.Niter)
+            if self.iter_count > warmup_threshold:
+                rampup_iters = getattr(tc, 'f_theta_linearity_rampup_iters', 200)
+                rampup_weight = min(1.0, (self.iter_count - warmup_threshold) / max(rampup_iters, 1))
+
+                from flyvis_gnn.metrics import compute_f_theta_linearity_loss
+                lin_loss = compute_f_theta_linearity_loss(
+                    model=model,
+                    n_neurons=self.n_neurons,
+                    mu=self._mu_activity,
+                    sigma=self._sigma_activity,
+                    device=device,
+                )
+                lin_term = lin_loss * self._coeffs['f_theta_linearity'] * rampup_weight
+                total_regul = total_regul + lin_term
+                self._add('f_theta_linearity', lin_term)
 
         return total_regul
 
