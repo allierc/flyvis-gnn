@@ -654,6 +654,44 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     pde = FlyVisODE(p=p, f=torch.nn.functional.relu, params=sim.params,
                     model_type=model_config.signal_model_name, n_neuron_types=sim.n_neuron_types, device=device)
 
+    # Edge removal: drop a fraction of edges before saving
+    # (simulation already ran with the full graph)
+    if sim.edge_removal_ratio > 0:
+        # Save full edges first (for reference / analysis)
+        if save:
+            torch.save(p["w"].clone(), graphs_data_path(config.dataset, "weights_full.pt"))
+            torch.save(edge_index.clone(), graphs_data_path(config.dataset, "edge_index_full.pt"))
+
+        rng_rm = np.random.RandomState(sim.edge_removal_seed)
+        n_total = edge_index.shape[1]
+        removal_mode = getattr(sim, 'edge_removal_mode', 'random')
+        logger.info(f"edge removal mode: {removal_mode}, ratio: {sim.edge_removal_ratio}")
+
+        if removal_mode == 'per_column':
+            # Remove a consistent fraction of outgoing edges per pre-synaptic neuron
+            src_np = edge_index[0].cpu().numpy()
+            keep_mask = np.ones(n_total, dtype=bool)
+            for source in np.unique(src_np):
+                source_edges = np.where(src_np == source)[0]
+                n_remove = max(1, int(round(len(source_edges) * sim.edge_removal_ratio)))
+                if n_remove >= len(source_edges):
+                    n_remove = len(source_edges) - 1  # keep at least one
+                remove_idx = rng_rm.choice(source_edges, n_remove, replace=False)
+                keep_mask[remove_idx] = False
+            kept_indices = np.where(keep_mask)[0]
+        else:
+            # Random removal across the full edge set
+            n_keep = int(n_total * (1 - sim.edge_removal_ratio))
+            kept_indices = np.sort(rng_rm.choice(n_total, n_keep, replace=False))
+
+        edge_index = edge_index[:, kept_indices]
+        p["w"] = p["w"][kept_indices]
+        logger.info(f"edge removal: kept {len(kept_indices)}/{n_total} edges "
+                     f"({(1 - len(kept_indices)/n_total)*100:.1f}% removed)")
+        if save:
+            torch.save(torch.tensor(kept_indices),
+                        graphs_data_path(config.dataset, "kept_edge_indices.pt"))
+
     if save:
         torch.save(p["w"], graphs_data_path(config.dataset, "weights.pt"))
         torch.save(edge_index, graphs_data_path(config.dataset, "edge_index.pt"))
