@@ -33,9 +33,8 @@ from flyvis_gnn.utils import set_device, add_pre_folder, log_path, config_path
 
 N_SEEDS = 5
 
-# Only the two corrected optimized configs
+# Only noise_05 optimized (noise_005 already done)
 CONFIGS = [
-    ('flyvis_noise_005',  'optimized'),
     ('flyvis_noise_05',   'optimized'),
 ]
 

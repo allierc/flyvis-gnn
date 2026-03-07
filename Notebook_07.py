@@ -116,17 +116,17 @@
 # initialization.  The agent found that **noise cannot substitute
 # for structural priors**: removing the monotonicity constraint
 # (`g_phi_diff=0`) collapses $V^{\text{rest}}$ recovery despite
-# perfect derivative fitting.  The only configuration with 0/4
-# catastrophic failures was `n_layers=4` (deeper MLPs for both
-# $f_\theta$ and $g_\phi$).  Noise rescues gradient-information
-# failures (4 layers is fragile at $\sigma{=}0.05$ but robust at
-# $\sigma{=}0.5$) while amplifying training-regime disruptions
-# (2 epochs, LR schedulers, wrong constraints are all worse here).
+# perfect derivative fitting.  The agent initially identified
+# `n_layers=4` as eliminating catastrophic failures (0/4 in
+# exploration), but replication at $n{=}5$ showed the 4-layer
+# architecture fails to converge on new seeds (conn $R^2 < 0.01$).
+# The 3-layer architecture with the same optimized learning rates
+# (`batch_size=2`, $\text{lr}_W{=}6{\times}10^{-4}$) remains the
+# most reliable configuration.
 #
-# **Best config**: `n_layers=4`, default learning rates,
+# **Best config**: `n_layers=3`, `batch_size=2`, reduced learning rates,
 # `aug_loop=20`, `n_epochs=1`.
-# **Result**: $R^2 = 0.99 \pm 0.02$, **CV = 1.7%** (4/4 seeds
-# $> 0.96$, pending replication at $n{=}8$).
+# **Result**: pending $n{=}5$ replication.
 
 # %% [markdown]
 # ### Joint GNN + SIREN ($\sigma = 0.05$): 24 iterations, 2 blocks
