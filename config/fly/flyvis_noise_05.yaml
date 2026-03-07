@@ -1,4 +1,4 @@
-description: "flyvis noise_05 LLM exploration champion — bs=2, hidden=80, 4L, emb=2, randn_scaled"
+description: "flyvis noise_05 — bs=2, hidden=80, 3L, emb=2, randn_scaled (reverted from 4L)"
 dataset: flyvis_noise_05
 simulation:
   connectivity_file: to be specified
@@ -22,11 +22,11 @@ graph_model:
   signal_model_name: flyvis_A
   prediction: first_derivative
   input_size: 3
-  n_layers: 4
+  n_layers: 3
   hidden_dim: 80
   output_size: 1
   input_size_update: 5
-  n_layers_update: 4
+  n_layers_update: 3
   hidden_dim_update: 80
   aggr_type: add
   embedding_dim: 2
