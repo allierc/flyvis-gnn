@@ -71,47 +71,62 @@
 # fail to recover the true connectivity ($R^2 < 0.80$).  After
 # 60 iterations and 14 falsified hypotheses, the agent identified
 # the root cause: 65 neuron types cannot be reliably separated in
-# a 2D embedding space.  With `embedding_dim=2`, some seeds
-# converge to configurations where distinct types collapse onto
-# overlapping regions, producing contradictory gradients.
-# Increasing to `embedding_dim=4` eliminated every failure:
-# extra dimensions provide escape directions that prevent type
-# collapse.  `embedding_dim=6` reintroduced sensitivity,
-# confirming 4 as the sweet spot.
+# a 2D embedding space.  Some seeds converge to configurations
+# where distinct types collapse onto overlapping regions, producing
+# contradictory gradients.  Increasing to `embedding_dim=4`
+# eliminated every failure: extra dimensions provide escape
+# directions that prevent type collapse.  `embedding_dim=6`
+# reintroduced sensitivity, confirming 4 as the sweet spot.
 #
 # **Best config**: `embedding_dim=4`, `g_phi_diff=1500`,
 # `n_epochs=1`, `aug_loop=20`.
-# **Result**: $R^2 = 0.93 \pm 0.01$ (CV = 0.30%, 4/4 seeds
+# **Result**: $R^2 = 0.93 \pm 0.01$, **CV = 0.30%** (4/4 seeds
 # $> 0.92$).
 
 # %% [markdown]
 # ### Low noise ($\sigma = 0.05$): A single constraint, sharp overfitting
 # *220 iterations, 19 blocks*
 #
-# Recovery relies on the monotonicity penalty alone (`g_phi_diff=750`).  
-# The lever is `data_augmentation_loop`: $20 \to 35$ improves robustness,
-# but `aug=36` triggers a $30\times$ CV explosion ($0.3\% \to 9.9\%$)
-# — a sharp overfitting cliff.
-# **Result**: $R^2 = 0.98 \pm 0.01$ (CV = 0.3%).
+# With one training epoch, all L1/L2 regularizers are inactive (annealing
+# multiplier = 0 at epoch 0).  Recovery relies on the monotonicity
+# penalty alone (`g_phi_diff=750`).  The agent found three critical
+# levers: `batch_size` $2 \to 4$, all learning rates scaled by
+# $1.5\times$ (compensating for larger batches), and
+# `data_augmentation_loop` $20 \to 35$.  Augmentation was the single
+# biggest gain, but the landscape has a razor-sharp cliff: `aug=36`
+# triggers a $30\times$ CV explosion ($0.3\% \to 9.9\%$).
+# Two-epoch training was tested twice and rejected — the epoch
+# boundary introduces instability.  The champion survived 44
+# perturbation tests across 18 blocks without being dethroned.
+#
+# **Best config**: `batch_size=4`, $1.5\times$ learning rates,
+# `aug_loop=35`, `n_epochs=1`.
+# **Result**: $R^2 = 0.98 \pm 0.01$, **CV = 0.3%** (all seeds
+# $> 0.97$).
 
 # %% [markdown]
 # ### High noise ($\sigma = 0.5$): Bimodal landscape
-# *96 iterations, 8 blocks*
+# *112 iterations, 10 blocks*
 #
 # At $\sigma{=}0.5$ the landscape is **bimodal**: ~25% of seeds
 # catastrophically fail ($R^2 \approx 0.20$) while the rest
-# achieve near-perfect recovery.  The agent classified five
-# failure types and found that **noise cannot substitute for
-# structural priors** — removing the monotonicity constraint
-# collapses $V^{\text{rest}}$ recovery despite perfect derivative
-# fitting.  Scaling learning rates by $1.5\times$ eliminates
-# the bimodal mode entirely, with a sharp escape threshold
-# at ${\sim}1.44\times$ (~6% transition band).
+# achieve near-perfect recovery.  This failure rate is
+# LR-invariant, architecture-independent, and augmentation-
+# insensitive — it appears fundamental to `randn_scaled`
+# initialization.  The agent found that **noise cannot substitute
+# for structural priors**: removing the monotonicity constraint
+# (`g_phi_diff=0`) collapses $V^{\text{rest}}$ recovery despite
+# perfect derivative fitting.  The only configuration with 0/4
+# catastrophic failures was `n_layers=4` (deeper MLPs for both
+# $f_\theta$ and $g_\phi$).  Noise rescues gradient-information
+# failures (4 layers is fragile at $\sigma{=}0.05$ but robust at
+# $\sigma{=}0.5$) while amplifying training-regime disruptions
+# (2 epochs, LR schedulers, wrong constraints are all worse here).
 #
-# **Best config**: $1.5\times$ learning rates, `aug_loop=20`,
-# default architecture.
-# **Result**: $R^2 = 1.00 \pm 0.01$ (CV = 0.64%, 4/4 seeds
-# robust).
+# **Best config**: `n_layers=4`, default learning rates,
+# `aug_loop=20`, `n_epochs=1`.
+# **Result**: $R^2 = 0.99 \pm 0.02$, **CV = 1.7%** (4/4 seeds
+# $> 0.96$, pending replication at $n{=}8$).
 
 # %% [markdown]
 # ### Joint GNN + SIREN ($\sigma = 0.05$): 24 iterations, 2 blocks

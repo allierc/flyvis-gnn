@@ -1,13 +1,13 @@
-"""Benchmark: 5 seeds × (default + optimized) × 3 noise levels.
+"""Benchmark bis: 5 seeds × optimized only × noise_005 + noise_05.
 
-For each seed: generate data → train → test → collect all metrics.
+Re-run with corrected configs (from exploration review).
 The CSV is updated after every single run so progress can be monitored.
 
 Usage:
-    python run_benchmark.py
+    python run_benchmark_bis.py
 
 Monitor progress:
-    watch -n 10 column -t -s, log/benchmark_results.csv
+    watch -n 10 column -t -s, log/benchmark_results_bis.csv
 """
 import sys
 import os
@@ -33,14 +33,8 @@ from flyvis_gnn.utils import set_device, add_pre_folder, log_path, config_path
 
 N_SEEDS = 5
 
-# (config_name, label)
+# Only the two corrected optimized configs
 CONFIGS = [
-    # Default configs (from NeuralGraph)
-    ('flyvis_noise_free_default', 'default'),
-    ('flyvis_noise_005_default',  'default'),
-    ('flyvis_noise_05_default',   'default'),
-    # Optimized configs (from LLM exploration)
-    ('flyvis_noise_free', 'optimized'),
     ('flyvis_noise_005',  'optimized'),
     ('flyvis_noise_05',   'optimized'),
 ]
@@ -166,8 +160,13 @@ if __name__ == '__main__':
     device = None
     results = []
 
-    # Write header immediately so `watch` shows structure
-    write_csv(results)
+    # Load existing results from CSV (appending mode)
+    if os.path.isfile(OUT_CSV):
+        with open(OUT_CSV, newline='') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                results.append(row)
+        print(f'Loaded {len(results)} existing rows from {OUT_CSV}')
 
     for config_name, label in CONFIGS:
         config_file, pre_folder = add_pre_folder(config_name)
@@ -176,6 +175,10 @@ if __name__ == '__main__':
         noise_level = float(base_config.simulation.noise_model_level)
         print(f'\n{"="*70}')
         print(f'Config: {config_name}  ({label}, noise={noise_level})')
+        print(f'  n_epochs={base_config.training.n_epochs}  '
+              f'aug={base_config.training.data_augmentation_loop}  '
+              f'bs={base_config.training.batch_size}  '
+              f'n_layers={base_config.graph_model.n_layers}')
         print(f'{"="*70}')
 
         for seed_idx, (sim_seed, train_seed) in enumerate(SEED_PAIRS):
@@ -189,17 +192,9 @@ if __name__ == '__main__':
             # Deep-copy and override per-seed settings
             config = base_config.model_copy(deep=True)
             config.dataset = f"{pre_folder}{base_config.dataset}_{seed_idx:02d}"
-            config.config_file = f"{pre_folder}{config_name}_bench_{seed_idx:02d}"
+            config.config_file = f"{pre_folder}{config_name}_bis_{seed_idx:02d}"
             config.simulation.seed = sim_seed
             config.training.seed = train_seed
-            # Use claude.n_epochs / claude.data_augmentation_loop if present
-            # (these are part of the HPO result), otherwise keep config defaults
-            claude_cfg = getattr(config, 'claude', None)
-            if claude_cfg and isinstance(claude_cfg, dict):
-                if 'n_epochs' in claude_cfg:
-                    config.training.n_epochs = claude_cfg['n_epochs']
-                if 'data_augmentation_loop' in claude_cfg:
-                    config.training.data_augmentation_loop = claude_cfg['data_augmentation_loop']
 
             if device is None:
                 device = set_device(config.training.device)
@@ -269,5 +264,5 @@ if __name__ == '__main__':
             write_csv(results)
             print_summary(results)
 
-    print(f'\n\nBenchmark complete. Results saved to {OUT_CSV}')
+    print(f'\n\nBenchmark bis complete. Results saved to {OUT_CSV}')
     print(f'Total runs: {len(results)}')
