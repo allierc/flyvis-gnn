@@ -683,18 +683,49 @@ def data_test_flyvis_special(
         dim=0).to(device)
 
     if sim.n_extra_null_edges > 0:
-        logger.info(f"adding {sim.n_extra_null_edges} extra null edges...")
-        existing_edges = set(zip(edge_index[0].cpu().numpy(), edge_index[1].cpu().numpy()))
+        logger.info(f"adding {sim.n_extra_null_edges} extra null edges (mode={sim.null_edges_mode})...")
         import random
+        src_np = edge_index[0].cpu().numpy()
+        dst_np = edge_index[1].cpu().numpy()
+        existing_edges = set(zip(src_np, dst_np))
         extra_edges = []
-        max_attempts = sim.n_extra_null_edges * 10
-        attempts = 0
-        while len(extra_edges) < sim.n_extra_null_edges and attempts < max_attempts:
-            source = random.randint(0, n_neurons - 1)
-            target = random.randint(0, n_neurons - 1)
-            if (source, target) not in existing_edges and source != target:
-                extra_edges.append([source, target])
-            attempts += 1
+
+        if sim.null_edges_mode == 'per_column':
+            from collections import Counter
+            out_degree = Counter(src_np.tolist())
+            total_real = edge_index.shape[1]
+            ratio = sim.n_extra_null_edges / total_real
+            targets_by_source = {}
+            for s, d in zip(src_np, dst_np):
+                targets_by_source.setdefault(int(s), set()).add(int(d))
+            all_neurons = list(range(n_neurons))
+            for source in range(n_neurons):
+                deg = out_degree.get(source, 0)
+                if deg == 0:
+                    continue
+                n_false = max(1, int(round(deg * ratio)))
+                existing_targets = targets_by_source.get(source, set())
+                candidates = [t for t in all_neurons if t != source and t not in existing_targets]
+                if len(candidates) <= n_false:
+                    chosen = candidates
+                else:
+                    chosen = random.sample(candidates, n_false)
+                for t in chosen:
+                    extra_edges.append([source, t])
+                    existing_targets.add(t)
+            logger.info(f"per_column: added {len(extra_edges)} false edges "
+                        f"(requested ratio {ratio:.2f}, effective {len(extra_edges)/total_real:.2f})")
+        else:
+            max_attempts = sim.n_extra_null_edges * 10
+            attempts = 0
+            while len(extra_edges) < sim.n_extra_null_edges and attempts < max_attempts:
+                source = random.randint(0, n_neurons - 1)
+                target = random.randint(0, n_neurons - 1)
+                if (source, target) not in existing_edges and source != target:
+                    extra_edges.append([source, target])
+                    existing_edges.add((source, target))
+                attempts += 1
+
         if extra_edges:
             extra_edge_index = torch.tensor(extra_edges, dtype=torch.long, device=device).t()
             edge_index = torch.cat([edge_index, extra_edge_index], dim=1)

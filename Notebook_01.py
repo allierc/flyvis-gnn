@@ -61,7 +61,7 @@
 # biophysical priors on $g_\phi$, and sparsity on $\widehat{W}$
 # favors connectivity patterns consistent with the true circuit.
 # A systematic approach to quantifying and reducing degeneracy
-# through agentic hyper-parameter optimization is presented in [Notebook 06](Notebook_06.html).
+# through agentic hyper-parameter optimization is presented in [Notebook 07](Notebook_07.html).
 #
 # ### Regularization
 #

@@ -582,50 +582,47 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
         dim=0).to(device)
 
     if sim.n_extra_null_edges > 0:
-        logger.info(f"adding {sim.n_extra_null_edges} extra null edges...")
-        existing_edges = set(zip(edge_index[0].cpu().numpy(), edge_index[1].cpu().numpy()))
+        logger.info(f"adding {sim.n_extra_null_edges} extra null edges (mode={sim.null_edges_mode})...")
         import random
+        src_np = edge_index[0].cpu().numpy()
+        dst_np = edge_index[1].cpu().numpy()
+        existing_edges = set(zip(src_np, dst_np))
         extra_edges = []
 
-        # If sim.n_extra_null_edges > 424*424, prioritize L1-L2 (receiver) and R1-R2 (sender) connections
-        if sim.n_extra_null_edges > 424 * 424:
-            logger.info("Prioritizing L1-L2 and R1-R2 connections...")
-            # R1 R2 (sender): columns 0 to 433
-            col_start = 0
-            col_end = 217 * 2  # 434
-            # L1 L2 (receiver): rows 1736 to 2159
-            row_start = 1736
-            row_end = 1736 + 217 * 2  # 2160
+        if sim.null_edges_mode == 'per_column':
+            # Per pre-synaptic neuron: add a proportional number of false targets
+            # Compute out-degree per source neuron
+            from collections import Counter
+            out_degree = Counter(src_np.tolist())
+            total_real = edge_index.shape[1]
+            ratio = sim.n_extra_null_edges / total_real
 
-            # Generate all possible edges in the priority region
-            priority_edges = []
-            for source in range(col_start, col_end):
-                for target in range(row_start, row_end):
-                    if (source, target) not in existing_edges and source != target:
-                        priority_edges.append([source, target])
+            # Build per-neuron target sets for fast lookup
+            targets_by_source = {}
+            for s, d in zip(src_np, dst_np):
+                targets_by_source.setdefault(int(s), set()).add(int(d))
 
-            # Add priority edges first
-            n_priority = min(len(priority_edges), sim.n_extra_null_edges)
-            random.shuffle(priority_edges)
-            extra_edges.extend(priority_edges[:n_priority])
-            logger.info(f"Added {len(extra_edges)} priority edges from R1-R2 to L1-L2")
+            all_neurons = list(range(n_neurons))
+            for source in range(n_neurons):
+                deg = out_degree.get(source, 0)
+                if deg == 0:
+                    continue
+                n_false = max(1, int(round(deg * ratio)))
+                existing_targets = targets_by_source.get(source, set())
+                # Sample false targets not already connected and not self
+                candidates = [t for t in all_neurons if t != source and t not in existing_targets]
+                if len(candidates) <= n_false:
+                    chosen = candidates
+                else:
+                    chosen = random.sample(candidates, n_false)
+                for t in chosen:
+                    extra_edges.append([source, t])
+                    existing_targets.add(t)
 
-            # Fill remaining with random edges if needed
-            remaining = sim.n_extra_null_edges - len(extra_edges)
-            if remaining > 0:
-                logger.info(f"Filling remaining {remaining} edges randomly...")
-                existing_edges.update([(e[0], e[1]) for e in extra_edges])
-                max_attempts = remaining * 10
-                attempts = 0
-                while len(extra_edges) < sim.n_extra_null_edges and attempts < max_attempts:
-                    source = random.randint(0, n_neurons - 1)
-                    target = random.randint(0, n_neurons - 1)
-                    if (source, target) not in existing_edges and source != target:
-                        extra_edges.append([source, target])
-                        existing_edges.add((source, target))
-                    attempts += 1
+            logger.info(f"per_column: added {len(extra_edges)} false edges "
+                        f"(requested ratio {ratio:.2f}, effective {len(extra_edges)/total_real:.2f})")
         else:
-            # Original random edge generation
+            # Random: sample uniformly across the full matrix
             max_attempts = sim.n_extra_null_edges * 10
             attempts = 0
             while len(extra_edges) < sim.n_extra_null_edges and attempts < max_attempts:
@@ -633,6 +630,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                 target = random.randint(0, n_neurons - 1)
                 if (source, target) not in existing_edges and source != target:
                     extra_edges.append([source, target])
+                    existing_edges.add((source, target))
                 attempts += 1
 
         if extra_edges:

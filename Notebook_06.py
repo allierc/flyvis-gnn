@@ -1,375 +1,262 @@
 # %% [raw]
 # ---
-# title: "Agentic Hyper-Parameter Optimization: Addressing Identifiability"
+# title: "GNN + INR: Joint Stimulus and Dynamics Recovery"
 # author: "Allier, Lappalainen, Saalfeld"
 # categories:
 #   - FlyVis
 #   - GNN
-#   - Agentic Optimization
-#   - Identifiability
+#   - INR
+#   - SIREN
 # execute:
 #   echo: false
-# image: "assets/Fig_agentic_loop.svg"
-# description: "Agentic hyper-parameter optimization addresses the ill-posedness of circuit recovery across three noise regimes, discovering that identifiability fails for different reasons at each level and finding distinct solutions through hypothesis-driven reasoning."
+# image: "log/Claude_exploration/LLM_flyvis_noise_005_INR_siren/inr_comparison/iter_106_slot_01_siren_txy_comparison_60000.png"
+# description: "Train a SIREN implicit neural representation (INR) jointly with the GNN to recover the visual stimulus field from neural activity alone. Discuss the inherent scale/offset degeneracy and the corrected R²."
 # ---
 
 # %% [markdown]
-# ## Agentic Hyper-Parameter Optimization
+# ## Joint Stimulus and Dynamics Recovery with GNN + INR
 #
-# The inverse problem solved by the GNN is **ill-posed**: recovering five coupled
-# components ($\widehat{W}$, $\tau$, $V^{\text{rest}}$, $f_\theta$,
-# $g_\phi$) from voltage traces alone is under-determined.  Many
-# different parameter combinations can produce indistinguishable
-# voltage predictions.  This degeneracy manifests as **seed
-# dependence**: slight differences in random initialization can push
-# the optimizer toward a different solution on the degenerate
-# manifold.  A GNN that accurately forecasts neural activity may
-# nonetheless have recovered the wrong connectivity.
+# In the previous notebooks the visual stimulus $I_i(t)$ was provided
+# as a known input to the GNN.  Here we ask: can the stimulus itself
+# be recovered from neural activity alone?
 #
-# The combined space of architecture, regularization, and training
-# hyperparameters (~20 coupled parameters) is too large to explore
-# exhaustively.  Rather than grid search, we deployed a closed-loop
-# system where Claude Code interpreted experiment results,
-# maintained a structured research summary, and proposed the next intervention.
-# At each iteration the agent selected parent configurations to mutate
-# using an Upper Confidence Bound (UCB) tree search that balances
-# exploitation of high-performing branches with exploration of
-# under-visited regions.  The system implemented a form of automated
-# scientific reasoning: testable hypotheses were drawn, repeatable
-# experiments validated or falsified them, and causal understanding
-# progressively emerged [1].
-#
-# <object type="image/svg+xml" data="assets/Fig_agentic_loop.svg" width="700"></object>
-#
-# The primary optimization target is not prediction accuracy (which
-# is easy) but **identifiability**: the coefficient of variation
-# (CV) of connectivity $R^2$ across random seeds measures how
-# consistently a configuration escapes the degenerate solution landscape.
-# Across five explorations (600 iterations), the agent established
-# transferable principles and falsified hypotheses.  At each
-# noise level, identifiability fails for a different reason and
-# requires a different solution.
-
-# %% [markdown]
-# ## Identifiability Across Noise Regimes
-#
-# The three noise conditions reveal three distinct faces of the
-# ill-posedness problem.  At $\sigma{=}0$ the bottleneck is
-# geometric capacity of the representation space.  At
-# $\sigma{=}0.05$ it is the sharpness of the optimization
-# landscape.  At $\sigma{=}0.5$ it is the non-convexity of the
-# loss surface itself.  The agent discovered each mechanism through
-# hypothesis-driven reasoning chains spanning tens to hundreds of
-# iterations.
-
-# %% [markdown]
-# ### Noise-free ($\sigma = 0$): Geometric capacity of the embedding space
-# *108 iterations, 9 blocks*
-#
-# At $\sigma{=}0$ the GNN predicts voltage derivatives accurately
-# regardless of seed, yet ~25% of initializations catastrophically
-# fail to recover the true connectivity ($R^2 < 0.80$).  After
-# 60 iterations and 14 falsified hypotheses, the agent identified
-# the root cause: 65 neuron types cannot be reliably separated in
-# a 2D embedding space.  Some seeds converge to configurations
-# where distinct types collapse onto overlapping regions, producing
-# contradictory gradients.  Increasing to `embedding_dim=4`
-# eliminated every failure: extra dimensions provide escape
-# directions that prevent type collapse.  `embedding_dim=6`
-# reintroduced sensitivity, confirming 4 as the sweet spot.
-#
-# **Best config**: `embedding_dim=4`, `g_phi_diff=1500`,
-# `n_epochs=1`, `aug_loop=20`.
-# **Result**: $R^2 = 0.93 \pm 0.01$, **CV = 0.30%** (4/4 seeds
-# $> 0.92$).
-
-# %% [markdown]
-# ### Low noise ($\sigma = 0.05$): A single constraint, sharp overfitting
-# *220 iterations, 19 blocks*
-#
-# With one training epoch, all L1/L2 regularizers are inactive (annealing
-# multiplier = 0 at epoch 0).  Recovery relies on the monotonicity
-# penalty alone (`g_phi_diff=750`).  The agent found three critical
-# levers: `batch_size` $2 \to 4$, all learning rates scaled by
-# $1.5\times$ (compensating for larger batches), and
-# `data_augmentation_loop` $20 \to 35$.  Augmentation was the single
-# biggest gain, but the landscape has a razor-sharp cliff: `aug=36`
-# triggers a $30\times$ CV explosion ($0.3\% \to 9.9\%$).
-# Two-epoch training was tested twice and rejected — the epoch
-# boundary introduces instability.  The champion survived 44
-# perturbation tests across 18 blocks without being dethroned.
-#
-# **Best config**: `batch_size=4`, $1.5\times$ learning rates,
-# `aug_loop=35`, `n_epochs=1`.
-# **Result**: $R^2 = 0.98 \pm 0.01$, **CV = 0.3%** (all seeds
-# $> 0.97$).
-
-# %% [markdown]
-# ### High noise ($\sigma = 0.5$): Bimodal landscape
-# *112 iterations, 10 blocks*
-#
-# At $\sigma{=}0.5$ the landscape is **bimodal**: ~25% of seeds
-# catastrophically fail ($R^2 \approx 0.20$) while the rest
-# achieve near-perfect recovery.  This failure rate is
-# LR-invariant, architecture-independent, and augmentation-
-# insensitive — it appears fundamental to `randn_scaled`
-# initialization.  The agent found that **noise cannot substitute
-# for structural priors**: removing the monotonicity constraint
-# (`g_phi_diff=0`) collapses $V^{\text{rest}}$ recovery despite
-# perfect derivative fitting.  The only configuration with 0/4
-# catastrophic failures was `n_layers=4` (deeper MLPs for both
-# $f_\theta$ and $g_\phi$).  Noise rescues gradient-information
-# failures (4 layers is fragile at $\sigma{=}0.05$ but robust at
-# $\sigma{=}0.5$) while amplifying training-regime disruptions
-# (2 epochs, LR schedulers, wrong constraints are all worse here).
-#
-# **Best config**: `n_layers=4`, default learning rates,
-# `aug_loop=20`, `n_epochs=1`.
-# **Result**: $R^2 = 0.99 \pm 0.02$, **CV = 1.7%** (4/4 seeds
-# $> 0.96$, pending replication at $n{=}8$).
-
-# %% [markdown]
-# ### Joint GNN + SIREN ($\sigma = 0.05$): 24 iterations, 2 blocks
-#
-# **SIREN depth $\geq 4$ eliminates catastrophic failures** (3-layer:
-# 25% failure rate).  4 layers gives best connectivity ($R^2 = 0.94$,
-# CV = 0.90%); 5 layers gives best field reconstruction
-# ($R^2 = 0.83$, higher GNN variance).
-# `omega=4096` outperforms 1024 in joint training — opposite of
-# standalone SIREN.
-
-# %% [markdown]
-# ### Standalone SIREN ($\sigma = 0.05$): 152 iterations, 13 blocks
-#
-# Best field $R^2 = 0.90$ (`hidden_dim=768`, 7 layers,
-# `omega=1750`, `lr=1.5e-7`, 60k steps).  The dominant lever is
-# `omega` (initial frequency scale): increasing it from 30 to 1024
-# yielded $+0.24$ $R^2$, exceeding all other tuning combined.
-# Higher omega ($\geq 2000$) suffers from late-stage collapse,
-# making 1750 optimal.  Learning rate scales inversely with omega
-# ($\omega \times \text{lr} \approx 2.5 \times 10^{-4}$).
+# We replaced the ground-truth stimulus with a learnable **implicit
+# neural representation** (INR), specifically a
+# [SIREN](https://arxiv.org/abs/2006.09661) network, that maps
+# continuous coordinates $(t, x, y)$ to the stimulus value at each
+# neuron position and time step.  The SIREN was trained jointly with
+# the GNN.  This amounted to solving a harder inverse problem: recovering not
+# only the circuit parameters ($W$, $\tau$, $V^{\text{rest}}$,
+# $f_\theta$, $g_\phi$) but also the stimulus field from voltage
+# data alone.
 
 # %%
 #| output: false
 import os
-import re
-import numpy as np
+import sys
+import glob
 import warnings
-warnings.filterwarnings("ignore")
 
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-from IPython.display import Image, display
-from collections import Counter
-from scipy.ndimage import gaussian_filter1d
+from IPython.display import Image, Markdown, Video, display
 
-# ── Configuration ───────────────────────────────────────────────
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)) if '__file__' in dir() else '.')
+from GNN_PlotFigure import data_plot
+from flyvis_gnn.config import NeuralGraphConfig
+from flyvis_gnn.utils import set_device, add_pre_folder, log_path
 
-LOG_FILE = os.path.join(
-    'log', 'Claude_exploration', 'LLM_flyvis_noise_005',
-    'flyvis_noise_005_Claude_analysis.md',
+warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API")
+warnings.filterwarnings("ignore", category=FutureWarning)
+
+
+def display_image(path, width=700):
+    """Display a full-resolution image; width controls inline size (px)."""
+    display(Image(filename=path, width=width))
+
+
+# %% [markdown]
+# ## SIREN Architecture
+#
+# The SIREN (Sinusoidal Representation Network) uses periodic
+# activation functions $\phi(x) = \sin(\omega_0 \cdot x)$ instead
+# of ReLU, enabling it to represent fine spatial and temporal
+# detail in the stimulus field.
+#
+# The key hyperparameters explored by the agentic hyper-parameter optimization
+# (Notebook 06) are:
+#
+# - **$\omega_0$** (frequency scaling): controls the spectral
+#   bandwidth of the representation.  Higher $\omega_0$ allows the
+#   network to capture faster temporal fluctuations and sharper
+#   spatial edges.
+# - **hidden_dim**: network width (number of hidden units per
+#   layer).
+# - **n_layers**: network depth.
+# - **learning rate**: must scale inversely with $\omega_0$ for
+#   stable training.
+#
+# The input is a 3D coordinate $(t, x, y)$ normalized to the
+# training domain, and the output is a scalar stimulus value for
+# each neuron at each time step.
+#
+# ### Scale/Offset Degeneracy and Corrected $R^2$
+#
+# The SIREN output enters the GNN through $f_\theta$, which receives
+# the concatenated input $[v_i,\, \mathbf{a}_i,\, \text{msg}_i,\, I_i(t)]$.
+# This creates an inherent **scale/offset degeneracy**: $f_\theta$'s
+# biases absorb any constant offset, and its weights on the excitation
+# dimension compensate any scale factor (including sign inversion).
+# The SIREN and $f_\theta$ jointly optimize along a degenerate manifold
+# where the stimulus *pattern* is learned correctly but the linear
+# mapping between SIREN output and true stimulus is unidentifiable.
+# We therefore apply a **global linear fit**
+# $I^{\text{true}} = a \cdot I^{\text{pred}} + b$ and report the
+# corrected $R^2$.
+
+# %%
+#| output: false
+config_name = "flyvis_noise_005_INR"
+config_file, pre_folder = add_pre_folder(config_name)
+config = NeuralGraphConfig.from_yaml(f"./config/{config_file}.yaml")
+config.dataset = pre_folder + config.dataset
+config.config_file = pre_folder + config_name
+gnn_log_dir = log_path(config.config_file)
+device = set_device(config.training.device)
+
+inr_log = "log/Claude_exploration/LLM_flyvis_noise_005_INR_siren"
+
+# Check that results exist
+if not os.path.isdir(inr_log):
+    raise RuntimeError(
+        f"INR SIREN results not found at: {inr_log}. "
+        f"Run the agentic optimization for flyvis_noise_005_INR_siren first."
+    )
+
+inr_video_dir = os.path.join(inr_log, "inr_video")
+inr_comparison_dir = os.path.join(inr_log, "inr_comparison")
+inr_results_dir = os.path.join(inr_log, "results")
+
+# %% [markdown]
+# ## Stimulus Recovery Video
+#
+# The video below shows the best SIREN result (iter 106,
+# $R^2$=0.824) with three panels:
+#
+# - **Left**: ground-truth stimulus on the hexagonal photoreceptor
+#   array.
+# - **Center**: SIREN prediction after global linear correction
+#   ($I^{\text{true}} = a \cdot I^{\text{pred}} + b$).
+# - **Right**: rolling voltage traces for 10 selected neurons
+#   (ground truth in green, prediction in black).
+#
+# The linear correction coefficients $a$ and $b$ and the per-frame
+# RMSE are displayed in the trace panel.
+
+# %%
+import glob, re as _re
+
+# Find the latest stimulus video (highest iteration number)
+_video_pattern = os.path.join(inr_video_dir, "iter_*_stimulus_gt_vs_pred.mp4")
+_video_files = sorted(glob.glob(_video_pattern))
+if _video_files:
+    video_path = _video_files[-1]
+    _m = _re.search(r'iter_(\d+)_slot_(\d+)', os.path.basename(video_path))
+    if _m:
+        best_iter, best_slot = int(_m.group(1)), int(_m.group(2))
+    display(Video(video_path, embed=True, width=800))
+else:
+    display(Markdown(f"*No stimulus video found in `{inr_video_dir}`*"))
+
+# %% [markdown]
+# ## Best Result Metrics
+#
+# The SIREN hyperparameters were optimized over 116 iterations
+# by the agentic hyper-parameter optimization framework ([Notebook 07](Notebook_07.py)).
+# The best configuration (iter 106: hidden_dim=512, 7 layers,
+# $\omega_0$=1024, lr=$3\times10^{-7}$) achieves $R^2$ = 0.82
+# on the full 64,000-frame stimulus sequence.
+
+
+# %% [markdown]
+# ## GNN Analysis: Learned Representations
+#
+# Beyond stimulus recovery, the joint GNN+SIREN model also learns
+# synaptic weights, neural embeddings, and MLP functions.  Below we
+# run the same analysis as [Notebook 04](Notebook_04.py) on the
+# joint model to verify that circuit recovery is preserved.
+
+# %%
+#| echo: true
+#| output: false
+print("\n--- Generating GNN analysis plots for noise_005_INR ---")
+data_plot(
+    config=config,
+    config_file=config.config_file,
+    epoch_list=['best'],
+    style='color',
+    extended='plots',
+    device=device,
 )
 
-MODES = [
-    'Induction', 'Boundary', 'Deduction', 'Falsification',
-    'Analogy', 'Abduction', 'Meta-reasoning', 'Regime',
-    'Causal Chain', 'Constraint',
-]
+# %%
+#| output: false
+config_indices = config_name.replace('flyvis_', '')
 
-COLORS = {
-    'Induction': '#2ecc71',
-    'Abduction': '#9b59b6',
-    'Deduction': '#3498db',
-    'Falsification': '#e74c3c',
-    'Analogy': '#f39c12',
-    'Boundary': '#1abc9c',
-    'Meta-reasoning': '#e91e63',
-    'Regime': '#795548',
-    'Causal Chain': '#00bcd4',
-    'Constraint': '#ff5722',
-}
+def show_result(filename, width=600):
+    path = os.path.join(gnn_log_dir, "results", filename.format(idx=config_indices))
+    if os.path.isfile(path):
+        display_image(path, width=width)
 
-DEFINITIONS = {
-    'Induction': 'observations \u2192 pattern',
-    'Abduction': 'observation \u2192 hypothesis',
-    'Deduction': 'hypothesis \u2192 prediction',
-    'Falsification': 'prediction failed \u2192 refine',
-    'Analogy': 'cross-regime transfer',
-    'Boundary': 'limit-finding',
-    'Meta-reasoning': 'strategy adaptation',
-    'Regime': 'phase identification',
-    'Causal Chain': 'multi-step causation',
-    'Constraint': 'parameter relationships',
-}
+def show_mlp(mlp_name, suffix=""):
+    path = os.path.join(gnn_log_dir, "results", f"{mlp_name}_{config_indices}{suffix}.png")
+    if os.path.isfile(path):
+        display_image(path, width=700)
 
-# Reasoning-mode markers (case-insensitive patterns)
-MODE_MARKERS = {
-    'Falsification': [
-        r'\bfalsified\b', r'\brejected\b', r'\bdoes NOT\b',
-        r'\bdisproved\b', r'\bcontradicts\b',
-        r'verdict:\s*falsified', r'falsified hypothesis',
-    ],
-    'Deduction': [
-        r'hypothesis tested', r'\bpredict\b', r'\bexpect\b',
-        r'if\b.*\bthen\b', r'\bshould\b.*\bachieve\b',
-        r'test whether',
-    ],
-    'Induction': [
-        r'established principle', r'\bconfirmed\b.*\bpattern\b',
-        r'consistently\b', r'\boptimal\b.*\bfor\b',
-        r'every.*tested', r'robust.*across',
-        r'key finding', r'scales with',
-    ],
-    'Boundary': [
-        r'\bboundary\b', r'\bcliff\b', r'\bthreshold\b',
-        r'sweet spot', r'\boptimum\b', r'\bplateau\b',
-        r'sharp.*optimum', r'minimum.*at\b', r'maximum.*at\b',
-    ],
-    'Analogy': [
-        r'\btransfer\b', r'\bgeneralizes\b',
-        r'based on.*block', r'from noise_',
-        r'contrast with', r'analogous',
-        r'same.*pattern.*as',
-    ],
-    'Abduction': [
-        r'likely because', r'\bsuggests\b.*\bthat\b',
-        r'caused by', r'mechanism:', r'explanation:',
-        r'appears to',
-    ],
-    'Meta-reasoning': [
-        r'strategy', r'need.*different.*approach',
-        r'\bstuck\b', r'exhausted', r'reconsider',
-        r'search.*ineffective',
-    ],
-    'Regime': [
-        r'\bregime\b', r'phase transition', r'\bbimodal\b',
-        r'fundamentally different', r'qualitatively',
-        r'two.*distinct.*class',
-    ],
-    'Causal Chain': [
-        r'because.*which.*cause', r'chain:',
-        r'leads to.*which', r'cascade',
-        r'mechanism.*\bvia\b',
-    ],
-    'Constraint': [
-        r'\bconstrains\b', r'since.*failed.*must',
-        r'\bimplies\b.*\bthat\b', r'\brequires\b.*\bthat\b',
-    ],
-}
+# %% [markdown]
+# ### Corrected Weights ($W$)
 
-def _hex_to_rgba(hex_color, alpha=0.4):
-    r = int(hex_color[1:3], 16)
-    g = int(hex_color[3:5], 16)
-    b = int(hex_color[5:7], 16)
-    return f'rgba({r},{g},{b},{alpha})'
+# %%
+#| lightbox: true
+show_result("weights_comparison_corrected.png")
 
-# ── Parsing ──────────────────────────────────────────────────────
+# %% [markdown]
+# ### $f_\theta$ (MLP$_0$): Neuron Update Function
 
-with open(LOG_FILE) as f:
-    log_text = f.read()
+# %%
+#| lightbox: true
+show_mlp("MLP0", "_domain")
 
-# Extract batch (block) boundaries
-block_defs = []  # (start_iter, end_iter, label)
-for m in re.finditer(
-    r'^## Batch\s+(\d+)\s+\(Iterations?\s+(\d+)-(\d+)\):\s*(.*)',
-    log_text, re.MULTILINE,
-):
-    batch_num = int(m.group(1))
-    start = int(m.group(2))
-    end = int(m.group(3))
-    desc = m.group(4).strip().rstrip(' —-')
-    # Short label: "B1: desc"
-    short = desc[:25] + '\u2026' if len(desc) > 25 else desc
-    block_defs.append((start, end, f'B{batch_num}: {short}'))
+# %% [markdown]
+# ### Time Constants ($\tau$)
 
-# Extract iteration events
-iter_blocks = re.split(r'^## Iter(?:ation)?\s+(\d+)', log_text, flags=re.MULTILINE)
+# %%
+#| lightbox: true
+show_result("tau_comparison_{idx}.png", width=500)
 
-all_events = []
-for i in range(1, len(iter_blocks) - 1, 2):
-    try:
-        iter_num = int(iter_blocks[i])
-    except ValueError:
-        continue
-    block = iter_blocks[i + 1]
+# %% [markdown]
+# ### Resting Potentials ($V^{\text{rest}}$)
 
-    detected = set()
-    for mode, patterns in MODE_MARKERS.items():
-        for pat in patterns:
-            if re.search(pat, block, re.IGNORECASE):
-                detected.add(mode)
-                break
+# %%
+#| lightbox: true
+show_result("V_rest_comparison_{idx}.png", width=500)
 
-    if re.search(r'hypothesis tested', block, re.IGNORECASE):
-        detected.add('Deduction')
-    if re.search(r'verdict:\s*falsified', block, re.IGNORECASE):
-        detected.add('Falsification')
+# %% [markdown]
+# ### $g_\phi$ (MLP$_1$): Edge Message Function
 
-    has_high = bool(re.search(
-        r'severe|catastroph|breakthrough|eliminat|critical|dramatic',
-        block, re.IGNORECASE,
-    ))
-    significance = 'High' if has_high or len(block) > 800 else 'Medium'
+# %%
+#| lightbox: true
+show_mlp("MLP1", "_domain")
 
-    for mode in detected:
-        all_events.append((iter_num, mode, significance))
+# %% [markdown]
+# ### Neural Embeddings
 
-# Build causal edges between consecutive iterations
-all_edges = []
-events_by_iter = {}
-for it, mode, sig in all_events:
-    events_by_iter.setdefault(it, []).append(mode)
+# %%
+#| lightbox: true
+show_result("embedding_{idx}.png")
 
-sorted_iters = sorted(events_by_iter.keys())
-for idx in range(len(sorted_iters) - 1):
-    it_a, it_b = sorted_iters[idx], sorted_iters[idx + 1]
-    ma, mb = events_by_iter[it_a], events_by_iter[it_b]
-    if 'Deduction' in ma and 'Falsification' in mb:
-        all_edges.append((it_a, 'Deduction', it_b, 'Falsification', 'leads_to'))
-    if 'Induction' in ma and 'Deduction' in mb:
-        all_edges.append((it_a, 'Induction', it_b, 'Deduction', 'triggers'))
-    if 'Falsification' in ma and 'Induction' in mb:
-        all_edges.append((it_a, 'Falsification', it_b, 'Induction', 'refines'))
-    if 'Boundary' in ma and 'Boundary' in mb:
-        all_edges.append((it_a, 'Boundary', it_b, 'Boundary', 'leads_to'))
-    if 'Analogy' in ma and 'Deduction' in mb:
-        all_edges.append((it_a, 'Analogy', it_b, 'Deduction', 'triggers'))
-    if 'Deduction' in ma and 'Induction' in mb:
-        all_edges.append((it_a, 'Deduction', it_b, 'Induction', 'leads_to'))
-    if 'Abduction' in ma and 'Deduction' in mb:
-        all_edges.append((it_a, 'Abduction', it_b, 'Deduction', 'triggers'))
-    if 'Boundary' in ma and 'Induction' in mb:
-        all_edges.append((it_a, 'Boundary', it_b, 'Induction', 'leads_to'))
-    if 'Meta-reasoning' in ma and 'Induction' in mb:
-        all_edges.append((it_a, 'Meta-reasoning', it_b, 'Induction', 'triggers'))
-    if 'Constraint' in ma and 'Deduction' in mb:
-        all_edges.append((it_a, 'Constraint', it_b, 'Deduction', 'triggers'))
+# %% [markdown]
+# ### UMAP Projections
 
-mode_counts = Counter(e[1] for e in all_events)
-max_iter = max(e[0] for e in all_events) if all_events else 1
+# %%
+#| lightbox: true
+show_result("embedding_augmented_{idx}.png")
 
-print(f'Parsed {len(all_events)} events, {len(all_edges)} edges, '
-      f'{len(block_defs)} blocks from noise_005 exploration')
-print('Mode counts:')
-for mode in MODES:
-    c = mode_counts.get(mode, 0)
-    if c > 0:
-        print(f'  {mode}: {c}')
+# %% [markdown]
+# ### Spectral Analysis
+
+# %%
+#| lightbox: true
+show_result("eigen_comparison.png", width=900)
 
 # %% [markdown]
 # ## References
 #
-# [1] C. Allier, L. Heinrich, M. Schneider, S. Saalfeld, "Graph
+# [1] V. Sitzmann, J. N. P. Martel, A. W. Bergman, D. B. Lindell,
+# and G. Wetzstein, "Implicit Neural Representations with Periodic
+# Activation Functions," *NeurIPS*, 2020.
+# [doi:10.48550/arXiv.2006.09661](https://doi.org/10.48550/arXiv.2006.09661)
+#
+# [2] C. Allier, L. Heinrich, M. Schneider, S. Saalfeld, "Graph
 # neural networks uncover structure and functions underlying the
 # activity of simulated neural assemblies," *arXiv:2602.13325*,
 # 2026.
 # [doi:10.48550/arXiv.2602.13325](https://doi.org/10.48550/arXiv.2602.13325)
-#
-# [2] B. Romera-Paredes et al., "Mathematical discoveries from
-# program search with large language models," *Nature*, 2024.
-#
-# [3] A. Novikov et al., "AlphaEvolve: A coding agent for
-# scientific and algorithmic exploration," 2025.
-
-# %%

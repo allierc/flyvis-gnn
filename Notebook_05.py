@@ -1,48 +1,62 @@
 # %% [raw]
 # ---
-# title: "GNN + INR: Joint Stimulus and Dynamics Recovery"
+# title: "Robustness to False Positive Edges"
 # author: "Allier, Lappalainen, Saalfeld"
 # categories:
 #   - FlyVis
 #   - GNN
-#   - INR
-#   - SIREN
+#   - Robustness
 # execute:
 #   echo: false
-# image: "log/Claude_exploration/LLM_flyvis_noise_005_INR_siren/inr_comparison/iter_106_slot_01_siren_txy_comparison_60000.png"
-# description: "Train a SIREN implicit neural representation (INR) jointly with the GNN to recover the visual stimulus field from neural activity alone. Discuss the inherent scale/offset degeneracy and the corrected R²."
+# description: "Test GNN robustness to false positive edges by adding 50–400% extra null edges with zero ground-truth weight and evaluating whether L1 regularization successfully suppresses them during training."
 # ---
 
 # %% [markdown]
-# ## Joint Stimulus and Dynamics Recovery with GNN + INR
+# ## Robustness to False Positive Edges
 #
-# In the previous notebooks the visual stimulus $I_i(t)$ was provided
-# as a known input to the GNN.  Here we ask: can the stimulus itself
-# be recovered from neural activity alone?
+# In practice, connectomes derived from electron microscopy reconstructions
+# may contain **false positive synapses** — edges that appear in the
+# connectivity graph but carry no functional weight.  Can the GNN
+# identify and reject these spurious connections?
 #
-# We replaced the ground-truth stimulus with a learnable **implicit
-# neural representation** (INR), specifically a
-# [SIREN](https://arxiv.org/abs/2006.09661) network, that maps
-# continuous coordinates $(t, x, y)$ to the stimulus value at each
-# neuron position and time step.  The SIREN was trained jointly with
-# the GNN.  This amounted to solving a harder inverse problem: recovering not
-# only the circuit parameters ($W$, $\tau$, $V^{\text{rest}}$,
-# $f_\theta$, $g_\phi$) but also the stimulus field from voltage
-# data alone.
+# To test this, we augment the true connectivity (434,112 edges) with
+# **extra null edges**: randomly sampled neuron pairs that are not in
+# the original connectome, initialized with zero ground-truth weight.
+# The ODE simulation uses only the real edges, so the training signal
+# contains no information from null edges.  The model must learn to
+# keep them at zero while recovering the true synaptic weights.
+#
+# We test four levels of contamination on the low-noise ($\sigma=0.05$)
+# configuration:
+#
+# | Label | Extra null edges | Total edges | Ratio to original |
+# |-------|-----------------|-------------|-------------------|
+# | 50%   | 217,056         | 651,168     | 1.5×              |
+# | 100%  | 434,112         | 868,224     | 2×                |
+# | 200%  | 868,224         | 1,302,336   | 3×                |
+# | 400%  | 1,736,448       | 2,170,560   | 5×                |
+#
+# The key mechanism enabling false-positive rejection is **L1
+# regularization** on the weight vector $W$
+# (`coeff_W_L1`), which penalizes all edge weights equally and
+# drives unused edges toward zero.
 
 # %%
 #| output: false
 import os
 import sys
+import re
 import glob
 import warnings
 
-from IPython.display import Image, Markdown, Video, display
+import numpy as np
+import matplotlib.pyplot as plt
+from IPython.display import Image, Markdown, display
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)) if '__file__' in dir() else '.')
 from GNN_PlotFigure import data_plot
 from flyvis_gnn.config import NeuralGraphConfig
-from flyvis_gnn.utils import set_device, add_pre_folder, log_path
+from flyvis_gnn.utils import set_device, add_pre_folder, log_path, graphs_data_path
 
 warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API")
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -54,209 +68,259 @@ def display_image(path, width=700):
 
 
 # %% [markdown]
-# ## SIREN Architecture
-#
-# The SIREN (Sinusoidal Representation Network) uses periodic
-# activation functions $\phi(x) = \sin(\omega_0 \cdot x)$ instead
-# of ReLU, enabling it to represent fine spatial and temporal
-# detail in the stimulus field.
-#
-# The key hyperparameters explored by the agentic hyper-parameter optimization
-# (Notebook 06) are:
-#
-# - **$\omega_0$** (frequency scaling): controls the spectral
-#   bandwidth of the representation.  Higher $\omega_0$ allows the
-#   network to capture faster temporal fluctuations and sharper
-#   spatial edges.
-# - **hidden_dim**: network width (number of hidden units per
-#   layer).
-# - **n_layers**: network depth.
-# - **learning rate**: must scale inversely with $\omega_0$ for
-#   stable training.
-#
-# The input is a 3D coordinate $(t, x, y)$ normalized to the
-# training domain, and the output is a scalar stimulus value for
-# each neuron at each time step.
-#
-# ### Scale/Offset Degeneracy and Corrected $R^2$
-#
-# The SIREN output enters the GNN through $f_\theta$, which receives
-# the concatenated input $[v_i,\, \mathbf{a}_i,\, \text{msg}_i,\, I_i(t)]$.
-# This creates an inherent **scale/offset degeneracy**: $f_\theta$'s
-# biases absorb any constant offset, and its weights on the excitation
-# dimension compensate any scale factor (including sign inversion).
-# The SIREN and $f_\theta$ jointly optimize along a degenerate manifold
-# where the stimulus *pattern* is learned correctly but the linear
-# mapping between SIREN output and true stimulus is unidentifiable.
-# We therefore apply a **global linear fit**
-# $I^{\text{true}} = a \cdot I^{\text{pred}} + b$ and report the
-# corrected $R^2$.
+# ## Configuration
 
 # %%
 #| output: false
-config_name = "flyvis_noise_005_INR"
-config_file, pre_folder = add_pre_folder(config_name)
-config = NeuralGraphConfig.from_yaml(f"./config/{config_file}.yaml")
-config.dataset = pre_folder + config.dataset
-config.config_file = pre_folder + config_name
-gnn_log_dir = log_path(config.config_file)
-device = set_device(config.training.device)
 
-inr_log = "log/Claude_exploration/LLM_flyvis_noise_005_INR_siren"
+# Baseline (0% null edges) and four contamination levels
+datasets = [
+    ('flyvis_noise_005',                '0%'),
+    ('flyvis_noise_005_null_edges_50',  '50%'),
+    ('flyvis_noise_005_null_edges_100', '100%'),
+    ('flyvis_noise_005_null_edges_200', '200%'),
+    ('flyvis_noise_005_null_edges_400', '400%'),
+]
 
-# Check that results exist
-if not os.path.isdir(inr_log):
-    raise RuntimeError(
-        f"INR SIREN results not found at: {inr_log}. "
-        f"Run the agentic optimization for flyvis_noise_005_INR_siren first."
-    )
+config_root = "./config"
+configs = {}
+log_dirs = {}
 
-inr_video_dir = os.path.join(inr_log, "inr_video")
-inr_comparison_dir = os.path.join(inr_log, "inr_comparison")
-inr_results_dir = os.path.join(inr_log, "results")
+for config_name, label in datasets:
+    config_file, pre_folder = add_pre_folder(config_name)
+    config = NeuralGraphConfig.from_yaml(f"{config_root}/{config_file}.yaml")
+    config.dataset = pre_folder + config.dataset
+    config.config_file = pre_folder + config_name
+    configs[config_name] = config
+    log_dirs[config_name] = log_path(config.config_file)
 
-# %% [markdown]
-# ## Stimulus Recovery Video
-#
-# The video below shows the best SIREN result (iter 106,
-# $R^2$=0.824) with three panels:
-#
-# - **Left**: ground-truth stimulus on the hexagonal photoreceptor
-#   array.
-# - **Center**: SIREN prediction after global linear correction
-#   ($I^{\text{true}} = a \cdot I^{\text{pred}} + b$).
-# - **Right**: rolling voltage traces for 10 selected neurons
-#   (ground truth in green, prediction in black).
-#
-# The linear correction coefficients $a$ and $b$ and the per-frame
-# RMSE are displayed in the trace panel.
-
-# %%
-import glob, re as _re
-
-# Find the latest stimulus video (highest iteration number)
-_video_pattern = os.path.join(inr_video_dir, "iter_*_stimulus_gt_vs_pred.mp4")
-_video_files = sorted(glob.glob(_video_pattern))
-if _video_files:
-    video_path = _video_files[-1]
-    _m = _re.search(r'iter_(\d+)_slot_(\d+)', os.path.basename(video_path))
-    if _m:
-        best_iter, best_slot = int(_m.group(1)), int(_m.group(2))
-    display(Video(video_path, embed=True, width=800))
-else:
-    display(Markdown(f"*No stimulus video found in `{inr_video_dir}`*"))
+device = set_device(configs[datasets[0][0]].training.device)
 
 # %% [markdown]
-# ## Best Result Metrics
+# ## Generate Analysis Plots
 #
-# The SIREN hyperparameters were optimized over 116 iterations
-# by the agentic hyper-parameter optimization framework ([Notebook 06](Notebook_06.py)).
-# The best configuration (iter 106: hidden_dim=512, 7 layers,
-# $\omega_0$=1024, lr=$3\times10^{-7}$) achieves $R^2$ = 0.82
-# on the full 64,000-frame stimulus sequence.
-
-
-# %% [markdown]
-# ## GNN Analysis: Learned Representations
-#
-# Beyond stimulus recovery, the joint GNN+SIREN model also learns
-# synaptic weights, neural embeddings, and MLP functions.  Below we
-# run the same analysis as [Notebook 04](Notebook_04.py) on the
-# joint model to verify that circuit recovery is preserved.
+# For each configuration we load the best model checkpoint and
+# generate the standard results visualizations.
 
 # %%
 #| echo: true
 #| output: false
-print("\n--- Generating GNN analysis plots for noise_005_INR ---")
-data_plot(
-    config=config,
-    config_file=config.config_file,
-    epoch_list=['best'],
-    style='color',
-    extended='plots',
-    device=device,
-)
+print()
+print("=" * 80)
+print("ANALYSIS — Generating results plots for null-edge experiments")
+print("=" * 80)
+
+for config_name, label in datasets:
+    config = configs[config_name]
+    ldir = log_dirs[config_name]
+    if not glob.glob(f"{ldir}/models/best_model_with_*.pt"):
+        print(f"  Skipping {label} ({config_name}): no trained model found")
+        continue
+    print(f"\n--- {label} null edges ({config_name}) ---")
+    data_plot(
+        config=config,
+        config_file=config.config_file,
+        epoch_list=['best'],
+        style='color',
+        extended='plots',
+        device=device,
+    )
+
+
+# %% [markdown]
+# ## Metrics vs Null Edge Fraction
+#
+# The plot below shows how key recovery metrics degrade (or not) as
+# the fraction of false positive edges increases from 0% to 400%.
+# Metrics are read from the training log (`metrics.log`) and test
+# results (`results_test.log`, `results_rollout.log`).
+
+# %%
+
+def read_final_metrics(ldir):
+    """Read the last line of metrics.log → dict."""
+    metrics_path = os.path.join(ldir, 'tmp_training', 'metrics.log')
+    if not os.path.isfile(metrics_path):
+        return {}
+    last_line = ''
+    with open(metrics_path) as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('iteration'):
+                last_line = line
+    if not last_line:
+        return {}
+    parts = last_line.split(',')
+    return {
+        'conn_r2': float(parts[1]),
+        'vrest_r2': float(parts[2]),
+        'tau_r2': float(parts[3]),
+    }
+
+
+def parse_log_file(path):
+    """Parse a results log file into a flat dict of key → value."""
+    out = {}
+    if not os.path.isfile(path):
+        return out
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            m = re.match(r'^([\w\s]+):\s*([\d.e+-]+)', line)
+            if m:
+                out[m.group(1).strip()] = float(m.group(2).strip())
+    return out
+
+
+def read_test_metrics(ldir):
+    d = parse_log_file(os.path.join(ldir, 'results_test.log'))
+    return {
+        'test_rmse': d.get('RMSE', np.nan),
+        'test_pearson': d.get('Pearson r', np.nan),
+        'test_conn_r2': d.get('connectivity_R2', np.nan),
+        'test_tau_r2': d.get('tau_R2', np.nan),
+        'test_vrest_r2': d.get('V_rest_R2', np.nan),
+    }
+
+
+def read_rollout_metrics(ldir):
+    d = parse_log_file(os.path.join(ldir, 'results_rollout.log'))
+    return {
+        'rollout_rmse': d.get('RMSE', np.nan),
+        'rollout_pearson': d.get('Pearson r', np.nan),
+    }
+
+
+# Collect metrics for all configs
+labels = []
+null_pcts = [0, 50, 100, 200, 400]
+all_metrics = []
+
+for (config_name, label), pct in zip(datasets, null_pcts):
+    ldir = log_dirs[config_name]
+    m = {}
+    m.update(read_final_metrics(ldir))
+    m.update(read_test_metrics(ldir))
+    m.update(read_rollout_metrics(ldir))
+    m['pct'] = pct
+    m['label'] = label
+    all_metrics.append(m)
+
+# %%
+
+fig, axes = plt.subplots(1, 4, figsize=(16, 4))
+
+metric_keys = [
+    ('conn_r2',         'Connectivity $R^2$'),
+    ('tau_r2',          r'$\tau$ $R^2$'),
+    ('vrest_r2',        r'$V_{\mathrm{rest}}$ $R^2$'),
+    ('rollout_pearson', 'Rollout Pearson $r$'),
+]
+
+for ax, (key, title) in zip(axes, metric_keys):
+    vals = [m.get(key, np.nan) for m in all_metrics]
+    ax.plot(null_pcts, vals, 'o-', color='#2ca02c', markersize=8, linewidth=2)
+    ax.set_xlabel('Extra null edges (%)')
+    ax.set_ylabel(title)
+    ax.set_title(title)
+    ax.set_xticks(null_pcts)
+    ax.set_ylim(0, 1.05)
+    ax.grid(True, alpha=0.3)
+
+fig.suptitle('Recovery metrics vs false positive edge fraction', fontsize=14, y=1.02)
+plt.tight_layout()
+
+plot_path = os.path.join('log', 'null_edges_metrics.png')
+os.makedirs(os.path.dirname(plot_path), exist_ok=True)
+plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+plt.show()
+print(f"Saved to {plot_path}")
+
+
+# %% [markdown]
+# ## Connectivity Recovery
+#
+# The scatter plots below compare learned vs ground-truth synaptic
+# weights for each null-edge level.  Even with 400% extra false
+# edges, the model should recover the true connectivity — the null
+# edges cluster near zero weight.
 
 # %%
 #| output: false
-config_indices = config_name.replace('flyvis_', '')
-
-def show_result(filename, width=600):
-    path = os.path.join(gnn_log_dir, "results", filename.format(idx=config_indices))
+def show_result(filename, config_name, width=600):
+    log_dir = log_dirs[config_name]
+    config_indices = config_name.replace('flyvis_', '')
+    path = os.path.join(log_dir, "results", filename.format(idx=config_indices))
     if os.path.isfile(path):
         display_image(path, width=width)
 
-def show_mlp(mlp_name, suffix=""):
-    path = os.path.join(gnn_log_dir, "results", f"{mlp_name}_{config_indices}{suffix}.png")
-    if os.path.isfile(path):
-        display_image(path, width=700)
-
 # %% [markdown]
-# ### Corrected Weights ($W$)
-
+# ### Baseline (0% null edges)
 # %%
 #| lightbox: true
-show_result("weights_comparison_corrected.png")
+show_result("weights_comparison_corrected.png", "flyvis_noise_005")
 
 # %% [markdown]
-# ### $f_\theta$ (MLP$_0$): Neuron Update Function
-
+# ### 50% null edges
 # %%
 #| lightbox: true
-show_mlp("MLP0", "_domain")
+show_result("weights_comparison_corrected.png", "flyvis_noise_005_null_edges_50")
 
 # %% [markdown]
-# ### Time Constants ($\tau$)
-
+# ### 100% null edges
 # %%
 #| lightbox: true
-show_result("tau_comparison_{idx}.png", width=500)
+show_result("weights_comparison_corrected.png", "flyvis_noise_005_null_edges_100")
 
 # %% [markdown]
-# ### Resting Potentials ($V^{\text{rest}}$)
-
+# ### 200% null edges
 # %%
 #| lightbox: true
-show_result("V_rest_comparison_{idx}.png", width=500)
+show_result("weights_comparison_corrected.png", "flyvis_noise_005_null_edges_200")
 
 # %% [markdown]
-# ### $g_\phi$ (MLP$_1$): Edge Message Function
-
+# ### 400% null edges
 # %%
 #| lightbox: true
-show_mlp("MLP1", "_domain")
+show_result("weights_comparison_corrected.png", "flyvis_noise_005_null_edges_400")
+
 
 # %% [markdown]
-# ### Neural Embeddings
-
-# %%
-#| lightbox: true
-show_result("embedding_{idx}.png")
-
-# %% [markdown]
-# ### UMAP Projections
-
-# %%
-#| lightbox: true
-show_result("embedding_augmented_{idx}.png")
-
-# %% [markdown]
-# ### Spectral Analysis
-
-# %%
-#| lightbox: true
-show_result("eigen_comparison.png", width=900)
-
-# %% [markdown]
-# ## References
+# ## Rollout: Predicted vs Ground-Truth Activity
 #
-# [1] V. Sitzmann, J. N. P. Martel, A. W. Bergman, D. B. Lindell,
-# and G. Wetzstein, "Implicit Neural Representations with Periodic
-# Activation Functions," *NeurIPS*, 2020.
-# [doi:10.48550/arXiv.2006.09661](https://doi.org/10.48550/arXiv.2006.09661)
+# Selected rollout traces for the baseline and the most extreme
+# (400%) null-edge case, confirming that the GNN still captures the
+# dynamics correctly despite the contaminated graph.
+
+# %%
+#| output: false
+def show_rollout(config_name, width=800):
+    log_dir = log_dirs[config_name]
+    pattern = os.path.join(log_dir, "results", "rollout_*_DAVIS_selected.png")
+    files = sorted(glob.glob(pattern))
+    if files:
+        display_image(files[0], width=width)
+
+# %% [markdown]
+# ### Baseline (0%)
+# %%
+#| lightbox: true
+show_rollout("flyvis_noise_005")
+
+# %% [markdown]
+# ### 400% null edges
+# %%
+#| lightbox: true
+show_rollout("flyvis_noise_005_null_edges_400")
+
+
+# %% [markdown]
+# ## Summary
 #
-# [2] C. Allier, L. Heinrich, M. Schneider, S. Saalfeld, "Graph
-# neural networks uncover structure and functions underlying the
-# activity of simulated neural assemblies," *arXiv:2602.13325*,
-# 2026.
-# [doi:10.48550/arXiv.2602.13325](https://doi.org/10.48550/arXiv.2602.13325)
+# The GNN combined with L1 regularization on $W$ successfully
+# rejects false positive edges.  Even when the graph is contaminated
+# with up to 400% extra null edges (5× the original edge count),
+# the model drives their weights to zero and recovers the true
+# connectivity.  This demonstrates that the framework is robust to
+# over-complete or noisy connectomes — a property relevant to
+# real-world EM reconstructions where false synapses are common.

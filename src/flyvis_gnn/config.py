@@ -173,6 +173,7 @@ class SimulationConfig(BaseModel):
     n_edges: int = 0
     max_edges: float = 1.0e6
     n_extra_null_edges: int = 0
+    null_edges_mode: str = "per_column"  # "random" or "per_column" (per pre-synaptic neuron)
     ablation_ratio: float = 0.0   # fraction of edges to ablate (0.0-1.0)
     ablation_seed: int = 42       # RNG seed for reproducible ablation
 
