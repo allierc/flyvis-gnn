@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from flyvis_gnn.generators.ode_params import FlyVisODEParams, ODEParamsBase
+from flyvis_gnn.generators.ode_params import FlyVisODEParams
 from flyvis_gnn.neuron_state import NeuronState
 
 
