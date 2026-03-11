@@ -1196,7 +1196,14 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
 
     # --- Generate TEST split ---
     # Reset neural state to avoid train→test leakage
-    x.voltage[:] = initial_state
+    if is_hh:
+        hh_state = pde.init_state(n_neurons)
+        x.voltage = hh_state.voltage
+        x.hh_m = hh_state.hh_m
+        x.hh_h = hh_state.hh_h
+        x.hh_n = hh_state.hh_n
+    else:
+        x.voltage[:] = initial_state
     _init_calcium = torch.rand(n_neurons, dtype=torch.float32, device=device)
     x.calcium = _init_calcium
     x.fluorescence = sim.calcium_alpha * _init_calcium + sim.calcium_beta
@@ -1289,6 +1296,36 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
         style=fig_style,
         dpi=300,
     )
+
+    # HH-specific spiking plots (detect spikes from voltage threshold crossings)
+    if is_hh:
+        logger.info('plotting HH spiking traces ...')
+        # activity_full is (T, N), transpose to (N, T)
+        voltage_NT = activity_full.T
+        # Stimulus: (T, n_input) -> (n_input, T)
+        stimulus_NT = x_ts.stimulus[:, :sim.n_input_neurons].numpy().T
+        # Detect spikes: voltage crosses 0mV from below
+        spike_raster = np.zeros_like(voltage_NT, dtype=bool)
+        spike_raster[:, 1:] = (voltage_NT[:, 1:] > 0) & (voltage_NT[:, :-1] <= 0)
+        # Infer E/I from connectome weights
+        W_np = to_numpy(ode_params.W)
+        src_np = to_numpy(ode_params.edge_index[0])
+        sum_w = np.zeros(voltage_NT.shape[0])
+        np.add.at(sum_w, src_np.astype(int), W_np)
+        is_exc_np = sum_w >= 0
+
+        plot_spiking_traces(
+            voltage=voltage_NT,
+            spike_raster=spike_raster,
+            stimulus=stimulus_NT,
+            is_excitatory=is_exc_np,
+            type_list=node_types_int,
+            output_path=graphs_data_path(config.dataset),
+            n_input_neurons=sim.n_input_neurons,
+            dt_ms=sim.delta_t,
+            style=fig_style,
+        )
+        logger.info(f"saved HH spiking plots to {graphs_data_path(config.dataset)}")
 
     # Plot noisy activity traces using the same neurons + compute SNR
     snr_stats = None
