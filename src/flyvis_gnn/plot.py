@@ -768,15 +768,13 @@ def plot_spiking_traces(
     traces_path = os.path.join(output_path, 'spiking_traces.png') if os.path.isdir(output_path) else output_path
     style.savefig(fig, traces_path)
 
-    # --- Figure 2: spike raster ---
-    n_raster = min(200, n_neurons)
-    raster_idx = np.sort(np.random.choice(n_neurons, n_raster, replace=False))
-    raster_data = spike_raster[raster_idx]
-    is_exc_raster = is_excitatory[raster_idx]
+    # --- Figure 2: spike raster — one neuron per type (same 65 as traces) ---
+    raster_data = spike_raster[neuron_indices]
+    is_exc_raster = is_excitatory[neuron_indices]
 
     fig2, ax2 = style.figure(aspect=1.5)
     exc_plotted = inh_plotted = False
-    for i in range(n_raster):
+    for i in range(n_sel):
         spike_frames = np.where(raster_data[i])[0]
         if len(spike_frames) == 0:
             continue
@@ -790,23 +788,23 @@ def plot_spiking_traces(
             label = 'inhibitory'
             inh_plotted = True
         ax2.plot(spike_frames, np.full_like(spike_frames, i), '|',
-                 color=color, ms=1.5, mew=0.5, alpha=0.9, label=label)
+                 color=color, ms=2.0, mew=0.6, alpha=0.9, label=label)
 
     # Red stimulus trace at bottom of raster
     if stimulus.shape[0] > 0:
         stim_trace = stimulus[0]
-        stim_min = -15
+        stim_min = -5
         stim_range = max(stim_trace.max() - stim_trace.min(), 1e-6)
-        stim_scaled = (stim_trace - stim_trace.min()) / stim_range * 10.0 + stim_min
+        stim_scaled = (stim_trace - stim_trace.min()) / stim_range * 8.0 + stim_min
         ax2.plot(stim_scaled, linewidth=0.8, alpha=0.9, color='red', label='stimulus')
 
     ax2.legend(loc='upper right', fontsize=10, framealpha=0.8)
     style.xlabel(ax2, 'time (substeps, dt={:.1f}ms)'.format(dt_ms), fontsize=16)
-    style.ylabel(ax2, f'raster ({n_raster} / {n_neurons} neurons)')
-    ax2.set_yticks([])
+    ax2.set_yticks(list(range(n_sel)))
+    ax2.set_yticklabels(type_labels, fontsize=6)
     ax2.tick_params(axis='x', labelsize=14)
     ax2.set_xlim([0, n_frames])
-    ax2.set_ylim([-20, n_raster + 1])
+    ax2.set_ylim([-8, n_sel + 1])
 
     plt.tight_layout()
     raster_path = os.path.join(output_path, 'spiking_raster.png') if os.path.isdir(output_path) else output_path.replace('traces', 'raster')
