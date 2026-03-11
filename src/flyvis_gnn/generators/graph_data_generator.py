@@ -721,8 +721,8 @@ def data_generate_fly_AdEx_spiking(config, visualize=True, run_vizualized=0, sty
     # --- Plot spiking traces ---
     if train_plot_data is not None:
         logger.info("plotting spiking traces...")
-        fig_dir = graphs_data_path(config.dataset, "Fig")
-        os.makedirs(fig_dir, exist_ok=True)
+        dataset_dir = graphs_data_path(config.dataset)
+        os.makedirs(dataset_dir, exist_ok=True)
         is_exc_np = to_numpy(ode_params.is_excitatory)
         plot_spiking_traces(
             voltage=train_plot_data['voltage'],
@@ -730,12 +730,12 @@ def data_generate_fly_AdEx_spiking(config, visualize=True, run_vizualized=0, sty
             stimulus=train_plot_data['stimulus'],
             is_excitatory=is_exc_np,
             type_list=node_types_int,
-            output_path=fig_dir,
+            output_path=dataset_dir,
             n_input_neurons=sim.n_input_neurons,
             dt_ms=adex_dt,
             style=fig_style,
         )
-        logger.info(f"saved spiking traces to {fig_dir}")
+        logger.info(f"saved spiking plots to {dataset_dir}")
 
     # --- Generate TEST split ---
     # Reset state for test

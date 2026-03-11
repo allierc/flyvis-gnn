@@ -766,13 +766,22 @@ def plot_spiking_traces(
     is_exc_raster = is_excitatory[raster_idx]
 
     fig2, ax2 = style.figure(aspect=1.5)
+    exc_plotted = inh_plotted = False
     for i in range(n_raster):
         spike_frames = np.where(raster_data[i])[0]
         if len(spike_frames) == 0:
             continue
-        color = style.foreground if is_exc_raster[i] else 'gray'
+        is_exc = is_exc_raster[i]
+        color = style.foreground if is_exc else 'gray'
+        label = None
+        if is_exc and not exc_plotted:
+            label = 'excitatory'
+            exc_plotted = True
+        elif not is_exc and not inh_plotted:
+            label = 'inhibitory'
+            inh_plotted = True
         ax2.plot(spike_frames, np.full_like(spike_frames, i), '|',
-                 color=color, ms=1.5, mew=0.5, alpha=0.9)
+                 color=color, ms=1.5, mew=0.5, alpha=0.9, label=label)
 
     # Red stimulus trace at bottom of raster
     if stimulus.shape[0] > 0:
@@ -780,10 +789,11 @@ def plot_spiking_traces(
         stim_min = -15
         stim_range = max(stim_trace.max() - stim_trace.min(), 1e-6)
         stim_scaled = (stim_trace - stim_trace.min()) / stim_range * 10.0 + stim_min
-        ax2.plot(stim_scaled, linewidth=0.8, alpha=0.9, color='red')
+        ax2.plot(stim_scaled, linewidth=0.8, alpha=0.9, color='red', label='stimulus')
 
+    ax2.legend(loc='upper right', fontsize=10, framealpha=0.8)
     style.xlabel(ax2, 'time (substeps, dt={:.1f}ms)'.format(dt_ms), fontsize=16)
-    style.ylabel(ax2, f'Raster ({n_raster} neurons, E={style.foreground} I=gray)')
+    style.ylabel(ax2, f'raster ({n_raster} / {n_neurons} neurons)')
     ax2.set_yticks([])
     ax2.tick_params(axis='x', labelsize=14)
     ax2.set_xlim([0, n_frames])
