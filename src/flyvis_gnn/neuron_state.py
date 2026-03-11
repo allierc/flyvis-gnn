@@ -21,6 +21,9 @@ import torch
 # Field classification — used by from_zarr_v3 to pick dtype/shape.
 STATIC_FIELDS = {'index', 'pos', 'group_type', 'neuron_type'}
 DYNAMIC_FIELDS = {'voltage', 'stimulus', 'calcium', 'fluorescence', 'noise'}
+# Spiking-model fields (AdEx) — not included in ALL_FIELDS to preserve
+# legacy format compatibility.  Used only by spiking generators/models.
+SPIKING_FIELDS = {'adapt_current', 'ge', 'gi', 'spiked', 'refractory_counter'}
 ALL_FIELDS = STATIC_FIELDS | DYNAMIC_FIELDS
 
 
@@ -54,6 +57,13 @@ class NeuronState:
     calcium: torch.Tensor | None = None      # (N,) float32 — calcium concentration
     fluorescence: torch.Tensor | None = None # (N,) float32 — fluorescence readout
     noise: torch.Tensor | None = None       # (N,) float32 — measurement noise
+
+    # spiking model fields (AdEx) — None for graded models
+    adapt_current: torch.Tensor | None = None      # (N,) float32 — adaptation current w
+    ge: torch.Tensor | None = None                 # (N,) float32 — excitatory conductance (COBA)
+    gi: torch.Tensor | None = None                 # (N,) float32 — inhibitory conductance (COBA)
+    spiked: torch.Tensor | None = None             # (N,) bool — crossed threshold this step
+    refractory_counter: torch.Tensor | None = None # (N,) float32 — time left in refractory period
 
     @property
     def n_neurons(self) -> int:

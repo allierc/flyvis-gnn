@@ -205,3 +205,192 @@ class FlyVisODEParams(ODEParamsBase):
 
         logger.info(f"loaded legacy ODE params from {folder}")
         return cls(tau_i=tau_i, V_i_rest=V_i_rest, edge_index=edge_index, W=W)
+
+
+# ---------------------------------------------------------------------------
+# FlyVis AdEx spiking model params
+# ---------------------------------------------------------------------------
+
+# Default values from Zerlaut et al. 2018 (AutoMind ADEX_NEURON_DEFAULTS_ZERLAUT).
+# Units: mV, pF, nS, pA, ms, Hz.  Stored as dimensionless floats in those units.
+ADEX_DEFAULTS = dict(
+    # Membrane
+    C=200.0,             # pF  — membrane capacitance
+    g_L=10.0,            # nS  — leak conductance
+    v_rest=-65.0,        # mV  — resting (leak reversal) potential
+    v_thresh=-50.0,      # mV  — spike initiation threshold (exp onset)
+    delta_T=2.0,         # mV  — exponential nonlinearity sharpness
+    v_cut=0.0,           # mV  — hard spike cutoff for detection
+    v_reset=-65.0,       # mV  — post-spike reset voltage
+    t_refrac=5.0,        # ms  — absolute refractory period
+    # Adaptation
+    a=4.0,               # nS  — subthreshold adaptation coupling
+    b=20.0,              # pA  — spike-triggered adaptation increment
+    tau_w=500.0,         # ms  — adaptation time constant
+    # Synaptic (COBA)
+    E_ge=0.0,            # mV  — excitatory reversal potential
+    E_gi=-80.0,          # mV  — inhibitory reversal potential
+    Q_ge=1.0,            # nS  — excitatory quantal conductance
+    Q_gi=5.0,            # nS  — inhibitory quantal conductance
+    tau_ge=5.0,          # ms  — excitatory conductance decay
+    tau_gi=5.0,          # ms  — inhibitory conductance decay
+    # Synaptic (CUBA) — no defaults from Zerlaut, set to 0 as placeholder
+    J_exc=0.0,           # mV  — excitatory spike kick
+    J_inh=0.0,           # mV  — inhibitory spike kick
+    # External input
+    I_bias=0.0,          # pA  — constant bias current
+    stim_scale=1.0,      # pA per unit stimulus — converts visual input to current
+    # Initial conditions
+    v_0_mean=0.0,        # mV  — mean offset from v_rest for initial v
+    v_0_std=4.0,         # mV  — std of initial v perturbation
+)
+
+
+@register_ode_params("flyvis_adex_coba", "flyvis_adex_cuba")
+@dataclass
+class FlyVisSpikingODEParams(ODEParamsBase):
+    """Parameters for the AdEx spiking FlyVis ODE.
+
+    Per-neuron static params (indexed by neuron, one value per node):
+        Membrane: C, g_L, v_rest, v_thresh, delta_T, v_cut, v_reset, t_refrac
+        Adaptation: a, b, tau_w
+
+    Per-neuron synaptic params:
+        COBA: E_ge, E_gi, Q_ge, Q_gi, tau_ge, tau_gi
+        CUBA: J_exc, J_inh
+
+    Per-neuron external input:
+        I_bias, stim_scale
+
+    Network topology:
+        edge_index: (2, E) source/destination indices
+        is_excitatory: (N,) bool — True for excitatory neurons
+
+    Synapse model selector:
+        synapse_model: "COBA" or "CUBA"
+    """
+    # Membrane — (N,) per neuron
+    C: torch.Tensor = None
+    g_L: torch.Tensor = None
+    v_rest: torch.Tensor = None
+    v_thresh: torch.Tensor = None
+    delta_T: torch.Tensor = None
+    v_cut: torch.Tensor = None
+    v_reset: torch.Tensor = None
+    t_refrac: torch.Tensor = None
+
+    # Adaptation — (N,)
+    a: torch.Tensor = None
+    b: torch.Tensor = None
+    tau_w: torch.Tensor = None
+
+    # Synaptic COBA — (N,)
+    E_ge: torch.Tensor = None
+    E_gi: torch.Tensor = None
+    Q_ge: torch.Tensor = None
+    Q_gi: torch.Tensor = None
+    tau_ge: torch.Tensor = None
+    tau_gi: torch.Tensor = None
+
+    # Synaptic CUBA — (N,)
+    J_exc: torch.Tensor = None
+    J_inh: torch.Tensor = None
+
+    # External input — (N,)
+    I_bias: torch.Tensor = None
+    stim_scale: torch.Tensor = None
+
+    # Initial conditions (scalars, not per-neuron)
+    v_0_mean: float = 0.0
+    v_0_std: float = 4.0
+
+    # Topology
+    edge_index: torch.Tensor = None       # (2, E)
+    is_excitatory: torch.Tensor = None    # (N,) bool
+
+    # Synapse model selector
+    synapse_model: str = "COBA"
+
+    @classmethod
+    def from_defaults(cls, n_neurons: int, is_excitatory: torch.Tensor,
+                      edge_index: torch.Tensor, synapse_model: str = "COBA",
+                      device: torch.device | str = "cpu",
+                      overrides: dict | None = None) -> FlyVisSpikingODEParams:
+        """Construct from Zerlaut defaults with per-neuron expansion.
+
+        Args:
+            n_neurons: total number of neurons
+            is_excitatory: (N,) bool tensor — True for excitatory neurons
+            edge_index: (2, E) connectivity
+            synapse_model: "COBA" or "CUBA"
+            device: target device
+            overrides: dict of param_name -> value to override defaults
+        """
+        d = {**ADEX_DEFAULTS}
+        if overrides:
+            d.update(overrides)
+
+        def _expand(val):
+            return torch.full((n_neurons,), val, dtype=torch.float32, device=device)
+
+        return cls(
+            C=_expand(d["C"]),
+            g_L=_expand(d["g_L"]),
+            v_rest=_expand(d["v_rest"]),
+            v_thresh=_expand(d["v_thresh"]),
+            delta_T=_expand(d["delta_T"]),
+            v_cut=_expand(d["v_cut"]),
+            v_reset=_expand(d["v_reset"]),
+            t_refrac=_expand(d["t_refrac"]),
+            a=_expand(d["a"]),
+            b=_expand(d["b"]),
+            tau_w=_expand(d["tau_w"]),
+            E_ge=_expand(d["E_ge"]),
+            E_gi=_expand(d["E_gi"]),
+            Q_ge=_expand(d["Q_ge"]),
+            Q_gi=_expand(d["Q_gi"]),
+            tau_ge=_expand(d["tau_ge"]),
+            tau_gi=_expand(d["tau_gi"]),
+            J_exc=_expand(d["J_exc"]),
+            J_inh=_expand(d["J_inh"]),
+            I_bias=_expand(d["I_bias"]),
+            stim_scale=_expand(d["stim_scale"]),
+            v_0_mean=d["v_0_mean"],
+            v_0_std=d["v_0_std"],
+            edge_index=edge_index.to(device),
+            is_excitatory=is_excitatory.to(device),
+            synapse_model=synapse_model,
+        )
+
+    @classmethod
+    def from_flyvis_network(cls, net, synapse_model: str = "COBA",
+                            device: torch.device | str = "cpu",
+                            overrides: dict | None = None) -> FlyVisSpikingODEParams:
+        """Construct from a flyvis Network, using Zerlaut defaults for AdEx params.
+
+        E/I identity is inferred from the sign of synaptic weights:
+        neurons with net positive outgoing weight are excitatory.
+        """
+        params = net._param_api()
+        W = params.edges.syn_strength * params.edges.syn_count * params.edges.sign
+        edge_index = torch.stack([
+            torch.tensor(net.connectome.edges.source_index[:]),
+            torch.tensor(net.connectome.edges.target_index[:]),
+        ], dim=0)
+
+        n_neurons = len(params.nodes.time_const)
+        src = edge_index[0]
+
+        # Infer E/I from net outgoing weight sign per neuron
+        sum_w = torch.zeros(n_neurons)
+        sum_w.scatter_add_(0, src, W.cpu())
+        is_excitatory = (sum_w >= 0)
+
+        return cls.from_defaults(
+            n_neurons=n_neurons,
+            is_excitatory=is_excitatory,
+            edge_index=edge_index,
+            synapse_model=synapse_model,
+            device=device,
+            overrides=overrides,
+        )

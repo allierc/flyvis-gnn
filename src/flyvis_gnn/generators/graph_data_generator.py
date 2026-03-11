@@ -17,6 +17,7 @@ from flyvis_gnn.plot import (
     plot_activity_traces,
     plot_selected_neuron_traces,
     plot_spatial_activity_grid,
+    plot_spiking_traces,
 )
 from flyvis_gnn.zarr_io import ZarrArrayWriter, ZarrSimulationWriterV3
 
@@ -42,6 +43,16 @@ from flyvis_gnn.generators.utils import (
 from flyvis_gnn.utils import get_datavis_root_dir, graphs_data_path, to_numpy
 
 logger = get_logger(__name__)
+
+
+def _is_spiking_model(signal_model_name: str) -> bool:
+    """Check if signal_model_name maps to a spiking ODE params class via the registry."""
+    from flyvis_gnn.generators.ode_params import FlyVisSpikingODEParams, get_ode_params_class
+    try:
+        cls = get_ode_params_class(signal_model_name)
+        return cls is FlyVisSpikingODEParams
+    except KeyError:
+        return False
 
 
 def data_generate(
@@ -71,6 +82,17 @@ def data_generate(
 
     if config.data_folder_name != "none":
         generate_from_data(config=config, device=device, visualize=visualize, style=style, step=step)
+    elif _is_spiking_model(config.graph_model.signal_model_name):
+        data_generate_fly_AdEx_spiking(
+            config,
+            visualize=visualize,
+            run_vizualized=run_vizualized,
+            style=style,
+            erase=erase,
+            step=step,
+            device=device,
+            save=save,
+        )
     else:
         data_generate_fly_voltage(
             config,
@@ -455,6 +477,284 @@ def _compute_noisy_derivatives(config, sim, n_neurons, split='train'):
     noisy_y_writer.finalize()
     logger.info(f"computed noisy derivatives for {split}: {noisy_y.shape[0]} frames "
                 f"(measurement_noise_level={sim.measurement_noise_level})")
+
+
+def data_generate_fly_AdEx_spiking(config, visualize=True, run_vizualized=0, style="color", erase=False, step=5, device=None,
+                              save=True):
+    """Generate spiking (AdEx) simulation data using the flyvis connectome.
+
+    Uses the same visual stimulus pipeline as data_generate_fly_voltage,
+    but integrates AdEx dynamics with event-triggered synaptic transmission.
+    """
+    from flyvis_gnn.generators.flyvis_adex_ode import FlyVisAdExODE
+    from flyvis_gnn.generators.flyvis_ode import (
+        get_photoreceptor_positions_from_net,
+        group_by_direction_and_function,
+    )
+    from flyvis_gnn.generators.ode_params import FlyVisSpikingODEParams
+    from flyvis_gnn.utils import setup_flyvis_model_path
+
+    fig_style = dark_style if "black" in style else default_style
+    fig_style.apply_globally()
+
+    sim = config.simulation
+    model_config = config.graph_model
+
+    torch.random.fork_rng(devices=device)
+    if sim.seed != 42:
+        torch.random.manual_seed(sim.seed)
+        np.random.seed(sim.seed)
+
+    n_frames = sim.n_frames
+
+    synapse_model = "COBA" if "coba" in model_config.signal_model_name else "CUBA"
+    logger.info(f"generating spiking data ... {model_config.signal_model_name}  synapse_model: {synapse_model}  seed: {sim.seed}")
+
+    os.makedirs(graphs_data_path("fly"), exist_ok=True)
+    folder = graphs_data_path(config.dataset) + "/"
+    os.makedirs(folder, exist_ok=True)
+    os.makedirs(graphs_data_path(config.dataset, "Fig"), exist_ok=True)
+    files = glob.glob(graphs_data_path(config.dataset, "Fig", "*"))
+    for f in files:
+        os.remove(f)
+
+    extent = 8
+
+    import logging
+
+    from flyvis import Network, NetworkView
+    from flyvis.datasets.sintel import AugmentedSintel
+    from flyvis.utils.config_utils import CONFIG_PATH, get_default_config
+
+    logging.getLogger().setLevel(logging.WARNING)
+    setup_flyvis_model_path()
+
+    # Initialize stimulus dataset (same as graded model)
+    sintel_config = {
+        "n_frames": 19,
+        "flip_axes": [0, 1],
+        "n_rotations": [0, 1, 2, 3, 4, 5],
+        "temporal_split": True,
+        "dt": sim.delta_t,
+        "interpolate": True,
+        "boxfilter": dict(extent=extent, kernel_size=13),
+        "vertical_splits": 3,
+        "center_crop_fraction": 0.7,
+    }
+    stimulus_dataset = AugmentedSintel(**sintel_config)
+
+    # Initialize flyvis network (for connectome topology and stimulus processing)
+    import logging as _logging
+    _logging.getLogger("flyvis.utils.logging_utils").setLevel(_logging.ERROR)
+    config_net = get_default_config(overrides=[], path=f"{CONFIG_PATH}/network/network.yaml")
+    config_net.connectome.extent = extent
+    net = Network(**config_net)
+    nnv = NetworkView(f"flow/{sim.ensemble_id}/{sim.model_id}")
+    trained_net = nnv.init_network(checkpoint=0)
+    net.load_state_dict(trained_net.state_dict())
+    torch.set_grad_enabled(False)
+
+    # Build spiking ODE params from flyvis connectome
+    adex_overrides = {}
+    if hasattr(sim, 'adex_stim_scale'):
+        adex_overrides['stim_scale'] = sim.adex_stim_scale
+    if hasattr(sim, 'adex_I_bias'):
+        adex_overrides['I_bias'] = sim.adex_I_bias
+
+    ode_params = FlyVisSpikingODEParams.from_flyvis_network(
+        net, synapse_model=synapse_model, device=device,
+        overrides=adex_overrides if adex_overrides else None,
+    )
+
+    if save:
+        ode_params.save(folder)
+
+    # Create AdEx ODE
+    pde = FlyVisAdExODE(ode_params=ode_params, device=device)
+
+    # Extract positions and neuron metadata
+    x_coords, y_coords, u_coords, v_coords = get_photoreceptor_positions_from_net(net)
+    node_types = np.array(net.connectome.nodes["type"])
+    node_types_str = [t.decode("utf-8") if isinstance(t, bytes) else str(t) for t in node_types]
+    grouped_types = np.array([group_by_direction_and_function(t) for t in node_types_str])
+    _, node_types_int = np.unique(node_types, return_inverse=True)
+
+    n_neurons = sim.n_neurons
+    X1 = torch.tensor(np.stack((x_coords, y_coords), axis=1), dtype=torch.float32, device=device)
+    xc, yc = get_equidistant_points(n_points=n_neurons - x_coords.shape[0])
+    pos = torch.tensor(np.stack((xc, yc), axis=1), dtype=torch.float32, device=device) / 2
+    X1 = torch.cat((X1, pos[torch.randperm(pos.size(0))]), dim=0)
+
+    # Initialize spiking neuron state
+    x = pde.init_state(n_neurons)
+    x.index = torch.arange(n_neurons, dtype=torch.long, device=device)
+    x.pos = X1
+    x.group_type = torch.tensor(grouped_types, dtype=torch.long, device=device)
+    x.neuron_type = torch.tensor(node_types_int, dtype=torch.long, device=device)
+    x.calcium = torch.zeros(n_neurons, dtype=torch.float32, device=device)
+    x.fluorescence = torch.zeros(n_neurons, dtype=torch.float32, device=device)
+    x.noise = torch.zeros(n_neurons, dtype=torch.float32, device=device)
+
+    # AdEx integration timestep (ms) — much finer than graded model
+    adex_dt = getattr(sim, 'adex_dt', 0.2)  # default 0.2 ms
+    # Number of AdEx substeps per stimulus frame
+    substeps = max(1, int(sim.delta_t / adex_dt))
+    logger.info(f"AdEx dt={adex_dt}ms, stimulus dt={sim.delta_t}ms, substeps={substeps}")
+
+    # Train/test split (same logic as graded model)
+    df = stimulus_dataset.arg_df
+    original_indices = df['original_index'].values
+    unique_videos = sorted(set(original_indices))
+    n_train_vids = int(len(unique_videos) * 0.8)
+    train_video_set = set(unique_videos[:n_train_vids])
+    test_video_set = set(unique_videos[n_train_vids:])
+
+    train_indices = [i for i, oi in enumerate(original_indices) if oi in train_video_set]
+    test_indices = [i for i, oi in enumerate(original_indices) if oi in test_video_set]
+    train_sequences = [stimulus_dataset[i] for i in train_indices]
+    test_sequences = [stimulus_dataset[i] for i in test_indices]
+
+    logger.info(f"subdirectory split: {n_train_vids} train / {len(unique_videos) - n_train_vids} test videos"
+                f"  ({len(train_indices)} train seqs, {len(test_indices)} test seqs)")
+
+    frames_per_sequence = 35
+
+    def _run_spiking_generation(sequences, x, split_name, target_frames,
+                                record_plot_frames=0):
+        """Inner loop: run AdEx simulation over stimulus sequences.
+
+        Args:
+            record_plot_frames: number of stimulus frames for which to record
+                substep-level voltage/spike/stimulus (for plotting). 0 = no recording.
+
+        Returns:
+            n_written: number of frames written to zarr.
+            plot_data: dict with 'voltage', 'spike_raster', 'stimulus' arrays
+                at substep resolution, or None if record_plot_frames == 0.
+        """
+        x_writer = ZarrSimulationWriterV3(
+            path=graphs_data_path(config.dataset, f"x_list_{split_name}"),
+            n_neurons=n_neurons,
+            time_chunks=2000,
+        )
+        y_writer = ZarrArrayWriter(
+            path=graphs_data_path(config.dataset, f"y_list_{split_name}"),
+            n_neurons=n_neurons,
+            n_features=1,
+            time_chunks=2000,
+        )
+
+        # Substep-level recording for plotting
+        v_record = [] if record_plot_frames > 0 else None
+        spike_record = [] if record_plot_frames > 0 else None
+        stim_record = [] if record_plot_frames > 0 else None
+        plot_frames_left = record_plot_frames
+
+        it = 0
+        with torch.no_grad():
+            for data_idx, data in enumerate(tqdm(sequences, desc=f"spiking {split_name}", ncols=100)):
+                lum = data["lum"]
+                sequence_length = lum.shape[0]
+
+                for frame_id in range(sequence_length):
+                    # Set stimulus from visual input (photoreceptors only)
+                    frame = lum[frame_id][None, None]
+                    net.stimulus.add_input(frame)
+                    x.stimulus[:] = 0
+                    x.stimulus[:sim.n_input_neurons] = net.stimulus().squeeze()[:sim.n_input_neurons]
+
+                    # Record state BEFORE integration (same convention as graded model)
+                    x_writer.append_state(x)
+
+                    # Integrate AdEx for substeps within this stimulus frame
+                    v_before = x.voltage.clone()
+                    for sub in range(substeps):
+                        pde.step(x, adex_dt)
+
+                        # Record substep data for plotting
+                        if plot_frames_left > 0:
+                            v_record.append(to_numpy(x.voltage.clone()))
+                            spike_record.append(to_numpy(x.spiked.clone()))
+                            stim_record.append(to_numpy(x.stimulus[:sim.n_input_neurons].clone()))
+
+                    if plot_frames_left > 0:
+                        plot_frames_left -= 1
+
+                    # Compute effective dv/dt for this frame (for GNN training target)
+                    dv = ((x.voltage - v_before) / sim.delta_t).unsqueeze(-1)
+                    y_writer.append(to_numpy(dv.clone().detach()))
+
+                    it += 1
+                    if it >= target_frames:
+                        break
+                if it >= target_frames:
+                    break
+
+        n_written = x_writer.finalize()
+        y_writer.finalize()
+
+        plot_data = None
+        if v_record:
+            plot_data = {
+                'voltage': np.stack(v_record, axis=1),       # (N, T_substeps)
+                'spike_raster': np.stack(spike_record, axis=1),  # (N, T_substeps)
+                'stimulus': np.stack(stim_record, axis=1),    # (n_input, T_substeps)
+            }
+        return n_written, plot_data
+
+    # --- Generate TRAIN split ---
+    total_frames_per_pass = len(train_sequences) * frames_per_sequence
+    if n_frames == 0:
+        target_frames = float('inf')
+    else:
+        target_frames = n_frames
+
+    # Record substep-level data for first 100 stimulus frames (for plotting)
+    plot_record_frames = 100
+    logger.info(f"generating spiking TRAIN data ({target_frames} frames from {len(train_sequences)} sequences)...")
+    n_frames_train, train_plot_data = _run_spiking_generation(
+        train_sequences, x, "train", target_frames,
+        record_plot_frames=plot_record_frames,
+    )
+    logger.info(f"generated {n_frames_train} spiking TRAIN frames")
+
+    # --- Plot spiking traces ---
+    if train_plot_data is not None:
+        logger.info("plotting spiking traces...")
+        fig_dir = graphs_data_path(config.dataset, "Fig")
+        os.makedirs(fig_dir, exist_ok=True)
+        is_exc_np = to_numpy(ode_params.is_excitatory)
+        plot_spiking_traces(
+            voltage=train_plot_data['voltage'],
+            spike_raster=train_plot_data['spike_raster'],
+            stimulus=train_plot_data['stimulus'],
+            is_excitatory=is_exc_np,
+            type_list=node_types_int,
+            output_path=fig_dir,
+            n_input_neurons=sim.n_input_neurons,
+            dt_ms=adex_dt,
+            style=fig_style,
+        )
+        logger.info(f"saved spiking traces to {fig_dir}")
+
+    # --- Generate TEST split ---
+    # Reset state for test
+    x_test = pde.init_state(n_neurons)
+    x_test.index = x.index
+    x_test.pos = x.pos
+    x_test.group_type = x.group_type
+    x_test.neuron_type = x.neuron_type
+    x_test.calcium = torch.zeros(n_neurons, dtype=torch.float32, device=device)
+    x_test.fluorescence = torch.zeros(n_neurons, dtype=torch.float32, device=device)
+    x_test.noise = torch.zeros(n_neurons, dtype=torch.float32, device=device)
+
+    test_target = len(test_sequences) * frames_per_sequence
+    logger.info(f"generating spiking TEST data ({test_target} frames from {len(test_sequences)} sequences)...")
+    n_frames_test, _ = _run_spiking_generation(test_sequences, x_test, "test", float('inf'))
+    logger.info(f"generated {n_frames_test} spiking TEST frames")
+
+    torch.set_grad_enabled(True)
+    logger.info("spiking data generation complete")
 
 
 def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="color", erase=False, step=5, device=None,

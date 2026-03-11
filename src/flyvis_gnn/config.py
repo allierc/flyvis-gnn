@@ -223,6 +223,11 @@ class SimulationConfig(BaseModel):
     adjacency_matrix: str = ""
     short_term_plasticity_mode: str = "depression"
 
+    # AdEx spiking model parameters
+    adex_dt: float = 0.2              # ms — integration timestep for AdEx (0.2ms default from Zerlaut)
+    adex_stim_scale: float = 1.0      # pA per unit stimulus — converts visual input to current
+    adex_I_bias: float = 0.0          # pA — constant bias current injected into all neurons
+
     connectivity_file: str = ""
     connectivity_init: list[float] = [-1]
     connectivity_filling_factor: float = 1
