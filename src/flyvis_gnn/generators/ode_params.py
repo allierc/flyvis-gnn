@@ -372,25 +372,19 @@ class FlyVisSpikingODEParams(ODEParamsBase):
         neurons with net positive outgoing weight are excitatory.
         """
         params = net._param_api()
-        W = (params.edges.syn_strength * params.edges.syn_count * params.edges.sign)
-        W = W.detach().cpu().float()
-        src_idx = net.connectome.edges.source_index[:]
-        dst_idx = net.connectome.edges.target_index[:]
-        # Ensure numpy conversion for torch.tensor to always produce CPU tensors
-        if hasattr(src_idx, 'cpu'):
-            src_idx = src_idx.detach().cpu().numpy()
-        if hasattr(dst_idx, 'cpu'):
-            dst_idx = dst_idx.detach().cpu().numpy()
+        W = (params.edges.syn_strength * params.edges.syn_count * params.edges.sign).detach().to(device).float()
+        src_raw = net.connectome.edges.source_index[:]
+        dst_raw = net.connectome.edges.target_index[:]
         edge_index = torch.stack([
-            torch.tensor(src_idx, dtype=torch.long),
-            torch.tensor(dst_idx, dtype=torch.long),
+            torch.tensor(src_raw, dtype=torch.long, device=device) if not isinstance(src_raw, torch.Tensor) else src_raw.to(device).long(),
+            torch.tensor(dst_raw, dtype=torch.long, device=device) if not isinstance(dst_raw, torch.Tensor) else dst_raw.to(device).long(),
         ], dim=0)
 
         n_neurons = len(params.nodes.time_const)
         src = edge_index[0]
 
         # Infer E/I from net outgoing weight sign per neuron
-        sum_w = torch.zeros(n_neurons)
+        sum_w = torch.zeros(n_neurons, device=device)
         sum_w.scatter_add_(0, src, W)
         is_excitatory = (sum_w >= 0)
 
