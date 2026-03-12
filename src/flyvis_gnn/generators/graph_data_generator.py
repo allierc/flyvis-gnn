@@ -16,7 +16,6 @@ from flyvis_gnn.neuron_state import NeuronState
 from flyvis_gnn.plot import (
     plot_activity_traces,
     plot_hh_debug,
-    plot_retina_traces,
     plot_selected_neuron_traces,
     plot_spatial_activity_grid,
     plot_spiking_traces,
@@ -1362,32 +1361,6 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     stim_plot = x_ts.stimulus[warmup_frames:, :sim.n_input_neurons].numpy() if x_ts.stimulus.shape[0] > warmup_frames + 10 else x_ts.stimulus[:, :sim.n_input_neurons].numpy()
     logger.info(f'plotting traces (warmup_skip={warmup_frames} frames={warmup_ms}ms, window={window_frames} frames={window_ms}ms, {activity_plot.shape[0]} frames available)')
 
-    logger.info('plot activity traces ...')
-    trace_name = f'activity_traces_mask_{int(sim.ablation_ratio*100)}.png' if sim.ablation_ratio > 0 else 'activity_traces.png'
-    trace_indices = plot_activity_traces(
-        activity=activity_plot.T,
-        output_path=graphs_data_path(config.dataset, trace_name),
-        max_frames=0,  # show all available frames
-        n_input_neurons=sim.n_input_neurons,
-        style=fig_style,
-        type_list=node_types_int,
-        stimulus=stim_plot.T,
-        dt_ms=sim.delta_t,
-        dpi=300,
-    )
-
-    # R1-R8 retina traces — debug stimulus injection
-    logger.info('plot retina (R1-R8) traces ...')
-    plot_retina_traces(
-        activity=activity_plot.T,
-        stimulus=stim_plot.T,
-        type_list=node_types_int,
-        output_path=graphs_data_path(config.dataset, 'retina_traces.png'),
-        max_frames=window_frames,
-        dt_ms=sim.delta_t,
-        style=fig_style,
-    )
-
     # HH-specific spiking plots (detect spikes from voltage threshold crossings)
     if is_hh:
         logger.info('plotting HH spiking traces ...')
@@ -1412,7 +1385,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
             type_list=node_types_int,
             output_path=graphs_data_path(config.dataset),
             n_input_neurons=sim.n_input_neurons,
-            max_frames=window_frames,
+            max_frames=20000,
             dt_ms=sim.delta_t,
             style=fig_style,
         )
@@ -1432,7 +1405,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
                 max_frames=10000,
                 n_input_neurons=sim.n_input_neurons,
                 style=fig_style,
-                neuron_indices=trace_indices,
+                type_list=node_types_int,
                 dpi=300,
                 title='noisy voltage traces (measurement noise)',
             )
