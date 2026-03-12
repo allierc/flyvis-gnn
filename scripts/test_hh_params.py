@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from flyvis_gnn.generators.flyvis_hh_ode import FlyVisHodgkinHuxleyODE
+from flyvis_gnn.generators.flyvis_hodgkin_huxley_ode import FlyVisHodgkinHuxleyODE
 from flyvis_gnn.generators.ode_params import FlyVisHodgkinHuxleyODEParams
 
 

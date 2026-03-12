@@ -1038,7 +1038,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
         logger.info(f"ablated {n_ablate}/{n_edges} edges ({sim.ablation_ratio*100:.0f}%)")
 
     if is_hh:
-        from flyvis_gnn.generators.flyvis_hh_ode import FlyVisHodgkinHuxleyODE
+        from flyvis_gnn.generators.flyvis_hodgkin_huxley_ode import FlyVisHodgkinHuxleyODE
         pde = FlyVisHodgkinHuxleyODE(ode_params=ode_params, device=device)
         p = ode_params
         logger.info(
