@@ -16,6 +16,7 @@ simulation:
   delta_t: 0.5         # ms — stimulus frame rate (each frame held for 0.5ms)
   baseline_value: 0
   visual_input_type: DAVIS
+  max_train_sequences: 20
   noise_model_level: 0.0
   seed: 42
   # HH-specific

@@ -188,6 +188,7 @@ class SimulationConfig(BaseModel):
     visual_input_type: str = ""  # for flyvis experiments
     datavis_roots: list[str] = []  # list of dataset roots (each contains JPEGImages/480p/); empty list uses default get_datavis_root_dir()
     skip_short_videos: bool = True  # skip videos with fewer frames than chunk size (n_frames in video_config)
+    max_train_sequences: int = 0  # limit train sequences (0 = use all); reduces generation time proportionally
     blank_freq: int = 2  # Frequency of blank frames in visual input
     simulation_initial_state: bool = False
 

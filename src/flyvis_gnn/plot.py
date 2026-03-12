@@ -684,6 +684,81 @@ def plot_selected_neuron_traces(
     style.savefig(fig, output_path)
 
 
+def plot_retina_traces(
+    activity: np.ndarray,
+    stimulus: np.ndarray,
+    type_list: np.ndarray,
+    output_path: str,
+    max_frames: int = 0,
+    dt_ms: float = 0.5,
+    style: FigureStyle = default_style,
+) -> None:
+    """Plot R1-R8 photoreceptor traces with stimulus overlay.
+
+    One trace per retina type (R1..R8), picking the first neuron of each type.
+    A stimulus trace (first photoreceptor input) is shown in red at the bottom.
+
+    Args:
+        activity: (n_neurons, n_frames) voltage array.
+        stimulus: (n_input_neurons, n_frames) stimulus array.
+        type_list: (n_neurons,) integer neuron type per neuron.
+        output_path: where to save the figure.
+        max_frames: truncate at this many frames (0 = show all).
+        dt_ms: timestep in ms (for x-axis label).
+        style: FigureStyle instance.
+    """
+    # R1-R8 type indices from INDEX_TO_NAME
+    retina_types = [23, 24, 25, 26, 27, 28, 29, 30]
+    retina_names = ['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8']
+
+    neuron_indices = []
+    labels = []
+    for t, name in zip(retina_types, retina_names):
+        indices = np.where(type_list == t)[0]
+        if len(indices) > 0:
+            neuron_indices.append(indices[0])
+            labels.append(name)
+
+    n_sel = len(neuron_indices)
+    if n_sel == 0:
+        return
+
+    n_frames = activity.shape[1]
+    if max_frames > 0:
+        n_frames = min(n_frames, max_frames)
+
+    traces = activity[neuron_indices, :n_frames]
+
+    # Vertical offset between traces
+    v_range = np.max(np.ptp(traces, axis=1))
+    step_v = max(v_range * 1.2, 1.0)
+    offset = traces + step_v * np.arange(n_sel)[:, None]
+
+    fig, ax = style.figure(aspect=2.0)
+    colors = plt.cm.tab10(np.linspace(0, 0.8, n_sel))
+    for i in range(n_sel):
+        ax.plot(offset[i], linewidth=0.8, alpha=0.85, color=colors[i], label=labels[i])
+
+    # Stimulus trace at the bottom
+    if stimulus.shape[0] > 0:
+        stim_trace = stimulus[0, :n_frames]
+        stim_min = offset.min() - step_v * 1.5
+        stim_range = max(stim_trace.max() - stim_trace.min(), 1e-6)
+        stim_scaled = (stim_trace - stim_trace.min()) / stim_range * step_v + stim_min
+        ax.plot(stim_scaled, linewidth=1.0, alpha=0.9, color='red', label='stimulus')
+
+    ax.set_yticks([i * step_v for i in range(n_sel)])
+    ax.set_yticklabels(labels, fontsize=8)
+    ax.set_xlim([0, n_frames])
+    ax.set_ylim([offset.min() - step_v * 2, offset.max() + step_v * 0.5])
+    style.xlabel(ax, f'time (dt={dt_ms:.1f}ms)', fontsize=12)
+    ax.set_title('Retina (R1-R8) voltage traces', fontsize=12)
+    ax.legend(loc='upper right', fontsize=6, ncol=3, framealpha=0.7)
+
+    plt.tight_layout()
+    style.savefig(fig, output_path, dpi=300)
+
+
 def plot_spiking_traces(
     voltage: np.ndarray,
     spike_raster: np.ndarray,

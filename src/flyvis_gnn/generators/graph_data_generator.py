@@ -15,6 +15,7 @@ from flyvis_gnn.log import get_logger
 from flyvis_gnn.neuron_state import NeuronState
 from flyvis_gnn.plot import (
     plot_activity_traces,
+    plot_retina_traces,
     plot_selected_neuron_traces,
     plot_spatial_activity_grid,
     plot_spiking_traces,
@@ -1127,6 +1128,12 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     train_sequences = [stimulus_dataset[i] for i in train_indices]
     test_sequences = [stimulus_dataset[i] for i in test_indices]
 
+    # Optionally limit number of sequences for faster debugging
+    if sim.max_train_sequences > 0:
+        train_sequences = train_sequences[:sim.max_train_sequences]
+        test_sequences = test_sequences[:max(1, sim.max_train_sequences // 4)]
+        logger.info(f"max_train_sequences={sim.max_train_sequences}: using {len(train_sequences)} train, {len(test_sequences)} test sequences")
+
     # Build metadata labels for preview plots (name, flip_ax, n_rot)
     train_meta = [
         (df.iloc[idx]['name'], df.iloc[idx]['flip_ax'], df.iloc[idx]['n_rot'])
@@ -1297,6 +1304,18 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
         n_input_neurons=sim.n_input_neurons,
         style=fig_style,
         dpi=300,
+    )
+
+    # R1-R8 retina traces — debug stimulus injection
+    logger.info('plot retina (R1-R8) traces ...')
+    plot_retina_traces(
+        activity=activity_full.T,
+        stimulus=x_ts.stimulus[:, :sim.n_input_neurons].numpy().T,
+        type_list=node_types_int,
+        output_path=graphs_data_path(config.dataset, 'retina_traces.png'),
+        max_frames=10000,
+        dt_ms=sim.delta_t,
+        style=fig_style,
     )
 
     # HH-specific spiking plots (detect spikes from voltage threshold crossings)
