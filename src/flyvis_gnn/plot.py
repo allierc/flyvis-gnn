@@ -811,7 +811,7 @@ def plot_hh_debug(
     ax.axhline(-55, color='gray', ls='--', lw=0.7, label='spike thresh ~-55mV')
     ax.set_ylabel('voltage (mV)')
     ax.set_title(f'HH Debug: R1-R8  (dt={dt_ms}ms, substeps={hh_substeps})')
-    ax.legend(fontsize=6, ncol=5, loc='upper right')
+    ax.legend(fontsize=10, ncol=5, loc='upper right')
     ax.grid(True, alpha=0.3)
 
     # Panel 2: Stimulus (raw x.stimulus value)
@@ -821,7 +821,7 @@ def plot_hh_debug(
     ax.set_ylabel('x.stimulus')
     ax.set_title('Stimulus injected into R1-R8')
     ax.set_ylim([0.0, 1.0])
-    ax.legend(fontsize=6, ncol=4, loc='upper right')
+    ax.legend(fontsize=10, ncol=4, loc='upper right')
     ax.grid(True, alpha=0.3)
 
     # Panel 3: Gate variables (mean of m, h, n across R1-R8)
@@ -834,7 +834,7 @@ def plot_hh_debug(
     ax.plot(t_axis, n_mean, linewidth=1.2, color='green', label='n (K act)')
     ax.set_ylabel('gate value')
     ax.set_title('HH gates (mean R1-R8)')
-    ax.legend(fontsize=8, loc='upper right')
+    ax.legend(fontsize=10, loc='upper right')
     ax.set_ylim([-0.05, 1.05])
     ax.grid(True, alpha=0.3)
 
@@ -871,7 +871,7 @@ def plot_hh_debug(
         ax.axhline(0, color='gray', ls=':', lw=0.5)
         ax.set_ylabel('current (uA/cm²)')
         ax.set_title(f'Current decomposition R1-R8 (g_L={g_L.mean():.2f}, standard=0.3)')
-        ax.legend(fontsize=7, ncol=3, loc='upper right')
+        ax.legend(fontsize=10, ncol=3, loc='upper right')
         ax.grid(True, alpha=0.3)
 
     # Panel 5: dv/dt (finite difference)
@@ -883,7 +883,7 @@ def plot_hh_debug(
     ax.set_ylabel('dv/dt (mV/ms)')
     ax.set_xlabel('time (ms)')
     ax.set_title('Voltage derivative (finite diff)')
-    ax.legend(fontsize=6, ncol=4, loc='upper right')
+    ax.legend(fontsize=10, ncol=4, loc='upper right')
     ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
