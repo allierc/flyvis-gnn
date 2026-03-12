@@ -1075,13 +1075,6 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
         logger.info(f"[HH DEBUG] g_Na={p.g_Na[0]:.1f}  E_Na={p.E_Na[0]:.1f}  g_K={p.g_K[0]:.1f}  E_K={p.E_K[0]:.1f}  C={p.C[0]:.1f}")
         logger.info(f"[HH DEBUG] syn_v_half={p.syn_v_half[0]:.1f}  syn_slope={p.syn_slope[0]:.1f}")
         logger.info(f"[HH DEBUG] W:          min={p.W.min():.4f} max={p.W.max():.4f} mean={p.W.mean():.4f} nonzero={(p.W != 0).sum()}/{len(p.W)}")
-        # Per-R-type leak conductance (is g_L >> 0.3? that's the likely spiking blocker)
-        logger.info(f"[HH DEBUG] --- per-R-type g_L and E_L (standard HH: g_L=0.3, E_L=-54.4) ---")
-        _nt = torch.tensor(node_types_int, dtype=torch.long, device=device)
-        for _rt, _rn in zip([23,24,25,26,27,28,29,30], ['R1','R2','R3','R4','R5','R6','R7','R8']):
-            _mask = (_nt == _rt)
-            if _mask.sum() > 0:
-                logger.info(f"[HH DEBUG]   {_rn}: g_L={p.g_L[_mask].mean():.4f}  E_L={p.E_L[_mask].mean():.2f} mV  (n={_mask.sum()})")
         # Estimate: at v=-65, what is I_ext needed to reach threshold (-55mV)?
         # Threshold current ~ g_L * (v_thresh - E_L) ~ g_L * 10
         _gl_mean = p.g_L.mean().item()
