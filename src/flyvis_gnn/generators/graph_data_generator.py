@@ -430,10 +430,10 @@ def _run_ode_generation(stimulus_sequences, net, pde, x, edge_index, initial_sta
                         _I_ext = _p.I_bias[_retina_mask] + _p.stim_scale[_retina_mask] * x.stimulus[_retina_mask]
                         logger.info(
                             f"[HH DEBUG] frame={it:5d}  "
-                            f"V: [{_rv.min():.1f}, {_rv.max():.1f}] mean={_rv.mean():.1f}mV  |  "
-                            f"I_ext={_I_ext.mean():.2f}  I_L={_I_L.mean():.2f}  I_Na={_I_Na.mean():.4f}  I_K={_I_K.mean():.2f}  |  "
-                            f"m={_rm.mean():.4f} h={_rh.mean():.4f} n={_rn.mean():.4f}  |  "
-                            f"stim=[{x.stimulus[_retina_mask].min():.4f},{x.stimulus[_retina_mask].max():.4f}]"
+                            f"V(mV): [{_rv.min():.1f}, {_rv.max():.1f}] mean={_rv.mean():.1f}  |  "
+                            f"I(uA/cm2): ext={_I_ext.mean():.2f} leak={_I_L.mean():.2f} Na={_I_Na.mean():.4f} K={_I_K.mean():.2f}  |  "
+                            f"gates(0-1): m(Na_act)={_rm.mean():.4f} h(Na_inact)={_rh.mean():.4f} n(K_act)={_rn.mean():.4f}  |  "
+                            f"stim(norm): [{x.stimulus[_retina_mask].min():.4f},{x.stimulus[_retina_mask].max():.4f}]"
                         )
                         if it == 0:
                             # First frame: also show net dv/dt and all-neuron stats
@@ -1397,10 +1397,11 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     trace_indices = plot_activity_traces(
         activity=activity_plot.T,
         output_path=graphs_data_path(config.dataset, trace_name),
-        n_traces=100,
         max_frames=window_frames,
         n_input_neurons=sim.n_input_neurons,
         style=fig_style,
+        type_list=node_types_int,
+        stimulus=stim_plot.T,
         dpi=300,
     )
 

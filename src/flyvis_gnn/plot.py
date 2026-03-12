@@ -575,19 +575,28 @@ def plot_activity_traces(
     n_input_neurons: int = 0,
     style: FigureStyle = default_style,
     neuron_indices: np.ndarray | None = None,
+    type_list: np.ndarray | None = None,
+    stimulus: np.ndarray | None = None,
     dpi: int | None = None,
     title: str | None = None,
 ) -> np.ndarray:
     """Sampled neuron voltage traces stacked vertically.
 
+    If type_list is provided, picks one neuron per type (65 types) and labels
+    them by name.  Otherwise falls back to random sampling of n_traces neurons.
+
     Args:
         activity: (n_neurons, n_frames) transposed voltage array.
         output_path: where to save the figure.
-        n_traces: number of neurons to sample.
+        n_traces: number of neurons to sample (ignored when type_list given).
         max_frames: truncate x-axis at this frame count.
         n_input_neurons: shown as annotation.
         style: FigureStyle instance.
         neuron_indices: pre-selected neuron indices; if None, random sample.
+        type_list: (n_neurons,) integer neuron type per neuron. If given,
+                   one neuron per unique type is selected and labelled.
+        stimulus: (n_input_neurons, n_frames) optional stimulus array; plotted
+                  as red trace at bottom of the figure.
         dpi: override DPI for this figure; if None, use style default.
         title: optional title for the figure.
 
@@ -595,20 +604,54 @@ def plot_activity_traces(
         neuron_indices used (for reuse in paired plots).
     """
     n_neurons, n_frames = activity.shape
-    n_traces = min(n_traces, n_neurons)
-    if neuron_indices is None:
+
+    # Select one neuron per type when type_list is provided
+    type_labels = None
+    if type_list is not None and neuron_indices is None:
+        names = INDEX_TO_NAME
+        unique_types = np.unique(type_list)
+        neuron_indices = []
+        type_labels = []
+        for t in unique_types:
+            indices = np.where(type_list == t)[0]
+            if len(indices) > 0:
+                neuron_indices.append(indices[0])
+                type_labels.append(names.get(int(t), f'type_{t}'))
+        neuron_indices = np.array(neuron_indices)
+    elif neuron_indices is None:
+        n_traces = min(n_traces, n_neurons)
         neuron_indices = np.sort(np.random.choice(n_neurons, n_traces, replace=False))
-    sampled = activity[neuron_indices] / 10.0  # scale down so spikes don't dominate
-    offset = sampled + 2 * np.arange(len(neuron_indices))[:, None]
+
+    sampled = activity[neuron_indices] / 20.0  # scale down so spikes don't dominate
+    step_v = 2.0
+    offset = sampled + step_v * np.arange(len(neuron_indices))[:, None]
 
     fig, ax = style.figure(aspect=1.5)
     ax.plot(offset.T, linewidth=0.5, alpha=0.7, color=style.foreground)
+
+    # Red stimulus trace at the bottom
+    if stimulus is not None:
+        stim_mean = stimulus.mean(axis=0)
+        if max_frames > 0:
+            stim_mean = stim_mean[:min(len(stim_mean), max_frames)]
+        stim_y = offset[0].min() - step_v * 1.5 + stim_mean * step_v
+        ax.plot(stim_y, linewidth=0.8, alpha=0.9, color='red', label='stimulus')
+        ax.legend(loc='lower right', fontsize=10, framealpha=0.7)
+
     style.xlabel(ax, 'time (frames)', fontsize=16)
-    style.ylabel(ax, f'{len(neuron_indices)} / {n_neurons} neurons')
-    ax.set_yticks([])
+
+    if type_labels is not None:
+        ax.set_yticks([i * step_v for i in range(len(neuron_indices))])
+        ax.set_yticklabels(type_labels, fontsize=5)
+        style.ylabel(ax, '')
+    else:
+        style.ylabel(ax, f'{len(neuron_indices)} / {n_neurons} neurons')
+        ax.set_yticks([])
+
     ax.tick_params(axis='x', labelsize=14)
     ax.set_xlim([0, min(n_frames, max_frames)])
-    ax.set_ylim([offset[0].min() - 2, offset[-1].max() + 2])
+    y_bottom = (offset[0].min() - step_v * 3) if stimulus is not None else (offset[0].min() - 2)
+    ax.set_ylim([y_bottom, offset[-1].max() + 2])
     if title:
         ax.set_title(title, fontsize=style.font_size)
 
