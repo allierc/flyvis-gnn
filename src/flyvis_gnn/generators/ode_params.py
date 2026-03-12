@@ -521,28 +521,21 @@ class FlyVisHodgkinHuxleyODEParams(ODEParamsBase):
 
         n_neurons = len(params.nodes.time_const)
 
-        # Per-type from flyvis: tau_i -> g_L, V_i_rest -> E_L
-        tau_i = params.nodes.time_const.detach().to(device).float()
-        V_i_rest = params.nodes.bias.detach().to(device).float()
-
         d = {**HH_DEFAULTS}
         if overrides:
             d.update(overrides)
 
-        C_val = d["C"]
         def _expand(val):
             return torch.full((n_neurons,), val, dtype=torch.float32, device=device)
 
-        # g_L = C / tau_i (per-neuron, derived from flyvis time constants)
-        g_L = C_val / tau_i.clamp(min=0.01)
-        # E_L = V_i_rest (per-neuron, from flyvis resting potentials)
-        # Scale from flyvis arbitrary units to mV range
-        E_L = V_i_rest * 20.0 - 65.0  # maps ~0 -> -65mV, ~1 -> -45mV
-
+        # Use uniform standard HH values for all neurons.
+        # Previous approach derived g_L = C/tau_i from flyvis time constants,
+        # but flyvis tau_i values are in arbitrary units (~0.01-0.1) which
+        # produced g_L >> 0.3, overwhelming Na/K channels and preventing spikes.
         return cls(
-            C=_expand(C_val),
-            g_L=g_L,
-            E_L=E_L,
+            C=_expand(d["C"]),
+            g_L=_expand(d["g_L"]),
+            E_L=_expand(d["E_L"]),
             g_Na=_expand(d["g_Na"]),
             E_Na=_expand(d["E_Na"]),
             g_K=_expand(d["g_K"]),

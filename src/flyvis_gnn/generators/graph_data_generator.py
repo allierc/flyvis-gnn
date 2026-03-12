@@ -15,6 +15,7 @@ from flyvis_gnn.log import get_logger
 from flyvis_gnn.neuron_state import NeuronState
 from flyvis_gnn.plot import (
     plot_activity_traces,
+    plot_hh_debug,
     plot_retina_traces,
     plot_selected_neuron_traces,
     plot_spatial_activity_grid,
@@ -219,6 +220,11 @@ def _run_ode_generation(stimulus_sequences, net, pde, x, edge_index, initial_sta
         sintel_frame_idx = 0
         davis_frame_idx = 0
 
+    # [HH DEBUG] Collect traces for first sequence diagnostic plot
+    _hh_debug_buffers = None
+    if hasattr(pde, 'step_gates'):
+        _hh_debug_buffers = {'volt': [], 'stim': [], 'm': [], 'h': [], 'n': []}
+
     with torch.no_grad():
         for pass_num in range(num_passes):
             for data_idx, data in enumerate(tqdm(stimulus_sequences, desc="processing stimulus data", ncols=100)):
@@ -408,6 +414,44 @@ def _run_ode_generation(stimulus_sequences, net, pde, x, edge_index, initial_sta
                         if has_gates:
                             pde.step_gates(x, sim.delta_t)
 
+                    # [HH DEBUG] Print current decomposition for R1-R8 every 100 frames
+                    if has_gates and (it % 100 == 0 or it <= 2):
+                        _retina_mask = (x.neuron_type >= 23) & (x.neuron_type <= 30)
+                        _rv = x.voltage[_retina_mask]
+                        _rm = x.hh_m[_retina_mask]
+                        _rh = x.hh_h[_retina_mask]
+                        _rn = x.hh_n[_retina_mask]
+                        _p = pde.ode_params
+                        # Compute current components for retina neurons
+                        _I_Na = (_p.g_Na[_retina_mask] * (_rm**3) * _rh * (_rv - _p.E_Na[_retina_mask]))
+                        _I_K  = (_p.g_K[_retina_mask] * (_rn**4) * (_rv - _p.E_K[_retina_mask]))
+                        _I_L  = (_p.g_L[_retina_mask] * (_rv - _p.E_L[_retina_mask]))
+                        _I_ext = _p.I_bias[_retina_mask] + _p.stim_scale[_retina_mask] * x.stimulus[_retina_mask]
+                        logger.info(
+                            f"[HH DEBUG] frame={it:5d}  "
+                            f"V: [{_rv.min():.1f}, {_rv.max():.1f}] mean={_rv.mean():.1f}mV  |  "
+                            f"I_ext={_I_ext.mean():.2f}  I_L={_I_L.mean():.2f}  I_Na={_I_Na.mean():.4f}  I_K={_I_K.mean():.2f}  |  "
+                            f"m={_rm.mean():.4f} h={_rh.mean():.4f} n={_rn.mean():.4f}  |  "
+                            f"stim=[{x.stimulus[_retina_mask].min():.4f},{x.stimulus[_retina_mask].max():.4f}]"
+                        )
+                        if it == 0:
+                            # First frame: also show net dv/dt and all-neuron stats
+                            _net_dv = (-_I_Na - _I_K - _I_L + _I_ext) / _p.C[_retina_mask]
+                            logger.info(
+                                f"[HH DEBUG] frame=0 net_dv/dt R1-8: mean={_net_dv.mean():.2f} mV/ms  "
+                                f"(positive = depolarizing, need ~+10..20 to spike)  |  "
+                                f"ALL stim: [{x.stimulus.min():.4f},{x.stimulus.max():.4f}]  "
+                                f"ALL volt: [{x.voltage.min():.1f},{x.voltage.max():.1f}]  n_retina={_retina_mask.sum()}"
+                            )
+
+                    # [HH DEBUG] Collect traces for first sequence
+                    if _hh_debug_buffers is not None and data_idx == 0 and pass_num == 0:
+                        _hh_debug_buffers['volt'].append(x.voltage.cpu().numpy().copy())
+                        _hh_debug_buffers['stim'].append(x.stimulus.cpu().numpy().copy())
+                        _hh_debug_buffers['m'].append(x.hh_m.cpu().numpy().copy())
+                        _hh_debug_buffers['h'].append(x.hh_h.cpu().numpy().copy())
+                        _hh_debug_buffers['n'].append(x.hh_n.cpu().numpy().copy())
+
                     # Generate measurement noise for this timestep
                     if sim.measurement_noise_level > 0:
                         x.noise = torch.randn(n_neurons, dtype=torch.float32, device=device) * sim.measurement_noise_level
@@ -449,6 +493,33 @@ def _run_ode_generation(stimulus_sequences, net, pde, x, edge_index, initial_sta
                     it = it + 1
                     if it >= target_frames:
                         break
+                # [HH DEBUG] Save diagnostic plot after first sequence
+                if _hh_debug_buffers is not None and data_idx == 0 and pass_num == 0 and _hh_debug_buffers['volt']:
+                    logger.info(f"[HH DEBUG] saving hh_debug_seq0.png ({len(_hh_debug_buffers['volt'])} frames)")
+                    # Build HH params dict for current decomposition plot
+                    _hh_plot_params = None
+                    if hasattr(pde, 'ode_params'):
+                        _pp = pde.ode_params
+                        _hh_plot_params = {
+                            k: getattr(_pp, k).cpu().numpy()
+                            for k in ('g_L', 'E_L', 'g_Na', 'E_Na', 'g_K', 'E_K', 'C', 'I_bias', 'stim_scale')
+                            if hasattr(_pp, k) and getattr(_pp, k) is not None
+                        }
+                    plot_hh_debug(
+                        voltage_history=np.stack(_hh_debug_buffers['volt']),
+                        stimulus_history=np.stack(_hh_debug_buffers['stim']),
+                        gate_m_history=np.stack(_hh_debug_buffers['m']),
+                        gate_h_history=np.stack(_hh_debug_buffers['h']),
+                        gate_n_history=np.stack(_hh_debug_buffers['n']),
+                        type_list=to_numpy_fn(x.neuron_type).astype(int),
+                        output_path=graphs_data_path(config.dataset, 'hh_debug_seq0.png'),
+                        dt_ms=sim.delta_t,
+                        hh_substeps=getattr(sim, 'hh_substeps', 1),
+                        hh_params=_hh_plot_params,
+                        style=fig_style,
+                    )
+                    _hh_debug_buffers = None  # free memory
+
                 if it >= target_frames:
                     break
             if it >= target_frames:
@@ -995,6 +1066,26 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     if is_hh:
         from flyvis_gnn.generators.flyvis_hh_ode import FlyVisHodgkinHuxleyODE
         pde = FlyVisHodgkinHuxleyODE(ode_params=ode_params, device=device)
+        # DEBUG: print HH ODE params summary
+        p = ode_params
+        logger.info(f"[HH DEBUG] stim_scale: min={p.stim_scale.min():.3f} max={p.stim_scale.max():.3f} mean={p.stim_scale.mean():.3f}")
+        logger.info(f"[HH DEBUG] I_bias:     min={p.I_bias.min():.3f} max={p.I_bias.max():.3f} mean={p.I_bias.mean():.3f}")
+        logger.info(f"[HH DEBUG] g_L:        min={p.g_L.min():.3f} max={p.g_L.max():.3f} mean={p.g_L.mean():.3f}  (standard HH=0.3)")
+        logger.info(f"[HH DEBUG] E_L:        min={p.E_L.min():.3f} max={p.E_L.max():.3f} mean={p.E_L.mean():.3f}")
+        logger.info(f"[HH DEBUG] g_Na={p.g_Na[0]:.1f}  E_Na={p.E_Na[0]:.1f}  g_K={p.g_K[0]:.1f}  E_K={p.E_K[0]:.1f}  C={p.C[0]:.1f}")
+        logger.info(f"[HH DEBUG] syn_v_half={p.syn_v_half[0]:.1f}  syn_slope={p.syn_slope[0]:.1f}")
+        logger.info(f"[HH DEBUG] W:          min={p.W.min():.4f} max={p.W.max():.4f} mean={p.W.mean():.4f} nonzero={(p.W != 0).sum()}/{len(p.W)}")
+        # Per-R-type leak conductance (is g_L >> 0.3? that's the likely spiking blocker)
+        logger.info(f"[HH DEBUG] --- per-R-type g_L and E_L (standard HH: g_L=0.3, E_L=-54.4) ---")
+        _nt = torch.tensor(node_types_int, dtype=torch.long, device=device)
+        for _rt, _rn in zip([23,24,25,26,27,28,29,30], ['R1','R2','R3','R4','R5','R6','R7','R8']):
+            _mask = (_nt == _rt)
+            if _mask.sum() > 0:
+                logger.info(f"[HH DEBUG]   {_rn}: g_L={p.g_L[_mask].mean():.4f}  E_L={p.E_L[_mask].mean():.2f} mV  (n={_mask.sum()})")
+        # Estimate: at v=-65, what is I_ext needed to reach threshold (-55mV)?
+        # Threshold current ~ g_L * (v_thresh - E_L) ~ g_L * 10
+        _gl_mean = p.g_L.mean().item()
+        logger.info(f"[HH DEBUG] estimated threshold I_ext ~ g_L*10 = {_gl_mean * 10:.1f} uA/cm^2  (actual I_bias={p.I_bias[0]:.1f})")
     else:
         pde = FlyVisODE(ode_params=ode_params, g_phi=torch.nn.functional.relu, params=sim.params,
                         model_type=model_config.signal_model_name, n_neuron_types=sim.n_neuron_types, device=device)
@@ -1294,10 +1385,16 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     #     style=fig_style,
     # )
 
+    # Skip warmup frames (init-to-baseline transient) for cleaner traces
+    warmup_frames = 50
+    activity_plot = activity_full[warmup_frames:] if activity_full.shape[0] > warmup_frames + 10 else activity_full
+    stim_plot = x_ts.stimulus[warmup_frames:, :sim.n_input_neurons].numpy() if x_ts.stimulus.shape[0] > warmup_frames + 10 else x_ts.stimulus[:, :sim.n_input_neurons].numpy()
+    logger.info(f'plotting traces (warmup_skip={warmup_frames} frames, {activity_plot.shape[0]} frames remaining)')
+
     logger.info('plot activity traces ...')
     trace_name = f'activity_traces_mask_{int(sim.ablation_ratio*100)}.png' if sim.ablation_ratio > 0 else 'activity_traces.png'
     trace_indices = plot_activity_traces(
-        activity=activity_full.T,
+        activity=activity_plot.T,
         output_path=graphs_data_path(config.dataset, trace_name),
         n_traces=100,
         max_frames=10000,
@@ -1309,8 +1406,8 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     # R1-R8 retina traces — debug stimulus injection
     logger.info('plot retina (R1-R8) traces ...')
     plot_retina_traces(
-        activity=activity_full.T,
-        stimulus=x_ts.stimulus[:, :sim.n_input_neurons].numpy().T,
+        activity=activity_plot.T,
+        stimulus=stim_plot.T,
         type_list=node_types_int,
         output_path=graphs_data_path(config.dataset, 'retina_traces.png'),
         max_frames=10000,
@@ -1321,10 +1418,9 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     # HH-specific spiking plots (detect spikes from voltage threshold crossings)
     if is_hh:
         logger.info('plotting HH spiking traces ...')
-        # activity_full is (T, N), transpose to (N, T)
-        voltage_NT = activity_full.T
-        # Stimulus: (T, n_input) -> (n_input, T)
-        stimulus_NT = x_ts.stimulus[:, :sim.n_input_neurons].numpy().T
+        # Use warmup-skipped data: (T, N) -> (N, T)
+        voltage_NT = activity_plot.T
+        stimulus_NT = stim_plot.T
         # Detect spikes: voltage crosses 0mV from below
         spike_raster = np.zeros_like(voltage_NT, dtype=bool)
         spike_raster[:, 1:] = (voltage_NT[:, 1:] > 0) & (voltage_NT[:, :-1] <= 0)
