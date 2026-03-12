@@ -647,7 +647,7 @@ def plot_activity_traces(
         style.ylabel(ax, f'{len(neuron_indices)} / {n_neurons} neurons')
         ax.set_yticks([])
 
-    ax.tick_params(axis='x', labelsize=14)
+    ax.tick_params(axis='x', labelsize=8)
     ax.set_xlim([0, min(n_frames, max_frames)])
     y_bottom = (offset[0].min() - step_v * 3) if stimulus is not None else (offset[0].min() - 2)
     ax.set_ylim([y_bottom, offset[-1].max() + 2])
