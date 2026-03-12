@@ -908,10 +908,12 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     # Extract ground-truth parameters from flyvis connectome.
     if is_hh:
         hh_overrides = {}
-        if hasattr(sim, 'hh_stim_scale') and sim.hh_stim_scale:
+        if getattr(sim, 'hh_stim_scale', None) is not None:
             hh_overrides['stim_scale'] = sim.hh_stim_scale
-        if hasattr(sim, 'hh_I_bias') and sim.hh_I_bias:
+        if getattr(sim, 'hh_I_bias', None) is not None:
             hh_overrides['I_bias'] = sim.hh_I_bias
+        if getattr(sim, 'hh_w_scale', None) is not None:
+            hh_overrides['w_scale'] = sim.hh_w_scale
         ode_params = FlyVisHodgkinHuxleyODEParams.from_flyvis_network(
             net, device=device, overrides=hh_overrides or None)
     else:

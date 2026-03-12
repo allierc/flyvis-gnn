@@ -230,8 +230,9 @@ class SimulationConfig(BaseModel):
 
     # Hodgkin-Huxley model parameters
     hh_substeps: int = 50             # number of Euler substeps per stimulus frame
-    hh_stim_scale: float = 10.0       # uA/cm^2 per unit stimulus
-    hh_I_bias: float = 0.0            # uA/cm^2 — constant bias current
+    hh_stim_scale: float = 50.0       # uA/cm^2 per unit stimulus
+    hh_I_bias: float = 3.0            # uA/cm^2 — tonic drive (subthreshold)
+    hh_w_scale: float = 2.0           # global W multiplier (connectome weights calibrated for graded model)
 
     connectivity_file: str = ""
     connectivity_init: list[float] = [-1]

@@ -423,6 +423,8 @@ HH_DEFAULTS = dict(
     # External input
     I_bias=3.0,          # uA/cm^2 — tonic drive (depolarises to ~-44mV, subthreshold)
     stim_scale=50.0,     # uA/cm^2 per unit stimulus
+    # Weight scaling (flyvis connectome weights calibrated for graded model)
+    w_scale=2.0,         # global multiplier on connectome W for HH dynamics
 )
 
 
@@ -551,5 +553,5 @@ class FlyVisHodgkinHuxleyODEParams(ODEParamsBase):
             I_bias=_expand(d["I_bias"]),
             stim_scale=_expand(d["stim_scale"]),
             edge_index=edge_index,
-            W=W,
+            W=W * d["w_scale"],
         )
