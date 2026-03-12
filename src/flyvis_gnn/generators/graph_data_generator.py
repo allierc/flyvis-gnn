@@ -222,7 +222,7 @@ def _run_ode_generation(stimulus_sequences, net, pde, x, edge_index, initial_sta
 
     # [HH DEBUG] Collect traces for first N sequences diagnostic plot
     _hh_debug_buffers = None
-    _hh_debug_n_seqs = 5  # capture 5 sequences (~350 frames) for debug plot
+    _hh_debug_n_seqs = 30  # capture enough sequences for 400ms window
     if hasattr(pde, 'step_gates'):
         _hh_debug_buffers = {'volt': [], 'stim': [], 'm': [], 'h': [], 'n': []}
 
@@ -506,6 +506,8 @@ def _run_ode_generation(stimulus_sequences, net, pde, x, edge_index, initial_sta
                             for k in ('g_L', 'E_L', 'g_Na', 'E_Na', 'g_K', 'E_K', 'C', 'I_bias', 'stim_scale')
                             if hasattr(_pp, k) and getattr(_pp, k) is not None
                         }
+                    _warmup_f = int(100.0 / sim.delta_t)  # 100ms warmup
+                    _window_f = int(800.0 / sim.delta_t)  # 800ms window
                     plot_hh_debug(
                         voltage_history=np.stack(_hh_debug_buffers['volt']),
                         stimulus_history=np.stack(_hh_debug_buffers['stim']),
@@ -518,6 +520,8 @@ def _run_ode_generation(stimulus_sequences, net, pde, x, edge_index, initial_sta
                         hh_substeps=getattr(sim, 'hh_substeps', 1),
                         hh_params=_hh_plot_params,
                         style=fig_style,
+                        warmup_frames=_warmup_f,
+                        max_frames=_window_f,
                     )
                     _hh_debug_buffers = None  # free memory
 
@@ -1379,11 +1383,14 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
     #     style=fig_style,
     # )
 
-    # Skip warmup frames (init-to-baseline transient) for cleaner traces
-    warmup_frames = 50
+    # Skip warmup frames (100ms / dt) and show 400ms window for all plots
+    warmup_ms = 100.0
+    window_ms = 800.0
+    warmup_frames = int(warmup_ms / sim.delta_t)
+    window_frames = int(window_ms / sim.delta_t)
     activity_plot = activity_full[warmup_frames:] if activity_full.shape[0] > warmup_frames + 10 else activity_full
     stim_plot = x_ts.stimulus[warmup_frames:, :sim.n_input_neurons].numpy() if x_ts.stimulus.shape[0] > warmup_frames + 10 else x_ts.stimulus[:, :sim.n_input_neurons].numpy()
-    logger.info(f'plotting traces (warmup_skip={warmup_frames} frames, {activity_plot.shape[0]} frames remaining)')
+    logger.info(f'plotting traces (warmup_skip={warmup_frames} frames={warmup_ms}ms, window={window_frames} frames={window_ms}ms, {activity_plot.shape[0]} frames available)')
 
     logger.info('plot activity traces ...')
     trace_name = f'activity_traces_mask_{int(sim.ablation_ratio*100)}.png' if sim.ablation_ratio > 0 else 'activity_traces.png'
@@ -1391,7 +1398,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
         activity=activity_plot.T,
         output_path=graphs_data_path(config.dataset, trace_name),
         n_traces=100,
-        max_frames=10000,
+        max_frames=window_frames,
         n_input_neurons=sim.n_input_neurons,
         style=fig_style,
         dpi=300,
@@ -1404,7 +1411,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
         stimulus=stim_plot.T,
         type_list=node_types_int,
         output_path=graphs_data_path(config.dataset, 'retina_traces.png'),
-        max_frames=400,  # ~same range as hh_debug_seq0 (5 seqs x ~70 frames)
+        max_frames=window_frames,
         dt_ms=sim.delta_t,
         style=fig_style,
     )
@@ -1433,6 +1440,7 @@ def data_generate_fly_voltage(config, visualize=True, run_vizualized=0, style="c
             type_list=node_types_int,
             output_path=graphs_data_path(config.dataset),
             n_input_neurons=sim.n_input_neurons,
+            max_frames=window_frames,
             dt_ms=sim.delta_t,
             style=fig_style,
         )

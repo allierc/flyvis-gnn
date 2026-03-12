@@ -693,9 +693,9 @@ def plot_retina_traces(
     dt_ms: float = 0.5,
     style: FigureStyle = default_style,
 ) -> None:
-    """Plot R1-R8 photoreceptor traces with stimulus overlay.
+    """Plot R1-R8 + L1/L2 traces with stimulus overlay.
 
-    One trace per retina type (R1..R8), picking the first neuron of each type.
+    One trace per type (R1..R8, L1, L2), picking the first neuron of each type.
     A stimulus trace (first photoreceptor input) is shown in red at the bottom.
 
     Args:
@@ -707,9 +707,9 @@ def plot_retina_traces(
         dt_ms: timestep in ms (for x-axis label).
         style: FigureStyle instance.
     """
-    # R1-R8 type indices from INDEX_TO_NAME
-    retina_types = [23, 24, 25, 26, 27, 28, 29, 30]
-    retina_names = ['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8']
+    # R1-R8 + L1/L2 type indices from INDEX_TO_NAME
+    retina_types = [23, 24, 25, 26, 27, 28, 29, 30, 5, 6]
+    retina_names = ['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8', 'L1', 'L2']
 
     neuron_indices = []
     labels = []
@@ -735,7 +735,7 @@ def plot_retina_traces(
     offset = traces + step_v * np.arange(n_sel)[:, None]
 
     fig, ax = style.figure(aspect=2.0)
-    colors = plt.cm.tab10(np.linspace(0, 0.8, n_sel))
+    colors = plt.cm.tab20(np.linspace(0, 0.95, n_sel))
     for i in range(n_sel):
         ax.plot(offset[i], linewidth=0.8, alpha=0.85, color=colors[i], label=labels[i])
 
@@ -751,9 +751,9 @@ def plot_retina_traces(
     ax.set_yticklabels(labels, fontsize=8)
     ax.set_xlim([0, n_frames])
     ax.set_ylim([offset.min() - step_v * 2, offset.max() + step_v * 0.5])
-    style.xlabel(ax, f'time (dt={dt_ms:.1f}ms)', fontsize=12)
-    ax.set_title('Retina (R1-R8) voltage traces', fontsize=12)
-    ax.legend(loc='upper right', fontsize=6, ncol=3, framealpha=0.7)
+    style.xlabel(ax, f'time (dt={dt_ms:.1f}ms)', fontsize=14)
+    ax.set_title('Retina (R1-R8) + L1/L2 voltage traces', fontsize=14)
+    ax.legend(loc='upper right', fontsize=10, ncol=4, framealpha=0.7)
 
     plt.tight_layout()
     style.savefig(fig, output_path, dpi=300)
@@ -771,8 +771,10 @@ def plot_hh_debug(
     hh_substeps: int = 50,
     hh_params: dict = None,
     style: FigureStyle = default_style,
+    warmup_frames: int = 0,
+    max_frames: int = 0,
 ) -> None:
-    """Multi-panel HH debug plot for R1-R8 over the first frames.
+    """Multi-panel HH debug plot for R1-R8 + L1/L2.
 
     5 panels: voltage, stimulus, gate variables, current decomposition, dv/dt.
 
@@ -783,12 +785,15 @@ def plot_hh_debug(
         type_list: (n_neurons,) int type indices
         hh_params: dict with per-neuron arrays: g_L, E_L, g_Na, E_Na, g_K, E_K, C,
                    I_bias, stim_scale. If None, current panel is skipped.
+        warmup_frames: skip this many frames at the start.
+        max_frames: show at most this many frames after warmup (0 = all).
     """
-    retina_types = [23, 24, 25, 26, 27, 28, 29, 30]
-    retina_names = ['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8']
+    # R1-R8 + L1/L2
+    trace_types = [23, 24, 25, 26, 27, 28, 29, 30, 5, 6]
+    trace_names = ['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8', 'L1', 'L2']
 
     idx_map = {}
-    for t, name in zip(retina_types, retina_names):
+    for t, name in zip(trace_types, trace_names):
         indices = np.where(type_list == t)[0]
         if len(indices) > 0:
             idx_map[name] = indices[0]
@@ -796,13 +801,23 @@ def plot_hh_debug(
     if not idx_map:
         return
 
+    # Slice warmup and window
+    total = voltage_history.shape[0]
+    start = min(warmup_frames, total - 1)
+    end = total if max_frames <= 0 else min(start + max_frames, total)
+    voltage_history = voltage_history[start:end]
+    stimulus_history = stimulus_history[start:end]
+    gate_m_history = gate_m_history[start:end]
+    gate_h_history = gate_h_history[start:end]
+    gate_n_history = gate_n_history[start:end]
+
     n_frames = voltage_history.shape[0]
-    t_axis = np.arange(n_frames) * dt_ms
-    r_indices = list(idx_map.values())
+    t_axis = np.arange(n_frames) * dt_ms + start * dt_ms
+    r_indices = [idx_map[n] for n in trace_names[:8] if n in idx_map]  # R1-R8 only for gates/currents
 
     n_panels = 5 if hh_params else 4
-    fig, axes = plt.subplots(n_panels, 1, figsize=(14, 2.5 * n_panels), sharex=True)
-    colors = plt.cm.tab10(np.linspace(0, 0.8, len(idx_map)))
+    fig, axes = plt.subplots(n_panels, 1, figsize=(16, 3.0 * n_panels), sharex=True)
+    colors = plt.cm.tab20(np.linspace(0, 0.95, len(idx_map)))
 
     # Panel 1: Voltage
     ax = axes[0]
@@ -810,18 +825,19 @@ def plot_hh_debug(
         ax.plot(t_axis, voltage_history[:, nidx], linewidth=0.8, color=colors[i], label=name)
     ax.axhline(-55, color='gray', ls='--', lw=0.7, label='spike thresh ~-55mV')
     ax.set_ylabel('voltage (mV)')
-    ax.set_title(f'HH Debug: R1-R8  (dt={dt_ms}ms, substeps={hh_substeps})')
-    ax.legend(fontsize=10, ncol=5, loc='upper right')
+    ax.set_title(f'HH Debug: R1-R8 + L1/L2  (dt={dt_ms}ms, substeps={hh_substeps})')
+    ax.legend(fontsize=12, ncol=6, loc='upper right')
     ax.grid(True, alpha=0.3)
 
-    # Panel 2: Stimulus (raw x.stimulus value)
+    # Panel 2: Stimulus (raw x.stimulus value) — only R1-R8 (L1/L2 are not input neurons)
     ax = axes[1]
     for i, (name, nidx) in enumerate(idx_map.items()):
-        ax.plot(t_axis, stimulus_history[:, nidx], linewidth=0.8, color=colors[i], label=name)
+        if name.startswith('R'):
+            ax.plot(t_axis, stimulus_history[:, nidx], linewidth=0.8, color=colors[i], label=name)
     ax.set_ylabel('x.stimulus')
     ax.set_title('Stimulus injected into R1-R8')
     ax.set_ylim([0.0, 1.0])
-    ax.legend(fontsize=10, ncol=4, loc='upper right')
+    ax.legend(fontsize=12, ncol=4, loc='upper right')
     ax.grid(True, alpha=0.3)
 
     # Panel 3: Gate variables (mean of m, h, n across R1-R8)
@@ -834,7 +850,7 @@ def plot_hh_debug(
     ax.plot(t_axis, n_mean, linewidth=1.2, color='green', label='n (K act)')
     ax.set_ylabel('gate value')
     ax.set_title('HH gates (mean R1-R8)')
-    ax.legend(fontsize=10, loc='upper right')
+    ax.legend(fontsize=12, loc='upper right')
     ax.set_ylim([-0.05, 1.05])
     ax.grid(True, alpha=0.3)
 
@@ -871,7 +887,7 @@ def plot_hh_debug(
         ax.axhline(0, color='gray', ls=':', lw=0.5)
         ax.set_ylabel('current (uA/cm²)')
         ax.set_title(f'Current decomposition R1-R8 (g_L={g_L.mean():.2f}, standard=0.3)')
-        ax.legend(fontsize=10, ncol=3, loc='upper right')
+        ax.legend(fontsize=12, ncol=3, loc='upper right')
         ax.grid(True, alpha=0.3)
 
     # Panel 5: dv/dt (finite difference)
@@ -883,7 +899,7 @@ def plot_hh_debug(
     ax.set_ylabel('dv/dt (mV/ms)')
     ax.set_xlabel('time (ms)')
     ax.set_title('Voltage derivative (finite diff)')
-    ax.legend(fontsize=10, ncol=4, loc='upper right')
+    ax.legend(fontsize=12, ncol=6, loc='upper right')
     ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
