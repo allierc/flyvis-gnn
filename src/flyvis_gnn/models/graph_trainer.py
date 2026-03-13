@@ -122,12 +122,21 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
     log_dir, logger = create_log_dir(config, erase)
 
     load_fields = determine_load_fields(config)
+    # For wiener denoising: first epoch trains on noisy targets, then denoiser
+    # generates filtered targets for subsequent epochs
+    _derivative_target = getattr(sim, 'derivative_target', 'noisy')
+    _initial_target = _derivative_target
+    if _derivative_target == 'wiener':
+        wiener_path = graphs_data_path(config.dataset, 'wiener_y_list_train')
+        if not os.path.exists(wiener_path) and not os.path.exists(wiener_path + '.zarr'):
+            _logger.info('wiener targets not found — epoch 0 will use noisy targets')
+            _initial_target = 'noisy'
     x_ts, y_ts, type_list = load_flyvis_data(
         config.dataset, split='train', fields=load_fields, device=device,
         training_selected_neurons=tc.training_selected_neurons,
         selected_neuron_ids=tc.selected_neuron_ids if tc.training_selected_neurons else None,
         measurement_noise_level=sim.measurement_noise_level,
-        derivative_target=getattr(sim, 'derivative_target', 'noisy'),
+        derivative_target=_initial_target,
     )
 
     # get n_neurons and n_frames from data, not config file
@@ -614,6 +623,27 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         if has_visual_field and hasattr(model, 'NNR_f'):
             torch.save(model.NNR_f.state_dict(),
                        os.path.join(log_dir, 'models', f'inr_stimulus_{epoch}.pt'))
+
+        # Wiener denoising: after each epoch, re-filter targets and reload for next epoch
+        if _derivative_target == 'wiener' and epoch < tc.n_epochs - 1:
+            from flyvis_gnn.denoise import wiener_filter_derivatives
+            checkpoint_path_dn = os.path.join(
+                log_dir, 'models', f'best_model_with_{tc.n_runs - 1}_graphs_{epoch}.pt')
+            _logger.info(f'running wiener denoiser (fraction={sim.filter_noise_fraction}) ...')
+            dn_metrics = wiener_filter_derivatives(
+                config, checkpoint_path_dn, device=device, split='train')
+            _logger.info(f'wiener denoising: MSE reduction '
+                         f'{(1 - dn_metrics["mse_filtered"] / dn_metrics["mse_noisy"]) * 100:.1f}%, '
+                         f'R2 {dn_metrics["r2_noisy"]:.4f} -> {dn_metrics["r2_filtered"]:.4f}')
+            # Reload filtered targets for next epoch
+            _, y_ts, _ = load_flyvis_data(
+                config.dataset, split='train', fields=load_fields, device=device,
+                training_selected_neurons=tc.training_selected_neurons,
+                selected_neuron_ids=tc.selected_neuron_ids if tc.training_selected_neurons else None,
+                measurement_noise_level=sim.measurement_noise_level,
+                derivative_target='wiener',
+            )
+            _logger.info(f'reloaded wiener-filtered targets for epoch {epoch + 1}')
 
         list_loss.append(epoch_pred_loss)
         list_loss_regul.append(epoch_regul_loss)
