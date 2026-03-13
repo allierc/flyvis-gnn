@@ -442,7 +442,8 @@ class LossRegularizer:
         if self._coeffs['f_theta_msg_diff'] > 0:
             pred_msg = model.f_theta(in_features.clone().detach())
             in_features_msg_next = in_features.clone().detach()
-            in_features_msg_next[:, embedding_dim + 1] = in_features_msg_next[:, embedding_dim + 1] * 1.05
+            delta_msg = 0.05 * max(float(xnorm), 1e-6) if xnorm is not None else 1e-6
+            in_features_msg_next[:, embedding_dim + 1] = in_features_msg_next[:, embedding_dim + 1] + delta_msg
             pred_msg_next = model.f_theta(in_features_msg_next)
             regul_term = torch.relu(pred_msg[ids_batch] - pred_msg_next[ids_batch]).norm(2) * self._coeffs['f_theta_msg_diff']
             total_regul = total_regul + regul_term
