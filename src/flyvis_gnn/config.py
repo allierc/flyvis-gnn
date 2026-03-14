@@ -461,7 +461,7 @@ class TrainingConfig(BaseModel):
     device: Annotated[str, Field(pattern=r"^(auto|cpu|cuda:\d+)$")] = "auto"
 
     n_epochs: int = 20
-    n_epochs_init: int = 99999
+    n_epochs_init: int = 99999  # DEPRECATED: no longer used by regularizer
     epoch_reset: int = -1
     epoch_reset_freq: int = 99999
     batch_size: int = 1

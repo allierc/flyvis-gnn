@@ -67,6 +67,16 @@ if __name__ == "__main__":
             'flyvis_noise_005_010_dn_30',
             'flyvis_noise_005_010_dn_50',
         ],
+        'flyvis_wl1_sweep': [
+            'flyvis_noise_005_010_wl1_01',
+            'flyvis_noise_005_010_wl1_02',
+            'flyvis_noise_005_010_wl1_03',
+            'flyvis_noise_005_010_wl1_04',
+            'flyvis_noise_005_010_wl1_05',
+            'flyvis_noise_005_010_wl1_06',
+            'flyvis_noise_005_010_wl1_07',
+            'flyvis_noise_005_010_wl1_08',
+        ],
     }
 
     if args.option is not None:
