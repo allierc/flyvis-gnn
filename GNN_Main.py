@@ -93,6 +93,12 @@ if __name__ == "__main__":
             'flyvis_noise_005_010_ss_08',
             'flyvis_noise_005_010_ss_10',
         ],
+        'flyvis_wavelet_l1_sweep': [
+            'flyvis_noise_005_010_wvl1_015',
+            'flyvis_noise_005_010_wvl1_020',
+            'flyvis_noise_005_010_wvl1_025',
+            'flyvis_noise_005_010_wvl1_040',
+        ],
         'flyvis_wl1_sweep': [
             'flyvis_noise_005_010_wl1_01',
             'flyvis_noise_005_010_wl1_02',
