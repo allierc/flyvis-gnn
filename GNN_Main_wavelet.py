@@ -52,6 +52,10 @@ if __name__ == "__main__":
             'flyvis_noise_005_010_wv_08',
             'flyvis_noise_005_010_wv_10',
         ],
+        'flyvis_wavelet_sweep_fine': [
+            'flyvis_noise_005_010_wv_015',
+            'flyvis_noise_005_010_wv_025',
+        ],
     }
 
     if args.option is not None:
@@ -75,12 +79,8 @@ if __name__ == "__main__":
         best_model = ''
         task = 'train'
         config_list = [
-            'flyvis_noise_005_010_wv_01',
-            'flyvis_noise_005_010_wv_02',
-            'flyvis_noise_005_010_wv_04',
-            'flyvis_noise_005_010_wv_06',
-            'flyvis_noise_005_010_wv_08',
-            'flyvis_noise_005_010_wv_10',
+            'flyvis_noise_005_010_wv_015',
+            'flyvis_noise_005_010_wv_025',
         ]
         test_config_name = None
 
