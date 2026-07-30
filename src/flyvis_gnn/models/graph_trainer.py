@@ -332,7 +332,7 @@ def data_train_flyvis(config, erase, best_model, device, log_file=None):
         field_R2 = None
         field_slope = None
         pbar = trange(Niter, ncols=150)
-        
+
         # === LLM-MODIFIABLE: TRAINING LOOP START ===
         # Main training loop. Suggested changes: loss function, gradient clipping,
         # data sampling strategy, LR scheduler steps, early stopping.
